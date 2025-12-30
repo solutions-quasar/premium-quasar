@@ -299,20 +299,23 @@ button {
 }
 
 /* Hero CTA Button */
+/* Hero CTA Button */
 .btn-primary {
-    background: linear-gradient(135deg, var(--gold) 0%, var(--gold-dim) 100%);
+    /* Feathered Edges: Transparent at start/end, Gold in middle */
+    background: linear-gradient(90deg, transparent 0%, var(--gold) 15%, var(--gold-dim) 85%, transparent 100%);
     color: #000;
     padding: 1.1rem 5rem;
-    /* Doubled width */
-    min-width: 300px;
-    /* Enforced minimum width */
+    min-width: 320px;
     text-align: center;
     font-weight: 600;
     font-size: 1rem;
     border-radius: 4px;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: all 0.3s ease;
     letter-spacing: 0.02em;
     display: inline-block;
+    position: relative;
+    /* Subtle glow behind to enhance 'feathering' */
+    filter: drop-shadow(0 0 10px rgba(223, 165, 58, 0.3));
 }
 
 .btn-primary:hover {
@@ -656,21 +659,22 @@ footer {
     bottom: 0;
     left: 0;
     width: 100%;
-    height: calc(70px + var(--safe-bottom));
-    /* Increased height */
+    height: calc(65px + var(--safe-bottom));
     background: var(--glass-bg);
     backdrop-filter: blur(15px);
     -webkit-backdrop-filter: blur(15px);
     border-top: 1px solid var(--glass-border);
     z-index: 1000;
-    padding-bottom: Calc(var(--safe-bottom) + 10px);
-    /* Increased padding */
+    padding-bottom: var(--safe-bottom);
+    /* Only safe area padding, letting grid/flex center the rest */
 }
 
 @media (max-width: 768px) {
     #mobile-bar {
         display: grid;
         grid-template-columns: 1fr 1fr 1fr;
+        align-items: center;
+        /* Vertically center items */
     }
 }
 
@@ -695,7 +699,7 @@ footer {
     stroke: currentColor;
     width: 24px;
     height: 24px;
-    margin-bottom: 2px;
+    margin-bottom: 0;
 }
 
 /* Mobile Menu Overlay */

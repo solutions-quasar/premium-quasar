@@ -247,17 +247,20 @@ function setupInteractions() {
     const closeBtn = document.getElementById('btn-close-menu');
     const menuLinks = document.querySelectorAll('.menu-link');
 
-    // Inject Icons with Wrapper for Animation
+    // Inject Icons with CSS Burger (No Text)
     menuBtn.innerHTML = `
         <div class="menu-icon-wrapper">
-            <div class="icon-container">${ICONS.menu}</div>
-            <div class="text-container">Menu</div>
+            <div class="burger-icon">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
         </div>
     `;
 
-    // Bottom Bar Icons
-    document.getElementById('btn-call').innerHTML = `<div>${ICONS.phone}</div><div>Call</div>`;
-    document.getElementById('btn-msg').innerHTML = `<div>${ICONS.message}</div><div>Message</div>`;
+    // Bottom Bar Icons (Icon Only)
+    document.getElementById('btn-call').innerHTML = `<div>${ICONS.phone}</div>`;
+    document.getElementById('btn-msg').innerHTML = `<div>${ICONS.message}</div>`;
 
     function updateMenuIcon(isOpen) {
         const wrapper = menuBtn.querySelector('.menu-icon-wrapper');
