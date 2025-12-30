@@ -120,7 +120,7 @@ function renderSite() {
             <div class="hero-content">
                 <h1>${CONFIG.hero.h1}</h1>
                 <p>${CONFIG.hero.subhead}</p>
-                <a href="#contact" class="btn-primary">${CONFIG.hero.cta}</a>
+                <a href="#contact" class="btn-primary">${CONFIG.hero.cta} ${ICONS.arrow}</a>
                 <div class="trust-cue">${CONFIG.hero.trust}</div>
             </div>
             <img src="${CONFIG.hero.imageDesktop}" alt="Premium Strategy" class="hero-image">
@@ -258,8 +258,11 @@ function setupInteractions() {
         </div>
     `;
 
-    // Bottom Bar Icons (Icon Only)
-    document.getElementById('btn-call').innerHTML = `<div>${ICONS.phone}</div>`;
+    // Bottom Bar Icons (Icon Only) - Fix Links
+    const btnCall = document.getElementById('btn-call');
+    btnCall.innerHTML = `<div>${ICONS.phone}</div>`;
+    btnCall.href = `tel:${CONFIG.business.phoneClean}`;
+
     document.getElementById('btn-msg').innerHTML = `<div>${ICONS.message}</div>`;
 
     function updateMenuIcon(isOpen) {
