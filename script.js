@@ -94,7 +94,11 @@ function renderSite() {
     document.querySelector('.desktop-nav').innerHTML = navHTML;
 
     // Logo Injection
-    const logoHTML = `<img src="logo.png?v=final" alt="${CONFIG.business.name}" class="nav-logo"><span class="brand-text">SOLUTIONS QUASAR</span>`;
+    const logoHTML = `
+    <a href="index.html" style="text-decoration:none; display:flex; align-items:center; color:inherit; gap: 0.5rem;">
+        <img src="logo.png?v=final" alt="${CONFIG.business.name}" class="nav-logo">
+        <span class="brand-text">SOLUTIONS QUASAR</span>
+    </a>`;
     document.querySelector('.brand').innerHTML = logoHTML;
     document.querySelector('.mobile-logo').innerHTML = logoHTML;
 
@@ -223,8 +227,17 @@ function renderSite() {
     // Inject entire footer content into the container
     document.querySelector('footer .container').innerHTML = footerHTML;
 
-    // Render Mobile Menu Links
-    document.querySelector('.menu-nav').innerHTML = CONFIG.nav.map(link => `<a href="${getLinkHref(link.href)}" class="menu-link">${link.label}</a>`).join('');
+    // Render Mobile Menu Links & Contact Info
+    const menuContent = `
+        ${CONFIG.nav.map(link => `<a href="${getLinkHref(link.href)}" class="menu-link">${link.label}</a>`).join('')}
+        <div class="golden-separator"></div>
+        <div class="mobile-contact-info">
+            <a href="tel:${CONFIG.business.phoneClean}">${ICONS.phone} ${CONFIG.business.phone}</a>
+            <a href="mailto:${CONFIG.business.email}">${ICONS.message} ${CONFIG.business.email}</a>
+            <div style="font-size:0.8rem; opacity:0.6; margin-top:0.5rem;">${CONFIG.business.address}</div>
+        </div>
+    `;
+    document.querySelector('.menu-nav').innerHTML = menuContent;
 }
 
 function setupInteractions() {
@@ -234,28 +247,59 @@ function setupInteractions() {
     const closeBtn = document.getElementById('btn-close-menu');
     const menuLinks = document.querySelectorAll('.menu-link');
 
-    // Inject Icons
-    menuBtn.innerHTML = `<div>${ICONS.menu}</div><div>Menu</div>`;
-    closeBtn.innerHTML = ICONS.close;
+    // Inject Icons with Wrapper for Animation
+    menuBtn.innerHTML = `
+        <div class="menu-icon-wrapper">
+            <div class="icon-container">${ICONS.menu}</div>
+            <div class="text-container">Menu</div>
+        </div>
+    `;
 
     // Bottom Bar Icons
     document.getElementById('btn-call').innerHTML = `<div>${ICONS.phone}</div><div>Call</div>`;
     document.getElementById('btn-msg').innerHTML = `<div>${ICONS.message}</div><div>Message</div>`;
+
+    function updateMenuIcon(isOpen) {
+        const wrapper = menuBtn.querySelector('.menu-icon-wrapper');
+        const iconContainer = wrapper.querySelector('.icon-container');
+        const textContainer = wrapper.querySelector('.text-container');
+
+        if (isOpen) {
+            wrapper.classList.add('rotate');
+            setTimeout(() => {
+                iconContainer.innerHTML = ICONS.close;
+                textContainer.textContent = "Close";
+            }, 100);
+        } else {
+            wrapper.classList.remove('rotate');
+            setTimeout(() => {
+                iconContainer.innerHTML = ICONS.menu;
+                textContainer.textContent = "Menu";
+            }, 100);
+        }
+    }
 
     function toggleMenu() {
         const isOpen = overlay.classList.contains('open');
         if (isOpen) {
             overlay.classList.remove('open');
             document.body.style.overflow = '';
+            updateMenuIcon(false);
         } else {
             overlay.classList.add('open');
             document.body.style.overflow = 'hidden';
+            updateMenuIcon(true);
         }
     }
 
     menuBtn.addEventListener('click', toggleMenu);
-    closeBtn.addEventListener('click', toggleMenu);
-    menuLinks.forEach(l => l.addEventListener('click', toggleMenu));
+
+    // Use event delegation for dynamically added links
+    document.querySelector('.menu-nav').addEventListener('click', (e) => {
+        if (e.target.closest('.menu-link')) {
+            toggleMenu();
+        }
+    });
 
     // Message Button Scroll
     document.getElementById('btn-msg').addEventListener('click', () => {
