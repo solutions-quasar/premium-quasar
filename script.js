@@ -1,54 +1,90 @@
-// CONFIGURATION OBJECT - Single Source of Truth
+// LANGUAGE STATE MANAGEMENT
+let currentLang = localStorage.getItem('lang') || 'en';
+
+function setLanguage(lang) {
+    currentLang = lang;
+    localStorage.setItem('lang', lang);
+    document.documentElement.lang = lang;
+    renderSite();
+}
+
+function t(textObj) {
+    if (typeof textObj === 'string') return textObj; // For non-translated content
+    return textObj[currentLang] || textObj.en || textObj;
+}
+
+// CONFIGURATION OBJECT - Bilingual Single Source of Truth
 const CONFIG = {
     business: {
         name: "Solutions Quasar Inc.",
-        tagline: "Ultra-Premium Digital Architecture",
+        tagline: { en: "Ultra-Premium Digital Architecture", fr: "Architecture Numérique Ultra-Premium" },
         phone: "418-410-0856",
         phoneClean: "14184100856",
         email: "info@solutionsquasar.ca",
-        address: "New Brunswick, Canada", // From scrape or generic
+        address: { en: "New Brunswick, Canada", fr: "Nouveau-Brunswick, Canada" },
         mapUrl: "https://www.google.com/maps/search/?api=1&query=Solutions+Quasar+Inc+New+Brunswick",
-        mapEmbed: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d355000.0!2d-66.0!3d46.0!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zMTPCsDQ5JzUyLjYiTiA2NcKwMzUnMjMuNiJX!5e0!3m2!1sen!2sca!4v1630000000000!5m2!1sen!2sca" // Generic NB map center
+        mapEmbed: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d355000.0!2d-66.0!3d46.0!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zMTPCsDQ5JzUyLjYiTiA2NcKwMzUnMjMuNiJX!5e0!3m2!1sen!2sca!4v1630000000000!5m2!1sen!2sca"
     },
     nav: [
-        { label: "Home", href: "#top" },
-        { label: "Services", href: "#services" },
-        { label: "About", href: "about.html" },
-        { label: "Reviews", href: "#reviews" },
-        { label: "Why Us", href: "#why-us" },
-        { label: "Contact", href: "#contact" }
+        { label: { en: "Home", fr: "Accueil" }, href: "#top" },
+        { label: { en: "Services", fr: "Services" }, href: "#services" },
+        { label: { en: "About", fr: "À Propos" }, href: "about.html" },
+        { label: { en: "Reviews", fr: "Témoignages" }, href: "#reviews" },
+        { label: { en: "Why Us", fr: "Pourquoi Nous" }, href: "#why-us" },
+        { label: { en: "Contact", fr: "Contact" }, href: "#contact" }
     ],
     hero: {
-        h1: "Premium websites and apps for high standard businesses.",
-        subhead: "Fast, modern, mobile-first builds that convert.",
-        cta: "Book a Strategy Call",
-        trust: "Mobile-first • Performance-focused • Clean SEO foundations",
+        h1: { en: "Premium websites and apps for high standard businesses.", fr: "Sites web et applications premium pour entreprises exigeantes." },
+        subhead: { en: "Fast, modern, mobile-first builds that convert.", fr: "Créations rapides, modernes et mobiles qui convertissent." },
+        cta: { en: "Book a Strategy Call", fr: "Réserver un Appel Stratégique" },
+        trust: { en: "Mobile-first • Performance-focused • Clean SEO foundations", fr: "Mobile d'abord • Axé sur la performance • Fondations SEO solides" },
         imageDesktop: "hero-desktop.png",
-        imageMobile: "hero-desktop.png" // Using the same high-res for quality, CSS handles object-fit
+        imageMobile: "hero-desktop.png"
     },
     services: {
-        title: "Our Expertise",
-        subtitle: "We build systems, not just pages.",
+        title: { en: "Our Expertise", fr: "Notre Expertise" },
+        subtitle: { en: "We build systems, not just pages.", fr: "Nous construisons des systèmes, pas seulement des pages." },
         items: [
-            { icon: "monitor", title: "Premium Website Creation", desc: "Custom-coded, ultra-fast websites designed to position your brand at the top of your industry.", detail: "No templates. Pure performance and aesthetics.", url: "websites.html", image: "hero_bg_websites.png" },
-            { icon: "layout", title: "Custom Business Apps", desc: "Tailored web applications to streamline operations and enhance client interaction.", detail: "Client portals, internal tools, and dashboards.", url: "apps.html", image: "hero_bg_apps.png" },
-            { icon: "database", title: "Smart AI Integration", desc: "Leverage artificial intelligence to automate workflows and personalize user experiences.", detail: "Chatbots, predictive analytics, and automated content.", url: "ai.html", image: "hero_bg_ai.png" }
+            {
+                icon: "monitor",
+                title: { en: "Premium Website Creation", fr: "Création de Sites Web Premium" },
+                desc: { en: "Custom-coded, ultra-fast websites designed to position your brand at the top of your industry.", fr: "Sites web ultra-rapides codés sur mesure pour positionner votre marque au sommet de votre industrie." },
+                detail: { en: "No templates. Pure performance and aesthetics.", fr: "Aucun modèle. Performance et esthétique pures." },
+                url: "websites.html",
+                image: "hero_bg_websites.png"
+            },
+            {
+                icon: "layout",
+                title: { en: "Custom Business Apps", fr: "Applications d'Affaires Personnalisées" },
+                desc: { en: "Tailored web applications to streamline operations and enhance client interaction.", fr: "Applications web sur mesure pour rationaliser les opérations et améliorer l'interaction client." },
+                detail: { en: "Client portals, internal tools, and dashboards.", fr: "Portails clients, outils internes et tableaux de bord." },
+                url: "apps.html",
+                image: "hero_bg_apps.png"
+            },
+            {
+                icon: "database",
+                title: { en: "Smart AI Integration", fr: "Intégration IA Intelligente" },
+                desc: { en: "Leverage artificial intelligence to automate workflows and personalize user experiences.", fr: "Exploitez l'intelligence artificielle pour automatiser les flux de travail et personnaliser les expériences utilisateur." },
+                detail: { en: "Chatbots, predictive analytics, and automated content.", fr: "Chatbots, analyses prédictives et contenu automatisé." },
+                url: "ai.html",
+                image: "hero_bg_ai.png"
+            }
         ]
     },
     reviews: {
-        title: "Client Words",
+        title: { en: "Client Words", fr: "Témoignages Clients" },
         items: [
-            { text: "Solutions Quasar transformed our online image. Professional, fast, and the design is simply stunning.", author: "James M., Partner at Law Firm" },
-            { text: "Finally a web agency that understands business needs. The new site generated leads in week one.", author: "Sarah L., Financial Consultant" }
+            { text: { en: "Solutions Quasar transformed our online image. Professional, fast, and the design is simply stunning.", fr: "Solutions Quasar a transformé notre image en ligne. Professionnel, rapide, et le design est tout simplement magnifique." }, author: { en: "James M., Partner at Law Firm", fr: "James M., Associé dans un Cabinet d'Avocats" } },
+            { text: { en: "Finally a web agency that understands business needs. The new site generated leads in week one.", fr: "Enfin une agence web qui comprend les besoins d'affaires. Le nouveau site a généré des prospects dès la première semaine." }, author: { en: "Sarah L., Financial Consultant", fr: "Sarah L., Consultante Financière" } }
         ]
     },
     why: {
-        title: "Why Choose Us",
+        title: { en: "Why Choose Us", fr: "Pourquoi Nous Choisir" },
         items: [
-            { icon: "message", title: "Communication Excellence", desc: "A dedicated partner for your digital growth. Direct access, clear communication at every step.", image: "feat_communication_new.png" },
-            { icon: "gauge", title: "Premium Performance", desc: "Built to load instantly. We optimize every line of code for speed and SEO ranking.", image: "feat_web_speed.png" },
-            { icon: "check", title: "Conversion Focused", desc: "Beauty with purpose. Every design element is engineered to turn visitors into clients.", image: "feat_conversion.png" },
-            { icon: "monitor", title: "Mobile Excellence", desc: "A flawless experience on every device. Your brand looks expensive everywhere.", image: "feat_mobile.png" }
+            { icon: "message", title: { en: "Communication Excellence", fr: "Excellence en Communication" }, desc: { en: "A dedicated partner for your digital growth. Direct access, clear communication at every step.", fr: "Un partenaire dévoué pour votre croissance numérique. Accès direct, communication claire à chaque étape." }, image: "feat_communication_new.png" },
+            { icon: "gauge", title: { en: "Premium Performance", fr: "Performance Premium" }, desc: { en: "Built to load instantly. We optimize every line of code for speed and SEO ranking.", fr: "Conçu pour charger instantanément. Nous optimisons chaque ligne de code pour la vitesse et le référencement." }, image: "feat_web_speed.png" },
+            { icon: "check", title: { en: "Conversion Focused", fr: "Axé sur la Conversion" }, desc: { en: "Beauty with purpose. Every design element is engineered to turn visitors into clients.", fr: "Beauté avec objectif. Chaque élément de design est conçu pour transformer les visiteurs en clients." }, image: "feat_conversion.png" },
+            { icon: "monitor", title: { en: "Mobile Excellence", fr: "Excellence Mobile" }, desc: { en: "A flawless experience on every device. Your brand looks expensive everywhere.", fr: "Une expérience impeccable sur chaque appareil. Votre marque paraît luxueuse partout." }, image: "feat_mobile.png" }
         ]
     }
 };
@@ -92,7 +128,7 @@ function renderSite() {
     };
 
     // Render Header Links
-    const navHTML = CONFIG.nav.map(link => `<a href="${getLinkHref(link.href)}">${link.label}</a>`).join('');
+    const navHTML = CONFIG.nav.map(link => `<a href="${getLinkHref(link.href)}">${t(link.label)}</a>`).join('');
     document.querySelector('.desktop-nav').innerHTML = navHTML;
 
     // Logo Injection
@@ -106,8 +142,20 @@ function renderSite() {
 
     document.querySelector('.contact-phone').textContent = CONFIG.business.phone;
     document.querySelector('.contact-phone').href = `tel:${CONFIG.business.phoneClean}`;
-    document.querySelector('.contact-email').textContent = "Email Us";
+    document.querySelector('.contact-email').textContent = currentLang === 'fr' ? 'Nous Écrire' : 'Email Us';
     document.querySelector('.contact-email').href = `mailto:${CONFIG.business.email}`;
+
+    // Add Language Toggle to Desktop Header
+    const contactActions = document.querySelector('.contact-actions');
+    if (contactActions && !document.querySelector('.lang-toggle')) {
+        const langToggle = document.createElement('div');
+        langToggle.className = 'lang-toggle';
+        langToggle.innerHTML = `
+            <button class="lang-btn ${currentLang === 'en' ? 'active' : ''}" onclick="setLanguage('en')">EN</button>
+            <button class="lang-btn ${currentLang === 'fr' ? 'active' : ''}" onclick="setLanguage('fr')">FR</button>
+        `;
+        contactActions.appendChild(langToggle);
+    }
 
     // Mobile Top Bar
     document.querySelector('.mobile-call-btn').href = `tel:${CONFIG.business.phoneClean}`;
@@ -120,10 +168,10 @@ function renderSite() {
         hero.innerHTML = `
         <div class="hero-split">
             <div class="hero-content">
-                <h1>${CONFIG.hero.h1}</h1>
-                <p>${CONFIG.hero.subhead}</p>
-                <a href="#contact" class="btn-primary">${CONFIG.hero.cta} ${ICONS.arrow}</a>
-                <div class="trust-cue">${CONFIG.hero.trust}</div>
+                <h1>${t(CONFIG.hero.h1)}</h1>
+                <p>${t(CONFIG.hero.subhead)}</p>
+                <a href="#contact" class="btn-primary">${t(CONFIG.hero.cta)} ${ICONS.arrow}</a>
+                <div class="trust-cue">${t(CONFIG.hero.trust)}</div>
             </div>
             <img src="${CONFIG.hero.imageDesktop}" alt="Premium Strategy" class="hero-image">
         </div>
@@ -136,27 +184,27 @@ function renderSite() {
         servicesGrid.innerHTML = CONFIG.services.items.map(s => `
         <div class="service-card" onclick="window.location.href='${s.url}'" style="cursor: pointer;">
             <div class="service-image-header">
-                <img src="${s.image}" alt="${s.title}" loading="lazy">
+                <img src="${s.image}" alt="${t(s.title)}" loading="lazy">
             </div>
             <div class="service-content">
                 <div class="service-icon">${ICONS[s.icon] || ICONS.monitor}</div>
-                <h3>${s.title}</h3>
-                <p>${s.desc}</p>
-                <div class="service-details">${s.detail}</div>
-                <a href="${s.url}" class="text-gold uppercase" style="display:block; margin-top:1.5rem; font-size:0.8rem;">Learn More &rarr;</a>
+                <h3>${t(s.title)}</h3>
+                <p>${t(s.desc)}</p>
+                <div class="service-details">${t(s.detail)}</div>
+                <a href="${s.url}" class="text-gold uppercase" style="display:block; margin-top:1.5rem; font-size:0.8rem;">${currentLang === 'fr' ? 'En Savoir Plus' : 'Learn More'} &rarr;</a>
             </div>
         </div>
     `).join('');
     }
 
     // Render Reviews
-    const reviewGrid = document.querySelector('.review-container'); // Need to add container in HTML
+    const reviewGrid = document.querySelector('.review-container');
     if (reviewGrid) {
         reviewGrid.innerHTML = CONFIG.reviews.items.map(r => `
             <div class="review-card">
                 <div class="stars">★★★★★</div>
-                <p class="review-text">"${r.text}"</p>
-                <p class="review-author">— ${r.author}</p>
+                <p class="review-text">"${t(r.text)}"</p>
+                <p class="review-author">— ${t(r.author)}</p>
             </div>
         `).join('');
     }
@@ -164,16 +212,17 @@ function renderSite() {
     // Render Why Us
     const whyGrid = document.querySelector('.why-grid');
     if (whyGrid) {
-        document.querySelector('#why-us h2').textContent = CONFIG.why.title;
+        const whyTitle = document.querySelector('#why-us h2');
+        if (whyTitle) whyTitle.textContent = t(CONFIG.why.title);
         whyGrid.innerHTML = CONFIG.why.items.map(item => `
         <div class="why-card">
             <div class="why-image-header">
-                <img src="${item.image}" alt="${item.title}" loading="lazy">
+                <img src="${item.image}" alt="${t(item.title)}" loading="lazy">
             </div>
             <div class="why-content">
                 <div class="why-icon text-gold">${ICONS[item.icon] || ICONS.check}</div>
-                <h3 style="margin:1rem 0; font-size:1.1rem;">${item.title}</h3>
-                <p class="text-muted" style="font-size:0.95rem;">${item.desc}</p>
+                <h3 style="margin:1rem 0; font-size:1.1rem;">${t(item.title)}</h3>
+                <p class="text-muted" style="font-size:0.95rem;">${t(item.desc)}</p>
             </div>
         </div>
     `).join('');
@@ -203,9 +252,9 @@ function renderSite() {
             </div>
             
             <div class="footer-col">
-                <h4>Services</h4>
+                <h4>${currentLang === 'fr' ? 'Services' : 'Services'}</h4>
                 <ul>
-                    ${CONFIG.services.items.map(s => `<li><a href="${s.url}">${s.title}</a></li>`).join('')}
+                    ${CONFIG.services.items.map(s => `<li><a href="${s.url}">${t(s.title)}</a></li>`).join('')}
                 </ul>
             </div>
 
@@ -224,7 +273,7 @@ function renderSite() {
                 <ul>
                     <li class="text-gold" style="font-size:1.1rem; font-weight:600;"><a href="tel:${CONFIG.business.phoneClean}">${CONFIG.business.phone}</a></li>
                     <li><a href="mailto:${CONFIG.business.email}">${CONFIG.business.email}</a></li>
-                    <li style="opacity:0.7; margin-top:1rem;">${CONFIG.business.address}</li>
+                    <li style="opacity:0.7; margin-top:1rem;">${t(CONFIG.business.address)}</li>
                 </ul>
             </div>
         </div>
@@ -242,12 +291,19 @@ function renderSite() {
 
     // Render Mobile Menu Links & Contact Info
     const menuContent = `
-        ${CONFIG.nav.map(link => `<a href="${getLinkHref(link.href)}" class="menu-link">${link.label}</a>`).join('')}
+        ${CONFIG.nav.map(link => `<a href="${getLinkHref(link.href)}" class="menu-link">${t(link.label)}</a>`).join('')}
+        <div class="golden-separator"></div>
+        <div style="text-align: center; margin: 2rem 0;">
+            <div class="lang-toggle" style="justify-content: center; margin: 0;">
+                <button class="lang-btn ${currentLang === 'en' ? 'active' : ''}" onclick="setLanguage('en')">EN</button>
+                <button class="lang-btn ${currentLang === 'fr' ? 'active' : ''}" onclick="setLanguage('fr')">FR</button>
+            </div>
+        </div>
         <div class="golden-separator"></div>
         <div class="mobile-contact-info">
             <a href="tel:${CONFIG.business.phoneClean}">${ICONS.phone} ${CONFIG.business.phone}</a>
             <a href="mailto:${CONFIG.business.email}">${ICONS.message} ${CONFIG.business.email}</a>
-            <div style="font-size:0.8rem; opacity:0.6; margin-top:0.5rem;">${CONFIG.business.address}</div>
+            <div style="font-size:0.8rem; opacity:0.6; margin-top:0.5rem;">${t(CONFIG.business.address)}</div>
         </div>
     `;
     document.querySelector('.menu-nav').innerHTML = menuContent;

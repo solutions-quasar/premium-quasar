@@ -204,6 +204,37 @@ button {
     border-bottom-color: var(--gold);
 }
 
+/* Language Toggle */
+.lang-toggle {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-left: 1.5rem;
+}
+
+.lang-btn {
+    padding: 0.5rem 1rem;
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border-radius: 4px;
+}
+
+.lang-btn:hover {
+    border-color: var(--gold);
+    color: var(--gold);
+}
+
+.lang-btn.active {
+    background: var(--gold);
+    color: var(--bg-dark);
+    border-color: var(--gold);
+}
+
 /* Mobile Top Bar Override */
 @media (max-width: 768px) {
     #top-bar {
