@@ -86,6 +86,42 @@ const CONFIG = {
             { icon: "check", title: { en: "Conversion Focused", fr: "Axé sur la Conversion" }, desc: { en: "Beauty with purpose. Every design element is engineered to turn visitors into clients.", fr: "Beauté avec objectif. Chaque élément de design est conçu pour transformer les visiteurs en clients." }, image: "feat_conversion.png" },
             { icon: "monitor", title: { en: "Mobile Excellence", fr: "Excellence Mobile" }, desc: { en: "A flawless experience on every device. Your brand looks expensive everywhere.", fr: "Une expérience impeccable sur chaque appareil. Votre marque paraît luxueuse partout." }, image: "feat_mobile.png" }
         ]
+    },
+    about: {
+        hero: {
+            subtitle: { en: "Who We Are", fr: "Qui Nous Sommes" },
+            h1: { en: "Building Digital Excellence for High-Standard Businesses", fr: "Créer l'Excellence Numérique pour les Entreprises Exigeantes" },
+            desc: { en: "We're a team of digital architects dedicated to creating premium web solutions that convert.", fr: "Nous sommes une équipe d'architectes numériques dédiés à créer des solutions web premium qui convertissent." }
+        },
+        story: {
+            subtitle: { en: "Our Story", fr: "Notre Histoire" },
+            title: { en: "Crafting Premium Digital Experiences", fr: "Créer des Expériences Numériques Premium" },
+            p1: { en: "Solutions Quasar was founded on a simple belief: businesses with high standards deserve digital solutions that match their excellence. We specialize in creating ultra-premium, mobile-first websites and applications for professionals who demand the best.", fr: "Solutions Quasar a été fondée sur une conviction simple : les entreprises exigeantes méritent des solutions numériques à la hauteur de leur excellence. Nous nous spécialisons dans la création de sites web et d'applications ultra-premium, mobiles d'abord, pour les professionnels qui exigent le meilleur." },
+            p2: { en: "Every project we undertake is built with meticulous attention to detail, combining cutting-edge technology with timeless design principles. We don't just build websites—we architect digital experiences that elevate brands and drive measurable results.", fr: "Chaque projet que nous entreprenons est construit avec une attention méticuleuse aux détails, combinant technologie de pointe et principes de design intemporels. Nous ne construisons pas seulement des sites web—nous concevons des expériences numériques qui élèvent les marques et génèrent des résultats mesurables." }
+        },
+        values: {
+            subtitle: { en: "Our Values", fr: "Nos Valeurs" },
+            title: { en: "What Drives Us", fr: "Ce Qui Nous Motive" },
+            items: [
+                { title: { en: "Excellence First", fr: "Excellence d'Abord" }, desc: { en: "We never compromise on quality. Every line of code, every design element is crafted to premium standards.", fr: "Nous ne faisons jamais de compromis sur la qualité. Chaque ligne de code, chaque élément de design est créé selon des standards premium." } },
+                { title: { en: "Speed & Performance", fr: "Vitesse & Performance" }, desc: { en: "Fast-loading, optimized experiences that keep visitors engaged and search engines happy.", fr: "Expériences rapides et optimisées qui maintiennent l'engagement des visiteurs et satisfont les moteurs de recherche." } },
+                { title: { en: "Clear Communication", fr: "Communication Claire" }, desc: { en: "Direct access to our team. No runaround, no confusion—just clear, honest dialogue.", fr: "Accès direct à notre équipe. Pas de détours, pas de confusion—juste un dialogue clair et honnête." } },
+                { title: { en: "Results Driven", fr: "Axé sur les Résultats" }, desc: { en: "Beautiful design with purpose. Every element engineered to convert visitors into clients.", fr: "Design magnifique avec un objectif. Chaque élément conçu pour convertir les visiteurs en clients." } }
+            ]
+        },
+        team: {
+            subtitle: { en: "Our Team", fr: "Notre Équipe" },
+            title: { en: "The People Behind the Work", fr: "Les Personnes Derrière le Travail" },
+            members: [
+                { name: "Benjamin Dempsey", role: { en: "Founder & Lead Developer", fr: "Fondateur & Développeur Principal" }, bio: { en: "Full-stack developer with a passion for creating premium digital experiences that drive real business results.", fr: "Développeur full-stack passionné par la création d'expériences numériques premium qui génèrent de vrais résultats commerciaux." } },
+                { name: "Sarah Mitchell", role: { en: "UX/UI Designer", fr: "Designer UX/UI" }, bio: { en: "Crafting intuitive interfaces that blend aesthetic excellence with conversion-focused design principles.", fr: "Création d'interfaces intuitives qui allient excellence esthétique et principes de design axés sur la conversion." } },
+                { name: "Marcus Chen", role: { en: "Performance Engineer", fr: "Ingénieur Performance" }, bio: { en: "Optimizing every millisecond to deliver lightning-fast experiences that rank high and convert better.", fr: "Optimisation de chaque milliseconde pour offrir des expériences ultra-rapides qui se classent haut et convertissent mieux." } }
+            ]
+        },
+        cta: {
+            title: { en: "Ready to Work Together?", fr: "Prêt à Travailler Ensemble?" },
+            desc: { en: "Let's discuss how we can elevate your digital presence with a premium solution built for your business.", fr: "Discutons de la façon dont nous pouvons élever votre présence numérique avec une solution premium conçue pour votre entreprise." }
+        }
     }
 };
 
@@ -111,7 +147,67 @@ document.addEventListener('DOMContentLoaded', () => {
     setupInteractions();
     setupForm();
     injectSchema();
+
+    // Render About page if on about.html
+    if (window.location.pathname.includes('about.html')) {
+        renderAboutPage();
+    }
 });
+
+function renderAboutPage() {
+    // Hero
+    const heroSubtitle = document.querySelector('[data-i18n="about.hero.subtitle"]');
+    const heroH1 = document.querySelector('[data-i18n="about.hero.h1"]');
+    const heroDesc = document.querySelector('[data-i18n="about.hero.desc"]');
+    if (heroSubtitle) heroSubtitle.textContent = t(CONFIG.about.hero.subtitle);
+    if (heroH1) heroH1.textContent = t(CONFIG.about.hero.h1);
+    if (heroDesc) heroDesc.textContent = t(CONFIG.about.hero.desc);
+
+    // Story
+    const storySubtitle = document.querySelector('[data-i18n="about.story.subtitle"]');
+    const storyTitle = document.querySelector('[data-i18n="about.story.title"]');
+    const storyP1 = document.querySelector('[data-i18n="about.story.p1"]');
+    const storyP2 = document.querySelector('[data-i18n="about.story.p2"]');
+    if (storySubtitle) storySubtitle.textContent = t(CONFIG.about.story.subtitle);
+    if (storyTitle) storyTitle.textContent = t(CONFIG.about.story.title);
+    if (storyP1) storyP1.textContent = t(CONFIG.about.story.p1);
+    if (storyP2) storyP2.textContent = t(CONFIG.about.story.p2);
+
+    // Values
+    const valuesSubtitle = document.querySelector('[data-i18n="about.values.subtitle"]');
+    const valuesTitle = document.querySelector('[data-i18n="about.values.title"]');
+    if (valuesSubtitle) valuesSubtitle.textContent = t(CONFIG.about.values.subtitle);
+    if (valuesTitle) valuesTitle.textContent = t(CONFIG.about.values.title);
+
+    CONFIG.about.values.items.forEach((item, i) => {
+        const title = document.querySelector(`[data-i18n="about.values.items.${i}.title"]`);
+        const desc = document.querySelector(`[data-i18n="about.values.items.${i}.desc"]`);
+        if (title) title.textContent = t(item.title);
+        if (desc) desc.textContent = t(item.desc);
+    });
+
+    // Team
+    const teamSubtitle = document.querySelector('[data-i18n="about.team.subtitle"]');
+    const teamTitle = document.querySelector('[data-i18n="about.team.title"]');
+    if (teamSubtitle) teamSubtitle.textContent = t(CONFIG.about.team.subtitle);
+    if (teamTitle) teamTitle.textContent = t(CONFIG.about.team.title);
+
+    CONFIG.about.team.members.forEach((member, i) => {
+        const role = document.querySelector(`[data-i18n="about.team.members.${i}.role"]`);
+        const bio = document.querySelector(`[data-i18n="about.team.members.${i}.bio"]`);
+        if (role) role.textContent = t(member.role);
+        if (bio) bio.textContent = t(member.bio);
+    });
+
+    // CTA
+    const ctaTitle = document.querySelector('[data-i18n="about.cta.title"]');
+    const ctaDesc = document.querySelector('[data-i18n="about.cta.desc"]');
+    const ctaBtn = document.querySelector('[data-i18n="hero.cta"]');
+    if (ctaTitle) ctaTitle.textContent = t(CONFIG.about.cta.title);
+    if (ctaDesc) ctaDesc.textContent = t(CONFIG.about.cta.desc);
+    if (ctaBtn) ctaBtn.textContent = t(CONFIG.hero.cta);
+}
+
 
 function renderSite() {
     // Determine context: Fix navigation on service pages
