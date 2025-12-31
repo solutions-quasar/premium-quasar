@@ -13,6 +13,7 @@ const CONFIG = {
     nav: [
         { label: "Home", href: "#top" },
         { label: "Services", href: "#services" },
+        { label: "About", href: "about.html" },
         { label: "Reviews", href: "#reviews" },
         { label: "Why Us", href: "#why-us" },
         { label: "Contact", href: "#contact" }
@@ -80,7 +81,8 @@ function renderSite() {
     // Determine context: Fix navigation on service pages
     const isSubPage = window.location.pathname.includes('websites.html') ||
         window.location.pathname.includes('apps.html') ||
-        window.location.pathname.includes('ai.html');
+        window.location.pathname.includes('ai.html') ||
+        window.location.pathname.includes('about.html');
 
     const getLinkHref = (href) => {
         if (isSubPage && href.startsWith('#') && href !== '#contact') {
