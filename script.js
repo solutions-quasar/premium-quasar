@@ -19,7 +19,7 @@ const CONFIG = {
     ],
     hero: {
         h1: "Premium websites and apps for high standard businesses.",
-        subhead: "Fast, modern, mobile-first builds that convert—designed for lawyers, accountants, dentists, brokers, and high-trust services.",
+        subhead: "Fast, modern, mobile-first builds that convert.",
         cta: "Book a Strategy Call",
         trust: "Mobile-first • Performance-focused • Clean SEO foundations",
         imageDesktop: "hero-desktop.png",
@@ -278,21 +278,11 @@ function setupInteractions() {
 
     function updateMenuIcon(isOpen) {
         const wrapper = menuBtn.querySelector('.menu-icon-wrapper');
-        const iconContainer = wrapper.querySelector('.icon-container');
-        const textContainer = wrapper.querySelector('.text-container');
 
         if (isOpen) {
-            wrapper.classList.add('rotate');
-            setTimeout(() => {
-                iconContainer.innerHTML = ICONS.close;
-                textContainer.textContent = "Close";
-            }, 100);
+            wrapper.classList.add('open');
         } else {
-            wrapper.classList.remove('rotate');
-            setTimeout(() => {
-                iconContainer.innerHTML = ICONS.menu;
-                textContainer.textContent = "Menu";
-            }, 100);
+            wrapper.classList.remove('open');
         }
     }
 
