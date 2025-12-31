@@ -374,17 +374,20 @@ button {
 
     .hero-content {
         position: absolute;
-        bottom: 0;
+        top: 30vh;
+        /* Start at 30% down to show hero image */
         left: 0;
         z-index: 1;
         width: 100%;
         height: auto;
+        min-height: 70vh;
+        /* Ensure it covers the rest */
         display: flex;
         flex-direction: column;
-        justify-content: flex-end;
-        padding: 6rem 1.5rem 8rem 1.5rem;
-        /* Increased top padding to show more hero image */
-        background: rgba(11, 13, 16, 0.75);
+        justify-content: flex-start;
+        padding: 2rem 1.5rem 8rem 1.5rem;
+        background: rgba(11, 13, 16, 0.85);
+        /* Slightly more opaque */
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
         border-top: 1px solid var(--border-subtle);
