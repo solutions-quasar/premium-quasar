@@ -380,7 +380,8 @@ button {
         display: flex;
         flex-direction: column;
         justify-content: flex-end;
-        padding: 3rem 1.5rem 8rem 1.5rem;
+        padding: 6rem 1.5rem 8rem 1.5rem;
+        /* Increased top padding to show more hero image */
         background: rgba(11, 13, 16, 0.75);
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
