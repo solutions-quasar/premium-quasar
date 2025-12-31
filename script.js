@@ -29,9 +29,9 @@ const CONFIG = {
         title: "Our Expertise",
         subtitle: "We build systems, not just pages.",
         items: [
-            { icon: "monitor", title: "Premium Website Creation", desc: "Custom-coded, ultra-fast websites designed to position your brand at the top of your industry.", detail: "No templates. Pure performance and aesthetics.", url: "websites.html" },
-            { icon: "layout", title: "Custom Business Apps", desc: "Tailored web applications to streamline operations and enhance client interaction.", detail: "Client portals, internal tools, and dashboards.", url: "apps.html" },
-            { icon: "database", title: "Smart AI Integration", desc: "Leverage artificial intelligence to automate workflows and personalize user experiences.", detail: "Chatbots, predictive analytics, and automated content.", url: "ai.html" }
+            { icon: "monitor", title: "Premium Website Creation", desc: "Custom-coded, ultra-fast websites designed to position your brand at the top of your industry.", detail: "No templates. Pure performance and aesthetics.", url: "websites.html", image: "hero_bg_websites.png" },
+            { icon: "layout", title: "Custom Business Apps", desc: "Tailored web applications to streamline operations and enhance client interaction.", detail: "Client portals, internal tools, and dashboards.", url: "apps.html", image: "hero_bg_apps.png" },
+            { icon: "database", title: "Smart AI Integration", desc: "Leverage artificial intelligence to automate workflows and personalize user experiences.", detail: "Chatbots, predictive analytics, and automated content.", url: "ai.html", image: "hero_bg_ai.png" }
         ]
     },
     reviews: {
@@ -44,10 +44,10 @@ const CONFIG = {
     why: {
         title: "Why Choose Us",
         items: [
-            { icon: "shield", title: "White-Glove Service", desc: "A dedicated partner for your digital growth. Direct access, clear communication." },
-            { icon: "gauge", title: "Premium Performance", desc: "Built to load instantly. We optimize every line of code for speed and SEO ranking." },
-            { icon: "check", title: "Conversion Focused", desc: "Beauty with purpose. Every design element is engineered to turn visitors into clients." },
-            { icon: "monitor", title: "Mobile Excellence", desc: "A flawless experience on every device. Your brand looks expensive everywhere." }
+            { icon: "message", title: "Communication Excellence", desc: "A dedicated partner for your digital growth. Direct access, clear communication at every step.", image: "feat_communication_new.png" },
+            { icon: "gauge", title: "Premium Performance", desc: "Built to load instantly. We optimize every line of code for speed and SEO ranking.", image: "feat_web_speed.png" },
+            { icon: "check", title: "Conversion Focused", desc: "Beauty with purpose. Every design element is engineered to turn visitors into clients.", image: "feat_conversion.png" },
+            { icon: "monitor", title: "Mobile Excellence", desc: "A flawless experience on every device. Your brand looks expensive everywhere.", image: "feat_mobile.png" }
         ]
     }
 };
@@ -133,11 +133,16 @@ function renderSite() {
     if (servicesGrid) {
         servicesGrid.innerHTML = CONFIG.services.items.map(s => `
         <div class="service-card" onclick="window.location.href='${s.url}'" style="cursor: pointer;">
-            <div class="service-icon">${ICONS[s.icon] || ICONS.monitor}</div>
-            <h3>${s.title}</h3>
-            <p>${s.desc}</p>
-            <div class="service-details">${s.detail}</div>
-            <a href="${s.url}" class="text-gold uppercase" style="display:block; margin-top:1.5rem; font-size:0.8rem;">Learn More &rarr;</a>
+            <div class="service-image-header">
+                <img src="${s.image}" alt="${s.title}" loading="lazy">
+            </div>
+            <div class="service-content">
+                <div class="service-icon">${ICONS[s.icon] || ICONS.monitor}</div>
+                <h3>${s.title}</h3>
+                <p>${s.desc}</p>
+                <div class="service-details">${s.detail}</div>
+                <a href="${s.url}" class="text-gold uppercase" style="display:block; margin-top:1.5rem; font-size:0.8rem;">Learn More &rarr;</a>
+            </div>
         </div>
     `).join('');
     }
@@ -147,6 +152,7 @@ function renderSite() {
     if (reviewGrid) {
         reviewGrid.innerHTML = CONFIG.reviews.items.map(r => `
             <div class="review-card">
+                <div class="stars">★★★★★</div>
                 <p class="review-text">"${r.text}"</p>
                 <p class="review-author">— ${r.author}</p>
             </div>
@@ -159,9 +165,14 @@ function renderSite() {
         document.querySelector('#why-us h2').textContent = CONFIG.why.title;
         whyGrid.innerHTML = CONFIG.why.items.map(item => `
         <div class="why-card">
-            <div class="why-icon text-gold">${ICONS[item.icon] || ICONS.check}</div>
-            <h3 style="margin:1rem 0; font-size:1.1rem;">${item.title}</h3>
-            <p class="text-muted" style="font-size:0.95rem;">${item.desc}</p>
+            <div class="why-image-header">
+                <img src="${item.image}" alt="${item.title}" loading="lazy">
+            </div>
+            <div class="why-content">
+                <div class="why-icon text-gold">${ICONS[item.icon] || ICONS.check}</div>
+                <h3 style="margin:1rem 0; font-size:1.1rem;">${item.title}</h3>
+                <p class="text-muted" style="font-size:0.95rem;">${item.desc}</p>
+            </div>
         </div>
     `).join('');
     }
