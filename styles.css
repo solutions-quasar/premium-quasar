@@ -48,6 +48,8 @@
 html {
     scroll-behavior: smooth;
     font-size: 16px;
+    color-scheme: dark;
+    /* Force dark mode, prevent browser overrides */
     background: var(--bg-dark);
 }
 
