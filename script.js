@@ -5,7 +5,7 @@ const CONFIG = {
         tagline: "Ultra-Premium Digital Architecture",
         phone: "418-410-0856",
         phoneClean: "14184100856",
-        email: "benjamin@solutionsquasar.ca",
+        email: "info@solutionsquasar.ca",
         address: "New Brunswick, Canada", // From scrape or generic
         mapUrl: "https://www.google.com/maps/search/?api=1&query=Solutions+Quasar+Inc+New+Brunswick",
         mapEmbed: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d355000.0!2d-66.0!3d46.0!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zMTPCsDQ5JzUyLjYiTiA2NcKwMzUnMjMuNiJX!5e0!3m2!1sen!2sca!4v1630000000000!5m2!1sen!2sca" // Generic NB map center
