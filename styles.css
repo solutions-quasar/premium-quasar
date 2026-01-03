@@ -770,8 +770,9 @@ footer {
 
 /* Mobile Bottom Bar (Fixed) */
 #mobile-bar {
-    display: none;
-    /* Hidden by default on desktop */
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    align-items: center;
     position: fixed;
     bottom: 0;
     left: 0;
@@ -786,12 +787,9 @@ footer {
     /* Only safe area padding, letting grid/flex center the rest */
 }
 
-@media (max-width: 768px) {
+@media (min-width: 769px) {
     #mobile-bar {
-        display: grid !important;
-        grid-template-columns: 1fr 1fr 1fr;
-        align-items: center;
-        /* Vertically center items */
+        display: none;
     }
 }
 
