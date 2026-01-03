@@ -122,6 +122,35 @@ const CONFIG = {
             title: { en: "Ready to Work Together?", fr: "Prêt à Travailler Ensemble?" },
             desc: { en: "Let's discuss how we can elevate your digital presence with a premium solution built for your business.", fr: "Discutons de la façon dont nous pouvons élever votre présence numérique avec une solution premium conçue pour votre entreprise." }
         }
+    },
+    contact: {
+        title: { en: "Book a Strategy Call", fr: "Réserver un Appel Stratégique" },
+        subtitle: { en: "Tell us what you need. We'll reply with next steps.", fr: "Dites-nous ce dont vous avez besoin. Nous répondrons avec les prochaines étapes." },
+        form: {
+            name: { en: "Name", fr: "Nom" },
+            namePlaceholder: { en: "John Doe", fr: "Jean Dupont" },
+            company: { en: "Firm / Company", fr: "Cabinet / Entreprise" },
+            companyPlaceholder: { en: "Miller Law Group", fr: "Cabinet Juridique Miller" },
+            contact: { en: "Phone or Email", fr: "Téléphone ou Courriel" },
+            contactPlaceholder: { en: "john@example.com", fr: "jean@exemple.com" },
+            interest: { en: "Interest", fr: "Intérêt" },
+            interestOptions: {
+                website: { en: "New Website", fr: "Nouveau Site Web" },
+                app: { en: "Custom App", fr: "Application Personnalisée" },
+                ai: { en: "AI Integration", fr: "Intégration IA" },
+                consult: { en: "Consultation", fr: "Consultation" }
+            },
+            message: { en: "Message", fr: "Message" },
+            messagePlaceholder: { en: "How can we help?", fr: "Comment pouvons-nous vous aider?" },
+            submit: { en: "Send Request", fr: "Envoyer la Demande" }
+        },
+        info: {
+            title: { en: "Contact", fr: "Contact" },
+            phone: { en: "Phone:", fr: "Téléphone:" },
+            email: { en: "Email:", fr: "Courriel:" },
+            address: { en: "Address:", fr: "Adresse:" },
+            directions: { en: "Get Directions", fr: "Obtenir l'Itinéraire" }
+        }
     }
 };
 
@@ -403,6 +432,42 @@ function renderSite() {
         </div>
     `;
     document.querySelector('.menu-nav').innerHTML = menuContent;
+
+    // Render Contact Form
+    renderContactForm();
+}
+
+function renderContactForm() {
+    // Translate form labels
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        const keys = key.split('.');
+        let value = CONFIG;
+        for (const k of keys) {
+            value = value[k];
+        }
+        if (value) el.textContent = t(value);
+    });
+
+    // Translate placeholders
+    document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+        const key = el.getAttribute('data-i18n-placeholder');
+        const keys = key.split('.');
+        let value = CONFIG;
+        for (const k of keys) {
+            value = value[k];
+        }
+        if (value) el.placeholder = t(value);
+    });
+
+    // Update contact info
+    const infoPhone = document.querySelector('.info-phone');
+    const infoEmail = document.querySelector('.info-email');
+    const infoAddress = document.querySelector('.info-address');
+
+    if (infoPhone) infoPhone.innerHTML = `<strong>${t(CONFIG.contact.info.phone)}</strong> <a href="tel:${CONFIG.business.phoneClean}">${CONFIG.business.phone}</a>`;
+    if (infoEmail) infoEmail.innerHTML = `<strong>${t(CONFIG.contact.info.email)}</strong> <a href="mailto:${CONFIG.business.email}">${CONFIG.business.email}</a>`;
+    if (infoAddress) infoAddress.innerHTML = `<strong>${t(CONFIG.contact.info.address)}</strong> ${t(CONFIG.business.address)}`;
 }
 
 function setupInteractions() {

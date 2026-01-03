@@ -88,8 +88,10 @@
                                 <input type="text" name="name" class="form-input" required placeholder="John Doe">
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Firm / Company</label>
-                                <input type="text" name="company" class="form-input" placeholder="Miller Law Group">
+                                <label class="form-label" data-i18n="contact.form.company">Firm / Company</label>
+                                <input type="text" name="company" class="form-input"
+                                    data-i18n-placeholder="contact.form.companyPlaceholder"
+                                    placeholder="Miller Law Group">
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Phone or Email</label>
@@ -97,23 +99,25 @@
                                     placeholder="john@example.com">
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Interest</label>
+                                <label class="form-label" data-i18n="contact.form.interest">Interest</label>
                                 <select name="interest" class="form-select">
-                                    <option>New Website</option>
-                                    <option>Landing Page</option>
-                                    <option>SEO / Optimization</option>
-                                    <option>Other</option>
+                                    <option data-i18n="contact.form.interestOptions.website">New Website</option>
+                                    <option data-i18n="contact.form.interestOptions.app">Custom App</option>
+                                    <option data-i18n="contact.form.interestOptions.ai">AI Integration</option>
+                                    <option data-i18n="contact.form.interestOptions.consult">Consultation</option>
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Message</label>
+                                <label class="form-label" data-i18n="contact.form.message">Message</label>
                                 <textarea name="message" class="form-textarea"
+                                    data-i18n-placeholder="contact.form.messagePlaceholder"
                                     placeholder="How can we help?"></textarea>
                             </div>
                             <!-- Honeypot -->
                             <input type="text" name="_gotcha" style="display:none">
 
-                            <button type="submit" class="btn-primary" style="width:100%">Send Request</button>
+                            <button type="submit" class="btn-primary" style="width:100%"
+                                data-i18n="contact.form.submit">Send Request</button>
                         </form>
                     </div>
 
@@ -121,7 +125,7 @@
                     <div>
                         <div class="contact-card">
                             <div>
-                                <h3 style="margin-bottom:1.5rem">Contact</h3>
+                                <h3 style="margin-bottom:1.5rem" data-i18n="contact.info.title">Contact</h3>
                                 <p class="info-phone" style="margin-bottom:1rem"></p>
                                 <p class="info-email" style="margin-bottom:1rem"></p>
                                 <p class="info-address"></p>
