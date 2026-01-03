@@ -9,7 +9,7 @@
     <meta name="description"
         content="Ultra-premium, mobile-first websites for lawyers, accountants, and high-standard firms. Solutions Quasar delivers fast, secure, and converting digital assets.">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=5">
 
     <!-- Open Graph -->
     <meta property="og:title" content="Solutions Quasar | Premium Web Development">
@@ -18,7 +18,7 @@
     <meta property="og:image" content="hero-desktop.png">
     <meta property="og:type" content="website">
 
-    <script src="script.js" defer></script>
+    <script src="script.js?v=7" defer></script>
 </head>
 
 <body id="top">
@@ -48,8 +48,8 @@
         <!-- Services -->
         <section id="services">
             <div class="container">
-                <span class="uppercase text-gold">Expertise</span>
-                <h2>What We Do</h2>
+                <span class="uppercase text-gold" data-i18n="services.label">Expertise</span>
+                <h2 data-i18n="services.heading">What We Do</h2>
                 <div class="services-grid"></div>
             </div>
         </section>
@@ -57,8 +57,8 @@
         <!-- Reviews -->
         <section id="reviews">
             <div class="container">
-                <span class="uppercase text-gold">References</span>
-                <h2>Trusted By Professionals</h2>
+                <span class="uppercase text-gold" data-i18n="reviews.label">References</span>
+                <h2 data-i18n="reviews.heading">Trusted By Professionals</h2>
                 <div class="review-container"></div>
             </div>
         </section>
@@ -66,7 +66,8 @@
         <!-- Why Choose Us -->
         <section id="why-us">
             <div class="container">
-                <h2></h2>
+                <span class="uppercase text-gold" data-i18n="why.title">Why Choose Us</span>
+                <h2 data-i18n="why.heading">Premium Standards</h2>
                 <div class="why-grid"></div>
             </div>
         </section>
@@ -187,7 +188,7 @@
     <div id="menu-overlay">
         <button class="menu-close" id="btn-close-menu"></button>
         <nav class="menu-nav"></nav>
-        <div style="margin-top:3rem; text-align:center; opacity:0.6; font-size:0.9rem">
+        <div style="margin-top:3rem; text-align:left; opacity:0.6; font-size:0.9rem; padding-left:2rem;">
             <p>Solutions Quasar Inc.</p>
         </div>
     </div>

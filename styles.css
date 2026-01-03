@@ -204,35 +204,37 @@ button {
     border-bottom-color: var(--gold);
 }
 
-/* Language Toggle */
+/* Language Toggle (Desktop Physical Pill) */
 .lang-toggle {
     display: flex;
-    gap: 0.5rem;
     align-items: center;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-subtle);
+    border-radius: 20px;
+    padding: 2px;
     margin-left: 1.5rem;
 }
 
-.lang-btn {
-    padding: 0.5rem 1rem;
-    background: transparent;
-    border: 1px solid var(--border-subtle);
+.lang-toggle .lang-opt {
+    background: none;
+    border: none;
     color: var(--text-muted);
+    padding: 4px 10px;
+    font-size: 0.8rem;
+    font-weight: 500;
     cursor: pointer;
+    border-radius: 16px;
     transition: all 0.3s ease;
-    font-size: 0.85rem;
-    font-weight: 600;
-    border-radius: 4px;
 }
 
-.lang-btn:hover {
-    border-color: var(--gold);
+.lang-toggle .lang-opt:hover {
     color: var(--gold);
 }
 
-.lang-btn.active {
+.lang-toggle .lang-opt.active {
     background: var(--gold);
-    color: var(--bg-dark);
-    border-color: var(--gold);
+    color: #000;
+    font-weight: 700;
 }
 
 /* Mobile Top Bar Override */
@@ -768,6 +770,55 @@ footer {
     color: var(--gold);
 }
 
+.footer-bottom a:hover {
+    color: var(--gold);
+}
+
+/* Mobile Language Toggle (Compact) */
+/* Mobile Language Toggle (Compact Physical) */
+.lang-toggle-mobile {
+    display: flex;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-subtle);
+    border-radius: 20px;
+    padding: 2px;
+    margin-left: auto;
+    /* Push to right, away from logo */
+    margin-right: 1rem;
+    /* Space before call button */
+}
+
+.lang-toggle-mobile .lang-opt {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 16px;
+    transition: all 0.3s ease;
+}
+
+.lang-toggle-mobile .lang-opt.active {
+    background: var(--gold);
+    color: #000;
+    font-weight: 700;
+}
+
+.lang-toggle-mobile .sep {
+    display: none;
+}
+
+/* Ensure mobile top bar layout handles extra item */
+.mobile-top-bar {
+    justify-content: space-between;
+    /* Spread Logo - Lang - Call */
+    padding-right: 1.5rem;
+    /* Ensure call button space */
+}
+
 /* Mobile Bottom Bar (Fixed) */
 #mobile-bar {
     display: grid;
@@ -864,14 +915,42 @@ footer {
 .menu-nav {
     display: flex;
     flex-direction: column;
-    gap: 0.8rem;
-    text-align: center;
+    gap: 1.5rem;
+    /* Increased gap for better touch targets with icons */
+    text-align: left;
+    align-items: flex-start;
+    padding-left: 2rem;
+    /* Unified padding for alignment */
 }
 
 .menu-link {
     font-size: 1.5rem;
-    font-weight: 600;
+    font-weight: 500;
+    /* Slightly lighter for premium feel */
     color: var(--text-main);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    text-decoration: none;
+}
+
+.menu-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    /* Explicitly reserve space */
+}
+
+.menu-link svg {
+    width: 24px;
+    height: 24px;
+    stroke: var(--gold);
+    stroke-width: 1.5px;
+    display: block;
+    /* Force block to ensure visibility */
+    min-width: 24px;
+    /* Prevent collapse */
 }
 
 .menu-link:hover {
@@ -902,8 +981,28 @@ footer {
 .golden-separator {
     height: 1px;
     background: var(--gold);
-    margin: 1.2rem auto;
+    margin: 1rem 0 0 0;
+    /* Remove bottom margin */
     animation: goldenPulse 3s infinite ease-in-out;
+    align-self: flex-start;
+    /* Left align in flex column */
+    border: none;
+    /* Ensure no border conflicts */
+}
+
+.golden-separator:not(:first-of-type) {
+    display: none !important;
+}
+
+.mobile-menu-contact {
+    text-align: left;
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: flex-start;
+    /* Explicit left align for flex items */
 }
 
 .mobile-contact-info {
@@ -916,12 +1015,13 @@ footer {
 }
 
 .mobile-contact-info a {
-    color: var(--text-main);
     display: flex;
     align-items: center;
-    justify-content: center;
+    /* Force left align */
     gap: 0.5rem;
     text-decoration: none;
+    padding-left: 0;
+    /* Align with parent container (which has 2rem) */
 }
 
 .mobile-contact-info svg {
@@ -929,6 +1029,8 @@ footer {
     height: 20px;
     stroke: var(--gold);
     fill: none;
+    display: block;
+    /* Ensure visibility */
 }
 
 .menu-icon-wrapper {
@@ -1081,4 +1183,28 @@ footer {
 .hero-service-bg .container {
     position: relative;
     z-index: 2;
+}
+
+/* Force hide language toggle in mobile menu overlay */
+#menu-overlay .lang-toggle,
+#menu-overlay .lang-toggle-mobile,
+#menu-overlay .lang-opt,
+.menu-nav .lang-toggle,
+.menu-nav .lang-opt {
+    display: none !important;
+}
+
+/* Force hide all potential lines in menu overlay */
+#menu-overlay hr,
+#menu-overlay .sep,
+#menu-overlay .mobile-menu-contact,
+#menu-overlay .mobile-menu-contact::before,
+#menu-overlay .mobile-menu-contact::after,
+#menu-overlay .menu-nav::before,
+#menu-overlay .menu-nav::after,
+.menu-nav hr,
+.menu-nav .sep {
+    border: none !important;
+    background: none !important;
+    content: none !important;
 }

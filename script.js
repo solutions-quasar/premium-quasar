@@ -1,3 +1,27 @@
+// ICONS (Inline SVG Library)
+const ICONS = {
+    menu: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>`,
+    close: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`,
+    phone: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>`,
+    message: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>`,
+    arrow: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>`,
+    check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`,
+    // Service Icons
+    monitor: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>`,
+    layout: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>`,
+    search: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>`,
+    database: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s 9-1.34 9-3V5"></path></svg>`,
+    shield: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>`,
+    gauge: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 18 V12"></path><path d="M16.5 7.5l0 0"></path></svg>`,
+    zap: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>`,
+    smartphone: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>`,
+    home: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>`,
+    layers: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>`,
+    info: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`,
+    star: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`,
+    award: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="7"></circle><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"></polyline></svg>`
+};
+
 // LANGUAGE STATE MANAGEMENT
 let currentLang = localStorage.getItem('lang') || 'en';
 
@@ -7,7 +31,7 @@ function setLanguage(lang) {
     document.documentElement.lang = lang;
 
     // Update toggle button states immediately
-    document.querySelectorAll('.lang-btn').forEach(btn => {
+    document.querySelectorAll('.lang-opt').forEach(btn => {
         const btnLang = btn.textContent.toLowerCase();
         if (btnLang === lang) {
             btn.classList.add('active');
@@ -49,12 +73,12 @@ const CONFIG = {
         mapEmbed: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d355000.0!2d-66.0!3d46.0!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zMTPCsDQ5JzUyLjYiTiA2NcKwMzUnMjMuNiJX!5e0!3m2!1sen!2sca!4v1630000000000!5m2!1sen!2sca"
     },
     nav: [
-        { label: { en: "Home", fr: "Accueil" }, href: "#top" },
-        { label: { en: "Services", fr: "Services" }, href: "#services" },
-        { label: { en: "About", fr: "À Propos" }, href: "about.html" },
-        { label: { en: "Reviews", fr: "Témoignages" }, href: "#reviews" },
-        { label: { en: "Why Us", fr: "Pourquoi Nous" }, href: "#why-us" },
-        { label: { en: "Contact", fr: "Contact" }, href: "#contact" }
+        { label: { en: "Home", fr: "Accueil" }, href: "#top", icon: ICONS.home },
+        { label: { en: "Services", fr: "Services" }, href: "#services", icon: ICONS.layers },
+        { label: { en: "About", fr: "À Propos" }, href: "about.html", icon: ICONS.info },
+        { label: { en: "Reviews", fr: "Témoignages" }, href: "#reviews", icon: ICONS.star },
+        { label: { en: "Why Us", fr: "Pourquoi Nous" }, href: "#why-us", icon: ICONS.award },
+        { label: { en: "Contact", fr: "Contact" }, href: "#contact", icon: ICONS.message }
     ],
     hero: {
         h1: { en: "Premium websites and apps for high standard businesses.", fr: "Sites web et applications premium pour entreprises exigeantes." },
@@ -65,6 +89,8 @@ const CONFIG = {
         imageMobile: "hero-desktop.png"
     },
     services: {
+        label: { en: "Expertise", fr: "Expertise" },
+        heading: { en: "What We Do", fr: "Notre Savoir-Faire" },
         title: { en: "Our Expertise", fr: "Notre Expertise" },
         subtitle: { en: "We build systems, not just pages.", fr: "Nous construisons des systèmes, pas seulement des pages." },
         items: [
@@ -95,6 +121,8 @@ const CONFIG = {
         ]
     },
     reviews: {
+        label: { en: "References", fr: "Références" },
+        heading: { en: "Trusted By Professionals", fr: "La Confiance des Professionnels" },
         title: { en: "Client Words", fr: "Témoignages Clients" },
         items: [
             { text: { en: "Solutions Quasar transformed our online image. Professional, fast, and the design is simply stunning.", fr: "Solutions Quasar a transformé notre image en ligne. Professionnel, rapide, et le design est tout simplement magnifique." }, author: { en: "James M., Partner at Law Firm", fr: "James M., Associé dans un Cabinet d'Avocats" } },
@@ -103,11 +131,12 @@ const CONFIG = {
     },
     why: {
         title: { en: "Why Choose Us", fr: "Pourquoi Nous Choisir" },
+        heading: { en: "Premium Standards", fr: "Standards Premium" },
         items: [
             { icon: "message", title: { en: "Communication Excellence", fr: "Excellence en Communication" }, desc: { en: "A dedicated partner for your digital growth. Direct access, clear communication at every step.", fr: "Un partenaire dévoué pour votre croissance numérique. Accès direct, communication claire à chaque étape." }, image: "feat_communication_new.png" },
-            { icon: "gauge", title: { en: "Premium Performance", fr: "Performance Premium" }, desc: { en: "Built to load instantly. We optimize every line of code for speed and SEO ranking.", fr: "Conçu pour charger instantanément. Nous optimisons chaque ligne de code pour la vitesse et le référencement." }, image: "feat_web_speed.png" },
+            { icon: "zap", title: { en: "Premium Performance", fr: "Performance Premium" }, desc: { en: "Built to load instantly. We optimize every line of code for speed and SEO ranking.", fr: "Conçu pour charger instantanément. Nous optimisons chaque ligne de code pour la vitesse et le référencement." }, image: "feat_web_speed.png" },
             { icon: "check", title: { en: "Conversion Focused", fr: "Axé sur la Conversion" }, desc: { en: "Beauty with purpose. Every design element is engineered to turn visitors into clients.", fr: "Beauté avec objectif. Chaque élément de design est conçu pour transformer les visiteurs en clients." }, image: "feat_conversion.png" },
-            { icon: "monitor", title: { en: "Mobile Excellence", fr: "Excellence Mobile" }, desc: { en: "A flawless experience on every device. Your brand looks expensive everywhere.", fr: "Une expérience impeccable sur chaque appareil. Votre marque paraît luxueuse partout." }, image: "feat_mobile.png" }
+            { icon: "smartphone", title: { en: "Mobile Excellence", fr: "Excellence Mobile" }, desc: { en: "A flawless experience on every device. Your brand looks expensive everywhere.", fr: "Une expérience impeccable sur chaque appareil. Votre marque paraît luxueuse partout." }, image: "feat_mobile.png" }
         ]
     },
     about: {
@@ -174,25 +203,22 @@ const CONFIG = {
             address: { en: "Address:", fr: "Adresse:" },
             directions: { en: "Get Directions", fr: "Obtenir l'Itinéraire" }
         }
+    },
+    footer: {
+        desc: { en: "Ultra-Premium Digital Architecture for high-standard businesses. We build the systems that power your growth.", fr: "Architecture Numérique Ultra-Premium pour entreprises exigeantes. Nous construisons les systèmes qui propulsent votre croissance." },
+        company: { en: "Company", fr: "Entreprise" },
+        whyUs: { en: "Why Us", fr: "Pourquoi Nous" },
+        caseStudies: { en: "Case Studies", fr: "Études de Cas" },
+        careers: { en: "Careers", fr: "Carrières" },
+        privacy: { en: "Privacy Policy", fr: "Politique de Confidentialité" },
+        terms: { en: "Terms", fr: "Conditions" },
+        sitemap: { en: "Sitemap", fr: "Plan du Site" },
+        rights: { en: "All Rights Reserved.", fr: "Tous Droits Réservés." },
+        designedBy: { en: "Designed by Solutions Quasar Inc.", fr: "Conçu par Solutions Quasar Inc." }
     }
 };
 
-// ICONS (Inline SVG Library)
-const ICONS = {
-    menu: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>`,
-    close: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`,
-    phone: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>`,
-    message: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>`,
-    arrow: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>`,
-    check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`,
-    // Service Icons
-    monitor: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>`,
-    layout: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>`,
-    search: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>`,
-    database: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s 9-1.34 9-3V5"></path></svg>`,
-    shield: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>`,
-    gauge: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 18 V12"></path><path d="M16.5 7.5l0 0"></path></svg>`
-};
+// ICONS object moved to top of file
 
 document.addEventListener('DOMContentLoaded', () => {
     renderSite();
@@ -281,7 +307,10 @@ function renderSite() {
 
     // Render Mobile Menu Links
     const mobileNavHTML = CONFIG.nav.map(link =>
-        `<a href="${getLinkHref(link.href)}" class="menu-link" onclick="window.toggleMobileMenu()">${t(link.label)}</a>`
+        `<a href="${getLinkHref(link.href)}" class="menu-link" onclick="window.toggleMobileMenu()">
+            ${link.icon || ''}
+            ${t(link.label)}
+        </a>`
     ).join('');
 
     const menuNav = document.querySelector('.menu-nav');
@@ -290,10 +319,16 @@ function renderSite() {
 
         // Add minimal contact info to mobile menu
         menuNav.innerHTML += `
-            <div class="mobile-menu-contact" style="margin-top:2rem; border-top:1px solid rgba(255,255,255,0.1); padding-top:1rem;">
+            <div class="mobile-menu-contact mobile-contact-info" style="margin-top:0; padding-top:0; border:none;">
                 <p style="margin-bottom:0.5rem; color:var(--gold);">${t(CONFIG.business.tagline)}</p>
-                <a href="tel:${CONFIG.business.phoneClean}" style="display:block; color:white; text-decoration:none; margin-bottom:0.5rem;">${CONFIG.business.phone}</a>
-                <a href="mailto:${CONFIG.business.email}" style="display:block; color:white; text-decoration:none;">${CONFIG.business.email}</a>
+                <a href="tel:${CONFIG.business.phoneClean}">
+                    ${ICONS.phone}
+                    ${CONFIG.business.phone}
+                </a>
+                <a href="mailto:${CONFIG.business.email}">
+                    ${ICONS.message}
+                    ${CONFIG.business.email}
+                </a>
             </div>
         `;
     }
@@ -318,10 +353,28 @@ function renderSite() {
         const langToggle = document.createElement('div');
         langToggle.className = 'lang-toggle';
         langToggle.innerHTML = `
-            <button class="lang-btn ${currentLang === 'en' ? 'active' : ''}" onclick="setLanguage('en')">EN</button>
-            <button class="lang-btn ${currentLang === 'fr' ? 'active' : ''}" onclick="setLanguage('fr')">FR</button>
+            <button class="lang-opt ${currentLang === 'en' ? 'active' : ''}" onclick="setLanguage('en')">EN</button>
+            <button class="lang-opt ${currentLang === 'fr' ? 'active' : ''}" onclick="setLanguage('fr')">FR</button>
         `;
         contactActions.appendChild(langToggle);
+    }
+
+    // Add Language Toggle to Mobile Top Bar (Compact)
+    const mobileBar = document.querySelector('.mobile-top-bar');
+    if (mobileBar && !mobileBar.querySelector('.lang-toggle-mobile')) {
+        const langToggle = document.createElement('div');
+        langToggle.className = 'lang-toggle-mobile';
+        langToggle.innerHTML = `
+            <button class="lang-opt ${currentLang === 'en' ? 'active' : ''}" onclick="setLanguage('en')">EN</button>
+            <button class="lang-opt ${currentLang === 'fr' ? 'active' : ''}" onclick="setLanguage('fr')">FR</button>
+        `;
+        // Insert before call button (which is typically last)
+        const callBtn = mobileBar.querySelector('.mobile-call-btn');
+        if (callBtn) {
+            mobileBar.insertBefore(langToggle, callBtn);
+        } else {
+            mobileBar.appendChild(langToggle);
+        }
     }
 
     // Mobile Top Bar
@@ -398,10 +451,17 @@ function renderSite() {
     // Render Contact Info
     document.querySelector('.info-phone').innerHTML = `<strong>Phone:</strong> <a href="tel:${CONFIG.business.phoneClean}">${CONFIG.business.phone}</a>`;
     document.querySelector('.info-email').innerHTML = `<strong>Email:</strong> <a href="mailto:${CONFIG.business.email}">${CONFIG.business.email}</a>`;
-    document.querySelector('.info-address').innerHTML = `<strong>Address:</strong> ${CONFIG.business.address}`;
-    document.querySelector('.btn-directions').href = CONFIG.business.mapUrl;
-    document.querySelector('.map-frame').src = CONFIG.business.mapEmbed;
+    const infoAddress = document.querySelector('.info-address');
+    if (infoAddress) infoAddress.innerHTML = `<strong>Address:</strong> ${t(CONFIG.business.address)}`;
 
+    // Safety checks for elements that might have been removed
+    const btnDirections = document.querySelector('.btn-directions');
+    if (btnDirections) btnDirections.href = CONFIG.business.mapUrl;
+
+    const mapFrame = document.querySelector('.map-frame');
+    if (mapFrame) mapFrame.src = CONFIG.business.mapEmbed;
+
+    // Render Premium Footer
     // Render Premium Footer
     const footerHTML = `
         <div class="footer-grid">
@@ -410,7 +470,7 @@ function renderSite() {
                     <img src="logo.png?v=final" alt="${CONFIG.business.name}" style="height:32px; width:auto;">
                     <span class="brand-text" style="font-size:1.1rem;">SOLUTIONS QUASAR</span>
                 </div>
-                <p>Ultra-Premium Digital Architecture for high-standard businesses. We build the systems that power your growth.</p>
+                <p>${t(CONFIG.footer.desc)}</p>
                 <div style="margin-top:1.5rem; display:flex; gap:1rem;">
                    <!-- Social Placeholders -->
                    <a href="#" aria-label="LinkedIn">${ICONS.arrow}</a>
@@ -419,24 +479,24 @@ function renderSite() {
             </div>
             
             <div class="footer-col">
-                <h4>${currentLang === 'fr' ? 'Services' : 'Services'}</h4>
+                <h4>${t(CONFIG.nav[1].label)}</h4>
                 <ul>
                     ${CONFIG.services.items.map(s => `<li><a href="${s.url}">${t(s.title)}</a></li>`).join('')}
                 </ul>
             </div>
 
             <div class="footer-col">
-                <h4>Company</h4>
+                <h4>${t(CONFIG.footer.company)}</h4>
                 <ul>
-                    <li><a href="${getLinkHref('#why-us')}">Why Us</a></li>
-                    <li><a href="${getLinkHref('#reviews')}">Case Studies</a></li>
-                    <li><a href="#">Careers</a></li>
-                    <li><a href="#">Privacy Policy</a></li>
+                    <li><a href="${getLinkHref('#why-us')}">${t(CONFIG.footer.whyUs)}</a></li>
+                    <li><a href="${getLinkHref('#reviews')}">${t(CONFIG.footer.caseStudies)}</a></li>
+                    <li><a href="#">${t(CONFIG.footer.careers)}</a></li>
+                    <li><a href="#">${t(CONFIG.footer.privacy)}</a></li>
                 </ul>
             </div>
 
             <div class="footer-col">
-                <h4>Contact</h4>
+                <h4>${t(CONFIG.contact.info.title)}</h4>
                 <ul>
                     <li class="text-gold" style="font-size:1.1rem; font-weight:600;"><a href="tel:${CONFIG.business.phoneClean}">${CONFIG.business.phone}</a></li>
                     <li><a href="mailto:${CONFIG.business.email}">${CONFIG.business.email}</a></li>
@@ -446,9 +506,9 @@ function renderSite() {
         </div>
 
         <div class="footer-bottom">
-            <div class="footer-cred">&copy; ${new Date().getFullYear()} ${CONFIG.business.name} • All Rights Reserved.</div>
+            <div class="footer-cred">&copy; ${new Date().getFullYear()} ${CONFIG.business.name} • ${t(CONFIG.footer.rights)}</div>
             <div class="footer-links">
-                <a href="#">Terms</a> &nbsp;•&nbsp; <a href="#">Sitemap</a> &nbsp;•&nbsp; <span style="opacity:0.5">Designed by Solutions Quasar Inc.</span>
+                <a href="#">${t(CONFIG.footer.terms)}</a> &nbsp;•&nbsp; <a href="#">${t(CONFIG.footer.sitemap)}</a> &nbsp;•&nbsp; <span style="opacity:0.5">${t(CONFIG.footer.designedBy)}</span>
             </div>
         </div>
     `;
