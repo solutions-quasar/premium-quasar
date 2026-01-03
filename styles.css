@@ -804,6 +804,15 @@ footer {
     /* Changed from text-muted to gold */
     gap: 4px;
     transition: 0.3s;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.5rem;
+    text-decoration: none;
+}
+
+.bar-item:hover {
+    opacity: 0.7;
 }
 
 .bar-item.active {
@@ -811,13 +820,19 @@ footer {
 }
 
 .bar-item svg {
-    stroke: currentColor;
-    width: 24px;
-    height: 24px;
+    stroke: var(--gold) !important;
+    fill: none;
+    width: 28px !important;
+    height: 28px !important;
     margin-bottom: 0;
 }
 
-/* Mobile Menu Overlay */
+.bar-item div {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
 /* Mobile Menu Overlay */
 #menu-overlay {
     position: fixed;
@@ -925,13 +940,19 @@ footer {
     cursor: pointer;
 }
 
+
+.menu-icon-wrapper {
+    cursor: pointer;
+}
+
 .burger-icon {
     width: 24px;
     height: 16px;
     position: relative;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    /* !important needed to override .bar-item div */
 }
 
 .burger-icon span {

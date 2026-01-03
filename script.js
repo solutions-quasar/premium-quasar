@@ -279,6 +279,25 @@ function renderSite() {
     const navHTML = CONFIG.nav.map(link => `<a href="${getLinkHref(link.href)}">${t(link.label)}</a>`).join('');
     document.querySelector('.desktop-nav').innerHTML = navHTML;
 
+    // Render Mobile Menu Links
+    const mobileNavHTML = CONFIG.nav.map(link =>
+        `<a href="${getLinkHref(link.href)}" class="menu-link" onclick="window.toggleMobileMenu()">${t(link.label)}</a>`
+    ).join('');
+
+    const menuNav = document.querySelector('.menu-nav');
+    if (menuNav) {
+        menuNav.innerHTML = mobileNavHTML;
+
+        // Add minimal contact info to mobile menu
+        menuNav.innerHTML += `
+            <div class="mobile-menu-contact" style="margin-top:2rem; border-top:1px solid rgba(255,255,255,0.1); padding-top:1rem;">
+                <p style="margin-bottom:0.5rem; color:var(--gold);">${t(CONFIG.business.tagline)}</p>
+                <a href="tel:${CONFIG.business.phoneClean}" style="display:block; color:white; text-decoration:none; margin-bottom:0.5rem;">${CONFIG.business.phone}</a>
+                <a href="mailto:${CONFIG.business.email}" style="display:block; color:white; text-decoration:none;">${CONFIG.business.email}</a>
+            </div>
+        `;
+    }
+
     // Logo Injection
     const logoHTML = `
     <a href="index.html" style="text-decoration:none; display:flex; align-items:center; color:inherit; gap: 0.5rem;">
@@ -522,23 +541,13 @@ function setupInteractions() {
     const closeBtn = document.getElementById('btn-close-menu');
     const menuLinks = document.querySelectorAll('.menu-link');
 
-    // Inject Icons with CSS Burger (No Text)
-    menuBtn.innerHTML = `
-        <div class="menu-icon-wrapper">
-            <div class="burger-icon">
-                <span></span>
-                <span></span>
-                <span></span>
-            </div>
-        </div>
-    `;
+    // Icons are now hardcoded in HTML for reliability
 
-    // Bottom Bar Icons (Icon Only) - Fix Links
+    // Bottom Bar Links
     const btnCall = document.getElementById('btn-call');
-    btnCall.innerHTML = `<div>${ICONS.phone}</div>`;
-    btnCall.href = `tel:${CONFIG.business.phoneClean}`;
-
-    document.getElementById('btn-msg').innerHTML = `<div>${ICONS.message}</div>`;
+    if (btnCall) {
+        btnCall.href = `tel:${CONFIG.business.phoneClean}`;
+    }
 
     function updateMenuIcon(isOpen) {
         const wrapper = menuBtn.querySelector('.menu-icon-wrapper');
@@ -551,19 +560,28 @@ function setupInteractions() {
     }
 
     function toggleMenu() {
+        console.log('Toggle menu clicked'); // Debug
+        if (!overlay) {
+            console.error('Menu overlay not found');
+            return;
+        }
+
         const isOpen = overlay.classList.contains('open');
         if (isOpen) {
             overlay.classList.remove('open');
             document.body.style.overflow = '';
-            updateMenuIcon(false);
+            if (typeof updateMenuIcon === 'function') updateMenuIcon(false);
         } else {
             overlay.classList.add('open');
             document.body.style.overflow = 'hidden';
-            updateMenuIcon(true);
+            if (typeof updateMenuIcon === 'function') updateMenuIcon(true);
         }
     }
 
-    menuBtn.addEventListener('click', toggleMenu);
+    /*
+     * Mobile Menu Event Listener
+     * REMOVED: Using global window.toggleMobileMenu() via onclick in HTML for robustness
+     */
 
     // Use event delegation for dynamically added links
     document.querySelector('.menu-nav').addEventListener('click', (e) => {
@@ -634,3 +652,39 @@ function injectSchema() {
     script.text = JSON.stringify(schema);
     document.head.appendChild(script);
 }
+
+// Global Mobile Menu Toggle (Robust Fix)
+window.toggleMobileMenu = function () {
+    const overlay = document.getElementById('menu-overlay');
+    const menuBtn = document.getElementById('btn-menu');
+
+    if (!overlay || !menuBtn) {
+        console.error('Mobile menu elements not found');
+        return;
+    }
+
+    const wrapper = menuBtn.querySelector('.menu-icon-wrapper');
+    const isOpen = overlay.classList.contains('open');
+
+    if (isOpen) {
+        overlay.classList.remove('open');
+        document.body.style.overflow = '';
+        if (wrapper) wrapper.classList.remove('open');
+    } else {
+        overlay.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        if (wrapper) wrapper.classList.add('open');
+    }
+};
+
+// Global Scroll to Contact (Robust Fix)
+window.scrollToContact = function () {
+    const contactSection = document.getElementById('contact');
+    if (contactSection) {
+        contactSection.scrollIntoView({ behavior: 'smooth' });
+        setTimeout(() => {
+            const nameInput = document.querySelector('input[name="name"]');
+            if (nameInput) nameInput.focus();
+        }, 800);
+    }
+};
