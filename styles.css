@@ -360,8 +360,7 @@ button {
     position: relative;
     filter: drop-shadow(0 0 10px rgba(223, 165, 58, 0.3));
     text-decoration: none;
-    margin-top: 2rem;
-    /* Ensure spacing */
+    margin: 2rem auto 0;
 }
 
 /* Icon scaling to match font height exactly */
@@ -662,14 +661,76 @@ button {
 }
 
 /* Contact Info & Map */
+/* Contact Info & Map */
 .contact-card {
     background: var(--bg-card);
     border: 1px solid var(--border-subtle);
     padding: 2rem;
+    border-radius: var(--radius-lg);
     height: 100%;
+    /* No flex here, we use internal grid */
+}
+
+.contact-details-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+}
+
+.contact-detail-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    transition: all 0.3s ease;
+    text-decoration: none;
+    color: inherit;
+}
+
+.contact-detail-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+    /* Slightly brighter on hover */
+    border-color: var(--gold);
+    transform: translateY(-2px);
+}
+
+.detail-icon {
+    color: var(--gold);
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+}
+
+.detail-content {
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+}
+
+.detail-label {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    margin-bottom: 0.2rem;
+}
+
+.detail-value {
+    font-weight: 500;
+    color: var(--text-light);
+}
+
+.contact-detail-item.full-width {
+    grid-column: 1 / -1;
+}
+
+/* Desktop Grid Adjustments */
+@media (min-width: 992px) {
+    /* If we want 2 columns for phone/email */
+    /* .contact-details-grid { grid-template-columns: 1fr 1fr; } */
+    /* But standard single column cards are robust info blocks */
 }
 
 .map-container {

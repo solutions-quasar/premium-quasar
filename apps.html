@@ -45,14 +45,15 @@
         <section class="hero-service hero-service-bg"
             style="background-image: url('hero_bg_apps.png'); padding-top: var(--header-height); min-height: 80vh; display: flex; align-items: center; justify-content: center; text-align: center;">
             <div class="container">
-                <span class="uppercase text-gold">Digital Transformation</span>
-                <h1
-                    style="font-size: var(--h1); line-height: 1.1; margin-bottom: 1.5rem; background: linear-gradient(135deg, #fff 20%, var(--gold-light) 90%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                <span class="uppercase text-gold" data-i18n="apps.hero.tag">Digital Transformation</span>
+                <h1 style="font-size: var(--h1); line-height: 1.1; margin-bottom: 1.5rem; background: linear-gradient(135deg, #fff 20%, var(--gold-light) 90%); background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent;"
+                    data-i18n="apps.hero.h1">
                     Web Apps that power your operations.</h1>
-                <p style="font-size: var(--body-lg); color: var(--text-muted); max-width: 60ch; margin: 0 auto 2.5rem;">
+                <p style="font-size: var(--body-lg); color: var(--text-muted); max-width: 60ch; margin: 0 auto 2.5rem;"
+                    data-i18n="apps.hero.desc">
                     Stop running your business on spreadsheets. We build secure, custom dashboards and client portals
                     that scale.</p>
-                <a href="#contact" class="btn-primary">Build Your App</a>
+                <a href="#contact" class="btn-primary" data-i18n="apps.hero.cta">Build Your App</a>
             </div>
         </section>
 
@@ -63,16 +64,21 @@
                 <!-- Feature 1: Workflows -->
                 <div class="feature-row">
                     <div class="feature-text">
-                        <span class="uppercase text-gold" style="margin-bottom:0.5rem; display:block;">Operational
+                        <span class="uppercase text-gold" style="margin-bottom:0.5rem; display:block;"
+                            data-i18n="apps.features.workflow.tag">Operational
                             Efficiency</span>
-                        <h2 style="margin-bottom:1.5rem;">Custom Workflows</h2>
-                        <p class="text-muted" style="margin-bottom:1rem;">Generic software forces you to change how you
+                        <h2 style="margin-bottom:1.5rem;" data-i18n="apps.features.workflow.title">Custom Workflows</h2>
+                        <p class="text-muted" style="margin-bottom:1rem;" data-i18n="apps.features.workflow.desc">
+                            Generic software forces you to change how you
                             work. We build systems that wrap around your existing processes, automating bottlenecks and
                             eliminating manual data entry.</p>
                         <ul style="list-style:none; margin-top:1.5rem;">
-                            <li style="margin-bottom:0.5rem; color:var(--text-main);">✓ Role-Based Access Control</li>
-                            <li style="margin-bottom:0.5rem; color:var(--text-main);">✓ Automated Approval Chains</li>
-                            <li style="color:var(--text-main);">✓ API Integrations (CRM, ERP)</li>
+                            <li style="margin-bottom:0.5rem; color:var(--text-main);"><span
+                                    data-i18n="apps.features.workflow.list.0">✓ Role-Based Access Control</span></li>
+                            <li style="margin-bottom:0.5rem; color:var(--text-main);"><span
+                                    data-i18n="apps.features.workflow.list.1">✓ Automated Approval Chains</span></li>
+                            <li style="color:var(--text-main);"><span data-i18n="apps.features.workflow.list.2">✓ API
+                                    Integrations (CRM, ERP)</span></li>
                         </ul>
                     </div>
                     <div class="feature-image-wrapper">
@@ -83,16 +89,22 @@
                 <!-- Feature 2: Portals -->
                 <div class="feature-row">
                     <div class="feature-text">
-                        <span class="uppercase text-gold" style="margin-bottom:0.5rem; display:block;">Client
+                        <span class="uppercase text-gold" style="margin-bottom:0.5rem; display:block;"
+                            data-i18n="apps.features.portal.tag">Client
                             Experience</span>
-                        <h2 style="margin-bottom:1.5rem;">Secure Client Portals</h2>
-                        <p class="text-muted" style="margin-bottom:1rem;">Elevate your client service with a branded,
+                        <h2 style="margin-bottom:1.5rem;" data-i18n="apps.features.portal.title">Secure Client Portals
+                        </h2>
+                        <p class="text-muted" style="margin-bottom:1rem;" data-i18n="apps.features.portal.desc">Elevate
+                            your client service with a branded,
                             secure login area. Allow clients to upload documents, view project status, and communicate
                             securely without leaving your site.</p>
                         <ul style="list-style:none; margin-top:1.5rem;">
-                            <li style="margin-bottom:0.5rem; color:var(--text-main);">✓ Encrypted Document Sharing</li>
-                            <li style="margin-bottom:0.5rem; color:var(--text-main);">✓ Real-Time Status Updates</li>
-                            <li style="color:var(--text-main);">✓ White-Label Interface</li>
+                            <li style="margin-bottom:0.5rem; color:var(--text-main);"><span
+                                    data-i18n="apps.features.portal.list.0">✓ Encrypted Document Sharing</span></li>
+                            <li style="margin-bottom:0.5rem; color:var(--text-main);"><span
+                                    data-i18n="apps.features.portal.list.1">✓ Real-Time Status Updates</span></li>
+                            <li style="color:var(--text-main);"><span data-i18n="apps.features.portal.list.2">✓
+                                    White-Label Interface</span></li>
                         </ul>
                     </div>
                     <div class="feature-image-wrapper">
@@ -103,16 +115,21 @@
                 <!-- Feature 3: Dashboards -->
                 <div class="feature-row">
                     <div class="feature-text">
-                        <span class="uppercase text-gold" style="margin-bottom:0.5rem; display:block;">Business
+                        <span class="uppercase text-gold" style="margin-bottom:0.5rem; display:block;"
+                            data-i18n="apps.features.dash.tag">Business
                             Intelligence</span>
-                        <h2 style="margin-bottom:1.5rem;">Data Dashboards</h2>
-                        <p class="text-muted" style="margin-bottom:1rem;">Stop guessing. We visualize your firm's data
+                        <h2 style="margin-bottom:1.5rem;" data-i18n="apps.features.dash.title">Data Dashboards</h2>
+                        <p class="text-muted" style="margin-bottom:1rem;" data-i18n="apps.features.dash.desc">Stop
+                            guessing. We visualize your firm's data
                             in real-time, giving partners and stakeholders the insights they need to make rapid,
                             informed decisions.</p>
                         <ul style="list-style:none; margin-top:1.5rem;">
-                            <li style="margin-bottom:0.5rem; color:var(--text-main);">✓ Live KPI Tracking</li>
-                            <li style="margin-bottom:0.5rem; color:var(--text-main);">✓ Interactive Charts & Graphs</li>
-                            <li style="color:var(--text-main);">✓ Exportable Reports</li>
+                            <li style="margin-bottom:0.5rem; color:var(--text-main);"><span
+                                    data-i18n="apps.features.dash.list.0">✓ Live KPI Tracking</span></li>
+                            <li style="margin-bottom:0.5rem; color:var(--text-main);"><span
+                                    data-i18n="apps.features.dash.list.1">✓ Interactive Charts & Graphs</span></li>
+                            <li style="color:var(--text-main);"><span data-i18n="apps.features.dash.list.2">✓ Exportable
+                                    Reports</span></li>
                         </ul>
                     </div>
                     <div class="feature-image-wrapper">
@@ -123,16 +140,22 @@
                 <!-- Feature 4: Security -->
                 <div class="feature-row">
                     <div class="feature-text">
-                        <span class="uppercase text-gold" style="margin-bottom:0.5rem; display:block;">Compliance &
+                        <span class="uppercase text-gold" style="margin-bottom:0.5rem; display:block;"
+                            data-i18n="apps.features.security.tag">Compliance &
                             Safety</span>
-                        <h2 style="margin-bottom:1.5rem;">Bank-Grade Security</h2>
-                        <p class="text-muted" style="margin-bottom:1rem;">We treat your data like currency. Every
+                        <h2 style="margin-bottom:1.5rem;" data-i18n="apps.features.security.title">Bank-Grade Security
+                        </h2>
+                        <p class="text-muted" style="margin-bottom:1rem;" data-i18n="apps.features.security.desc">We
+                            treat your data like currency. Every
                             application is built with defense-in-depth architecture, ensuring you meet industry
                             compliance standards (GDPR, SOC2, HIPAA).</p>
                         <ul style="list-style:none; margin-top:1.5rem;">
-                            <li style="margin-bottom:0.5rem; color:var(--text-main);">✓ End-to-End Encryption</li>
-                            <li style="margin-bottom:0.5rem; color:var(--text-main);">✓ Regular Penetration Testing</li>
-                            <li style="color:var(--text-main);">✓ 2-Factor Authentication</li>
+                            <li style="margin-bottom:0.5rem; color:var(--text-main);"><span
+                                    data-i18n="apps.features.security.list.0">✓ End-to-End Encryption</span></li>
+                            <li style="margin-bottom:0.5rem; color:var(--text-main);"><span
+                                    data-i18n="apps.features.security.list.1">✓ Regular Penetration Testing</span></li>
+                            <li style="color:var(--text-main);"><span data-i18n="apps.features.security.list.2">✓
+                                    2-Factor Authentication</span></li>
                         </ul>
                     </div>
                     <div class="feature-image-wrapper">
@@ -149,43 +172,48 @@
                 <div class="contact-layout">
                     <!-- Form -->
                     <div class="form-wrapper">
-                        <h2>Book a Strategy Call</h2>
-                        <p class="text-muted" style="margin-bottom:2rem;">Tell us what you need. We’ll reply with next
+                        <h2 data-i18n="contact.title">Book a Strategy Call</h2>
+                        <p class="text-muted" style="margin-bottom:2rem;" data-i18n="contact.subtitle">Tell us what you
+                            need. We’ll reply with next
                             steps.</p>
 
                         <form action="https://formspree.io/f/xbjnqyj" method="POST">
                             <!-- Placeholder Formspree, should be updated by user or left as generic demo -->
                             <div class="form-group">
-                                <label class="form-label">Name</label>
-                                <input type="text" name="name" class="form-input" required placeholder="John Doe">
+                                <label class="form-label" data-i18n="contact.form.name">Name</label>
+                                <input type="text" name="name" class="form-input" required placeholder="John Doe"
+                                    data-i18n-placeholder="contact.form.namePlaceholder">
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Firm / Company</label>
-                                <input type="text" name="company" class="form-input" placeholder="Miller Law Group">
+                                <label class="form-label" data-i18n="contact.form.company">Firm / Company</label>
+                                <input type="text" name="company" class="form-input" placeholder="Miller Law Group"
+                                    data-i18n-placeholder="contact.form.companyPlaceholder">
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Phone or Email</label>
+                                <label class="form-label" data-i18n="contact.form.contact">Phone or Email</label>
                                 <input type="text" name="contact_method" class="form-input" required
-                                    placeholder="john@example.com">
+                                    placeholder="john@example.com"
+                                    data-i18n-placeholder="contact.form.contactPlaceholder">
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Interest</label>
+                                <label class="form-label" data-i18n="contact.form.interest">Interest</label>
                                 <select name="interest" class="form-select">
-                                    <option>New Website</option>
-                                    <option>Landing Page</option>
-                                    <option>SEO / Optimization</option>
-                                    <option>Other</option>
+                                    <option data-i18n="contact.form.interestOptions.website">New Website</option>
+                                    <option data-i18n="contact.form.interestOptions.app">Landing Page</option>
+                                    <option data-i18n="contact.form.interestOptions.ai">SEO / Optimization</option>
+                                    <option data-i18n="contact.form.interestOptions.consult">Other</option>
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Message</label>
-                                <textarea name="message" class="form-textarea"
-                                    placeholder="How can we help?"></textarea>
+                                <label class="form-label" data-i18n="contact.form.message">Message</label>
+                                <textarea name="message" class="form-textarea" placeholder="How can we help?"
+                                    data-i18n-placeholder="contact.form.messagePlaceholder"></textarea>
                             </div>
                             <!-- Honeypot -->
                             <input type="text" name="_gotcha" style="display:none">
 
-                            <button type="submit" class="btn-primary" style="width:100%">Send Request</button>
+                            <button type="submit" class="btn-primary" style="width:100%"
+                                data-i18n="contact.form.submit">Send Request</button>
                         </form>
                     </div>
 
@@ -199,13 +227,6 @@
                                 <p class="info-address"></p>
                             </div>
 
-                            <div class="map-container">
-                                <iframe class="map-frame" allowfullscreen="" loading="lazy"></iframe>
-                            </div>
-
-                            <a href="#" class="btn-directions btn-primary"
-                                style="margin-top:1.5rem; text-align:center; display:block; font-size:0.9rem"
-                                target="_blank">Get Directions</a>
                         </div>
                     </div>
 

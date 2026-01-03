@@ -69,9 +69,8 @@ const CONFIG = {
                 mapUrl: "https://www.google.com/maps/search/?api=1&query=1611+Route+950+Trois-Ruisseaux+NB+E4N+2Y7"
             }
         ],
-        mapUrl: "https://www.google.com/maps/search/?api=1&query=131+Rue+Montambault+Deschambault+QC",
-        mapEmbed: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d355000.0!2d-66.0!3d46.0!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zMTPCsDQ5JzUyLjYiTiA2NcKwMzUnMjMuNiJX!5e0!3m2!1sen!2sca!4v1630000000000!5m2!1sen!2sca"
     },
+
     nav: [
         { label: { en: "Home", fr: "Accueil" }, href: "#top", icon: ICONS.home },
         { label: { en: "Services", fr: "Services" }, href: "#services", icon: ICONS.layers },
@@ -165,9 +164,9 @@ const CONFIG = {
             subtitle: { en: "Our Team", fr: "Notre Équipe" },
             title: { en: "The People Behind the Work", fr: "Les Personnes Derrière le Travail" },
             members: [
-                { name: "Benjamin Dempsey", role: { en: "Founder & Lead Developer", fr: "Fondateur & Développeur Principal" }, bio: { en: "Full-stack developer with a passion for creating premium digital experiences that drive real business results.", fr: "Développeur full-stack passionné par la création d'expériences numériques premium qui génèrent de vrais résultats commerciaux." } },
-                { name: "Sarah Mitchell", role: { en: "UX/UI Designer", fr: "Designer UX/UI" }, bio: { en: "Crafting intuitive interfaces that blend aesthetic excellence with conversion-focused design principles.", fr: "Création d'interfaces intuitives qui allient excellence esthétique et principes de design axés sur la conversion." } },
-                { name: "Marcus Chen", role: { en: "Performance Engineer", fr: "Ingénieur Performance" }, bio: { en: "Optimizing every millisecond to deliver lightning-fast experiences that rank high and convert better.", fr: "Optimisation de chaque milliseconde pour offrir des expériences ultra-rapides qui se classent haut et convertissent mieux." } }
+                { name: "Benjamin Sultan", role: { en: "Developer", fr: "Développeur" }, bio: { en: "Full-stack developer dedicated to building robust and scalable digital solutions.", fr: "Développeur full-stack dédié à la construction de solutions numériques robustes et évolutives." } },
+                { name: "Tim Rieg", role: { en: "Developer", fr: "Développeur" }, bio: { en: "Specializing in frontend performance and creating seamless user experiences.", fr: "Spécialisé dans la performance frontend et la création d'expériences utilisateur fluides." } },
+                { name: "Mathieu Rieg", role: { en: "Admin Director", fr: "Directeur Administratif" }, bio: { en: "Overseeing strategic operations and ensuring the highest standards of service delivery.", fr: "Supervision des opérations stratégiques et garantie des plus hauts standards de prestation de services." } }
             ]
         },
         cta: {
@@ -177,7 +176,7 @@ const CONFIG = {
     },
     contact: {
         title: { en: "Book a Strategy Call", fr: "Réserver un Appel Stratégique" },
-        subtitle: { en: "Tell us what you need. We'll reply with next steps.", fr: "Dites-nous ce dont vous avez besoin. Nous répondrons avec les prochaines étapes." },
+        subtitle: { en: "Tell us what you need. We'll reply with next steps.", fr: "Dites-nous ce dont vous avez besoin. Nous vous répondrons avec les prochaines étapes." },
         form: {
             name: { en: "Name", fr: "Nom" },
             namePlaceholder: { en: "John Doe", fr: "Jean Dupont" },
@@ -202,6 +201,156 @@ const CONFIG = {
             email: { en: "Email:", fr: "Courriel:" },
             address: { en: "Address:", fr: "Adresse:" },
             directions: { en: "Get Directions", fr: "Obtenir l'Itinéraire" }
+        }
+    },
+    websites: {
+        hero: {
+            tag: { en: "Premium Engineering", fr: "Ingénierie Premium" },
+            h1: { en: "Websites that define your authority.", fr: "Des sites web qui définissent votre autorité." },
+            desc: { en: "Stop losing clients to competitors with better sites. We build custom, ultra-fast digital assets that perform.", fr: "Cessez de perdre des clients face à des concurrents mieux équipés. Nous créons des actifs numériques sur mesure, ultra-rapides et performants." },
+            cta: { en: "Start Your Build", fr: "Lancez Votre Projet" }
+        },
+        features: {
+            arch: {
+                tag: { en: "Precision Engineering", fr: "Ingénierie de Précision" },
+                title: { en: "Custom Architecture", fr: "Architecture Sur Mesure" },
+                desc: { en: "We don't rely on bloated templates or drag-and-drop builders. Every line of code is written with purpose, ensuring your site is lean, secure, and built to scale.", fr: "Nous ne comptons pas sur des modèles lourds ou des constructeurs 'glisser-déposer'. Chaque ligne de code est écrite avec un but, assurant un site léger, sécurisé et évolutif." },
+                list: [
+                    { en: "Semantic HTML5 & Custom CSS3", fr: "HTML5 Sémantique & CSS3 Personnalisé" },
+                    { en: "Component-Based Structure", fr: "Structure Basée sur les Composants" },
+                    { en: "Zero Dependency Bloat", fr: "Zéro Surcharge de Dépendances" }
+                ]
+            },
+            speed: {
+                tag: { en: "Performance First", fr: "Performance Avant Tout" },
+                title: { en: "Instant Load Times", fr: "Temps de Chargement Instantanés" },
+                desc: { en: "Speed isn't a luxury; it's a requirement. We optimize critical rendering paths and asset delivery to ensure sub-second loads that keep high-value clients engaged.", fr: "La vitesse n'est pas un luxe, c'est une exigence. Nous optimisons le rendu et la livraison des actifs pour assurer des chargements en moins d'une seconde." },
+                list: [
+                    { en: "95+ PageSpeed Scores", fr: "Scores PageSpeed 95+" },
+                    { en: "Next-Gen Image Formats", fr: "Formats d'Image Nouvelle Génération" },
+                    { en: "Global CDN Deployment", fr: "Déploiement CDN Global" }
+                ]
+            },
+            mobile: {
+                tag: { en: "Responsive Design", fr: "Design Adaptatif" },
+                title: { en: "Mobile-First & Fluid", fr: "Mobile-First & Fluide" },
+                desc: { en: "Your clients are on their phones. We build experiences that feel like native apps, with touch-optimized interfaces and fluid layouts that look perfect on any device.", fr: "Vos clients sont sur leurs téléphones. Nous créons des expériences qui ressemblent à des applis natives, avec des interfaces tactiles optimisées." },
+                list: [
+                    { en: "Adaptive Layouts", fr: "Mises en Page Adaptatives" },
+                    { en: "Touch-Friendly Targets", fr: "Zones Tactiles Optimisées" },
+                    { en: "Cross-Device Consistency", fr: "Cohérence Multi-Appareils" }
+                ]
+            },
+            seo: {
+                tag: { en: "Search Visibility", fr: "Visibilité de Recherche" },
+                title: { en: "SEO Baked In", fr: "SEO Intégré" },
+                desc: { en: "Ranking starts with code. We implement structured data, semantic hierarchy, and technical SEO best practices from day one, giving you a head start in search results.", fr: "Le classement commence par le code. Nous implémentons les données structurées et les meilleures pratiques SEO dès le premier jour." },
+                list: [
+                    { en: "Schema.org Markup", fr: "Balisage Schema.org" },
+                    { en: "Meta Data Optimization", fr: "Optimisation des Métadonnées" },
+                    { en: "Accessibility (WCAG) Compliant", fr: "Conformité Accessibilité (WCAG)" }
+                ]
+            }
+        }
+    },
+    apps: {
+        hero: {
+            tag: { en: "Digital Transformation", fr: "Transformation Numérique" },
+            h1: { en: "Web Apps that power your operations.", fr: "Des applis web qui propulsent vos opérations." },
+            desc: { en: "Stop running your business on spreadsheets. We build secure, custom dashboards and client portals that scale.", fr: "Arrêtez de gérer votre entreprise sur des tableurs. Nous construisons des tableaux de bord et portails clients sécurisés qui évoluent." },
+            cta: { en: "Build Your App", fr: "Créez Votre Application" }
+        },
+        features: {
+            workflow: {
+                tag: { en: "Operational Efficiency", fr: "Efficience Opérationnelle" },
+                title: { en: "Custom Workflows", fr: "Flux de Travail Personnalisés" },
+                desc: { en: "Generic software forces you to change how you work. We build systems that wrap around your existing processes, automating bottlenecks and eliminating manual data entry.", fr: "Les logiciels génériques vous forcent à changer votre façon de travailler. Nous construisons des systèmes qui s'adaptent à vos processus existants." },
+                list: [
+                    { en: "Role-Based Access Control", fr: "Contrôle d'Accès par Rôle" },
+                    { en: "Automated Approval Chains", fr: "chaînes d'Approbation Automatisées" },
+                    { en: "API Integrations (CRM, ERP)", fr: "Intégrations API (CRM, ERP)" }
+                ]
+            },
+            portal: {
+                tag: { en: "Client Experience", fr: "Expérience Client" },
+                title: { en: "Secure Client Portals", fr: "Portails Clients Sécurisés" },
+                desc: { en: "Elevate your client service with a branded, secure login area. Allow clients to upload documents, view project status, and communicate securely without leaving your site.", fr: "Élevez votre service client avec un espace de connexion sécurisé à votre marque. Permettez le partage de documents et le suivi de projet." },
+                list: [
+                    { en: "Encrypted Document Sharing", fr: "Partage de Documents Chiffré" },
+                    { en: "Real-Time Status Updates", fr: "Mises à Jour en Temps Réel" },
+                    { en: "White-Label Interface", fr: "Interface Marque Blanche" }
+                ]
+            },
+            dash: {
+                tag: { en: "Business Intelligence", fr: "Intelligence d'Affaires" },
+                title: { en: "Data Dashboards", fr: "Tableaux de Bord de Données" },
+                desc: { en: "Stop guessing. We visualize your firm's data in real-time, giving partners and stakeholders the insights they need to make rapid, informed decisions.", fr: "Arrêtez de deviner. Nous visualisons les données de votre entreprise en temps réel pour des décisions rapides et éclairées." },
+                list: [
+                    { en: "Live KPI Tracking", fr: "Suivi KPI en Direct" },
+                    { en: "Interactive Charts & Graphs", fr: "Graphiques Interactifs" },
+                    { en: "Exportable Reports", fr: "Rapports Exportables" }
+                ]
+            },
+            security: {
+                tag: { en: "Compliance & Safety", fr: "Conformité & Sécurité" },
+                title: { en: "Bank-Grade Security", fr: "Sécurité de Niveau Bancaire" },
+                desc: { en: "We treat your data like currency. Every application is built with defense-in-depth architecture, ensuring you meet industry compliance standards (GDPR, SOC2, HIPAA).", fr: "Nous traitons vos données comme une monnaie. Chaque application est construite avec une architecture de défense en profondeur (RGPD, SOC2, HIPAA)." },
+                list: [
+                    { en: "End-to-End Encryption", fr: "Chiffrement de Bout en Bout" },
+                    { en: "Regular Penetration Testing", fr: "Tests d'Intrusion Réguliers" },
+                    { en: "2-Factor Authentication", fr: "Authentification à 2 Facteurs" }
+                ]
+            }
+        }
+    },
+    ai: {
+        hero: {
+            tag: { en: "Artificial Intelligence", fr: "Intelligence Artificielle" },
+            h1: { en: "Future-proof your firm with practical AI.", fr: "Pérennisez votre firme avec une IA pratique." },
+            desc: { en: "Automate the mundane. Predict the future. Multiply your output without increasing headcount.", fr: "Automatisez le banal. Prédis l'avenir. Multipliez votre production sans augmenter les effectifs." },
+            cta: { en: "Integrate AI Now", fr: "Intégrez l'IA Maintenant" }
+        },
+        features: {
+            concierge: {
+                tag: { en: "Smart Automation", fr: "Automatisation Intelligente" },
+                title: { en: "24/7 Smart Concierge", fr: "Concierge Intelligent 24/7" },
+                desc: { en: "Your firm never sleeps. Our AI agents handle inquiries, schedule appointments, and qualify leads instantly, ensuring no opportunity is missed even after hours.", fr: "Votre firme ne dort jamais. Nos agents IA gèrent les demandes et qualifient les prospects instantanément, même après les heures d'ouverture." },
+                list: [
+                    { en: "Natural Language Processing", fr: "Traitement du Langage Naturel" },
+                    { en: "Multi-Channel Integration", fr: "Intégration Multi-Canaux" },
+                    { en: "Instant Escalation to Humans", fr: "Escalade Instantanée aux Humains" }
+                ]
+            },
+            docs: {
+                tag: { en: "Data Extraction", fr: "Extraction de Données" },
+                title: { en: "Document Intelligence", fr: "Intelligence Documentaire" },
+                desc: { en: "Stop manual data entry. We deploy models that read contracts, invoices, and legal documents, extracting key terms and populating your databases automatically.", fr: "Arrêtez la saisie manuelle. Nos modèles lisent contrats et factures, extrayant les termes clés vers vos bases de données automatiquement." },
+                list: [
+                    { en: "OCR & Context Understanding", fr: "OCR & Compréhension du Contexte" },
+                    { en: "99.9% Accuracy Rate", fr: "Taux de Précision de 99.9%" },
+                    { en: "Batch Processing", fr: "Traitement par Lots" }
+                ]
+            },
+            score: {
+                tag: { en: "Predictive Analytics", fr: "Analyse Prédictive" },
+                title: { en: "Predictive Lead Scoring", fr: "Scoring Prédictif de Prospects" },
+                desc: { en: "Not all leads are equal. Our algorithms analyze user behavior, firmographics, and engagement to identify high-value prospects before they even reach out.", fr: "Nos algorithmes analysent le comportement et l'engagement pour identifier les prospects à haute valeur avant même qu'ils ne vous contactent." },
+                list: [
+                    { en: "Propensity to Buy Models", fr: "Modèles de Propension d'Achat" },
+                    { en: "Real-Time Scoring Updates", fr: "Mises à Jour de Scoring en Temps Réel" },
+                    { en: "CRM Sync", fr: "Synchro CRM" }
+                ]
+            },
+            content: {
+                tag: { en: "Generative Creation", fr: "Création Générative" },
+                title: { en: "Automated Content", fr: "Contenu Automatisé" },
+                desc: { en: "Scale your authority. We build pipelines that generate draft briefs, client updates, and newsletters in your specific brand voice, ready for final review.", fr: "Échelle de votre autorité. Nous générons des ébauches, mises à jour et newsletters dans votre voix de marque, prêtes pour révision." },
+                list: [
+                    { en: "Brand Voice Calibration", fr: "Calibrage de Voix de Marque" },
+                    { en: "SEO-Optimized Drafting", fr: "Rédaction Optimisée SEO" },
+                    { en: "Multi-Format Output (Email, Blog, PDF)", fr: "Sortie Multi-Format (Email, Blog, PDF)" }
+                ]
+            }
         }
     },
     footer: {
@@ -271,8 +420,10 @@ function renderAboutPage() {
     if (teamTitle) teamTitle.textContent = t(CONFIG.about.team.title);
 
     CONFIG.about.team.members.forEach((member, i) => {
+        const name = document.querySelector(`[data-i18n="about.team.members.${i}.name"]`);
         const role = document.querySelector(`[data-i18n="about.team.members.${i}.role"]`);
         const bio = document.querySelector(`[data-i18n="about.team.members.${i}.bio"]`);
+        if (name) name.textContent = member.name;
         if (role) role.textContent = t(member.role);
         if (bio) bio.textContent = t(member.bio);
     });
@@ -292,6 +443,8 @@ function renderSite() {
     const isSubPage = window.location.pathname.includes('websites.html') ||
         window.location.pathname.includes('apps.html') ||
         window.location.pathname.includes('ai.html') ||
+        window.location.pathname.includes('privacy.html') ||
+        window.location.pathname.includes('404.html') ||
         window.location.pathname.includes('about.html');
 
     const getLinkHref = (href) => {
@@ -302,8 +455,11 @@ function renderSite() {
     };
 
     // Render Header Links
-    const navHTML = CONFIG.nav.map(link => `<a href="${getLinkHref(link.href)}">${t(link.label)}</a>`).join('');
-    document.querySelector('.desktop-nav').innerHTML = navHTML;
+    const desktopNav = document.querySelector('.desktop-nav');
+    if (desktopNav) {
+        const navHTML = CONFIG.nav.map(link => `<a href="${getLinkHref(link.href)}">${t(link.label)}</a>`).join('');
+        desktopNav.innerHTML = navHTML;
+    }
 
     // Render Mobile Menu Links
     const mobileNavHTML = CONFIG.nav.map(link =>
@@ -339,13 +495,21 @@ function renderSite() {
         <img src="logo.png?v=final" alt="${CONFIG.business.name}" class="nav-logo">
         <span class="brand-text">SOLUTIONS QUASAR</span>
     </a>`;
-    document.querySelector('.brand').innerHTML = logoHTML;
-    document.querySelector('.mobile-logo').innerHTML = logoHTML;
+    const brandContainer = document.querySelector('.brand');
+    if (brandContainer) brandContainer.innerHTML = logoHTML;
+    const mobileLogo = document.querySelector('.mobile-logo');
+    if (mobileLogo) mobileLogo.innerHTML = logoHTML;
 
-    document.querySelector('.contact-phone').textContent = CONFIG.business.phone;
-    document.querySelector('.contact-phone').href = `tel:${CONFIG.business.phoneClean}`;
-    document.querySelector('.contact-email').textContent = currentLang === 'fr' ? 'Nous Écrire' : 'Email Us';
-    document.querySelector('.contact-email').href = `mailto:${CONFIG.business.email}`;
+    const contactPhone = document.querySelector('.contact-phone');
+    if (contactPhone) {
+        contactPhone.textContent = CONFIG.business.phone;
+        contactPhone.href = `tel:${CONFIG.business.phoneClean}`;
+    }
+    const contactEmail = document.querySelector('.contact-email');
+    if (contactEmail) {
+        contactEmail.textContent = currentLang === 'fr' ? 'Nous Écrire' : 'Email Us';
+        contactEmail.href = `mailto:${CONFIG.business.email}`;
+    }
 
     // Add Language Toggle to Desktop Header
     const contactActions = document.querySelector('.contact-actions');
@@ -378,9 +542,11 @@ function renderSite() {
     }
 
     // Mobile Top Bar
-    document.querySelector('.mobile-call-btn').href = `tel:${CONFIG.business.phoneClean}`;
-    document.querySelector('.mobile-call-btn').href = `tel:${CONFIG.business.phoneClean}`;
-    document.querySelector('.mobile-call-btn').innerHTML = ICONS.phone;
+    const mobileCallBtn = document.querySelector('.mobile-call-btn');
+    if (mobileCallBtn) {
+        mobileCallBtn.href = `tel:${CONFIG.business.phoneClean}`;
+        mobileCallBtn.innerHTML = ICONS.phone;
+    }
 
     // Render Hero (Homepage Only)
     const hero = document.getElementById('hero');
@@ -449,10 +615,45 @@ function renderSite() {
     }
 
     // Render Contact Info
-    document.querySelector('.info-phone').innerHTML = `<strong>Phone:</strong> <a href="tel:${CONFIG.business.phoneClean}">${CONFIG.business.phone}</a>`;
-    document.querySelector('.info-email').innerHTML = `<strong>Email:</strong> <a href="mailto:${CONFIG.business.email}">${CONFIG.business.email}</a>`;
-    const infoAddress = document.querySelector('.info-address');
-    if (infoAddress) infoAddress.innerHTML = `<strong>Address:</strong> ${t(CONFIG.business.address)}`;
+    // Render Contact Info (Premium Cards Design)
+    const contactCards = document.querySelectorAll('.contact-card');
+    contactCards.forEach(card => {
+        card.innerHTML = `
+            <h3 style="margin-bottom:1.5rem">${t(CONFIG.nav[5].label)}</h3>
+            <div class="contact-details-grid">
+                <!-- Phone -->
+                <a href="tel:${CONFIG.business.phoneClean}" class="contact-detail-item">
+                    <div class="detail-icon">${ICONS.phone}</div>
+                    <div class="detail-content">
+                        <span class="detail-label">Phone</span>
+                        <span class="detail-value">${CONFIG.business.phone}</span>
+                    </div>
+                </a>
+                
+                <!-- Email -->
+                <a href="mailto:${CONFIG.business.email}" class="contact-detail-item">
+                    <div class="detail-icon">${ICONS.message}</div>
+                    <div class="detail-content">
+                        <span class="detail-label">Email</span>
+                        <span class="detail-value">${CONFIG.business.email}</span>
+                    </div>
+                </a>
+
+                <!-- Offices -->
+                <div class="contact-detail-item full-width">
+                     <div class="detail-icon">${ICONS.home}</div>
+                     <div class="detail-content">
+                        ${CONFIG.business.offices.map(office => `
+                            <div class="office-block" style="margin-bottom:0.5rem">
+                                <strong style="color:var(--gold)">${t(office.name)}</strong>
+                                <div style="font-size:0.9rem; color:var(--text-muted)">${office.address}</div>
+                            </div>
+                        `).join('')}
+                     </div>
+                </div>
+            </div>
+        `;
+    });
 
     // Safety checks for elements that might have been removed
     const btnDirections = document.querySelector('.btn-directions');
@@ -514,7 +715,8 @@ function renderSite() {
     `;
 
     // Inject entire footer content into the container
-    document.querySelector('footer .container').innerHTML = footerHTML;
+    const footerContainer = document.querySelector('footer .container');
+    if (footerContainer) footerContainer.innerHTML = footerHTML;
 
     // Render Mobile Menu Links & Contact Info
     const menuContent = `
@@ -537,6 +739,9 @@ function renderSite() {
 
     // Render Contact Form
     renderContactForm();
+
+    // Render Mobile Bottom Bar Icons
+    renderMobileBottomBar();
 }
 
 function renderContactForm() {
@@ -580,16 +785,49 @@ function renderContactForm() {
         infoAddress.innerHTML = `<strong>${t(CONFIG.contact.info.address)}</strong>${officesHTML}`;
     }
 
-    // Update directions button
-    const directionsBtn = document.querySelector('.btn-directions');
-    if (directionsBtn) {
-        directionsBtn.href = CONFIG.business.offices[0].mapUrl;
-        directionsBtn.innerHTML = `
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:1.2em; height:1.2em; margin-right: 0.5rem;">
-                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                <circle cx="12" cy="10" r="3"></circle>
-            </svg>
-            ${t(CONFIG.contact.info.directions)}
+}
+
+
+
+function renderMobileBottomBar() {
+    const btnMenu = document.getElementById('btn-menu');
+    const btnCall = document.getElementById('btn-call');
+    const btnMsg = document.getElementById('btn-msg');
+
+    // Remove text-based onclick attributes to prevent conflicts with addEventListener
+    // usage in setupInteractions (fixes index.html double-toggle issue)
+    if (btnMenu) btnMenu.removeAttribute('onclick');
+    if (btnCall) btnCall.removeAttribute('onclick');
+    if (btnMsg) btnMsg.removeAttribute('onclick');
+
+    // Menu: Burger Icon for Animation
+    if (btnMenu) {
+        btnMenu.innerHTML = `
+            <div class="menu-icon-wrapper">
+                <div class="burger-icon">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </div>
+        `;
+    }
+
+    // Call: Phone SVG
+    if (btnCall) {
+        // Only update innerHTML if empty or check to avoid loop if called repeatedly (renderSite is called once usually)
+        // But renderSite calls translate functions.
+        // We can just overwrite it.
+        btnCall.innerHTML = `
+            <div>${ICONS.phone}</div>
+        `;
+        btnCall.href = `tel:${CONFIG.business.phoneClean}`;
+    }
+
+    // Msg: Message SVG
+    if (btnMsg) {
+        btnMsg.innerHTML = `
+            <div>${ICONS.message}</div>
         `;
     }
 }
@@ -638,10 +876,13 @@ function setupInteractions() {
         }
     }
 
-    /*
-     * Mobile Menu Event Listener
-     * REMOVED: Using global window.toggleMobileMenu() via onclick in HTML for robustness
-     */
+    // Mobile Menu Event Listener (Restored)
+    if (menuBtn) {
+        menuBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent bubbling issues
+            toggleMenu();
+        });
+    }
 
     // Use event delegation for dynamically added links
     document.querySelector('.menu-nav').addEventListener('click', (e) => {
@@ -651,10 +892,13 @@ function setupInteractions() {
     });
 
     // Message Button Scroll
-    document.getElementById('btn-msg').addEventListener('click', () => {
-        document.getElementById('contact').scrollIntoView({ behavior: 'smooth' });
-        setTimeout(() => document.querySelector('input[name="name"]').focus(), 800);
-    });
+    const btnMsg = document.getElementById('btn-msg');
+    if (btnMsg) {
+        btnMsg.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.scrollToContact();
+        });
+    }
 }
 
 function setupForm() {
@@ -741,10 +985,20 @@ window.toggleMobileMenu = function () {
 window.scrollToContact = function () {
     const contactSection = document.getElementById('contact');
     if (contactSection) {
-        contactSection.scrollIntoView({ behavior: 'smooth' });
+        // Target the form wrapper specifically to frame it
+        const formWrapper = contactSection.querySelector('.form-wrapper') || contactSection;
+
+        formWrapper.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center', // This ensures it's framed in the middle of the screen
+            inline: 'nearest'
+        });
+
         setTimeout(() => {
             const nameInput = document.querySelector('input[name="name"]');
-            if (nameInput) nameInput.focus();
-        }, 800);
+            if (nameInput) nameInput.focus({ preventScroll: true }); // Prevent focus from messing up scroll
+        }, 1000);
+    } else {
+        window.location.href = 'index.html#contact';
     }
 };

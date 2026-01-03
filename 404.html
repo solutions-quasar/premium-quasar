@@ -3,58 +3,75 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="color-scheme" content="dark">
     <title>404 - Page Not Found | Solutions Quasar</title>
     <meta name="robots" content="noindex, follow">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
-    <style>
-        :root {
-            --bg-dark: #0B0D10;
-            --text-main: #F0F0F0;
-            --gold: #D4AF37;
-        }
+    <link rel="stylesheet" href="styles.css">
 
-        body {
-            background-color: var(--bg-dark);
-            color: var(--text-main);
-            font-family: system-ui, -apple-system, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-            text-align: center;
-        }
-
-        h1 {
-            font-size: 4rem;
-            margin: 0;
-            color: var(--gold);
-        }
-
-        p {
-            margin: 1rem 0 2rem;
-            opacity: 0.8;
-        }
-
-        a {
-            color: var(--gold);
-            text-decoration: none;
-            border-bottom: 1px solid transparent;
-            transition: 0.3s;
-        }
-
-        a:hover {
-            border-bottom-color: var(--gold);
-        }
-    </style>
+    <script src="script.js" defer></script>
 </head>
 
-<body>
-    <h1>404</h1>
-    <p>The page you are looking for does not exist.</p>
-    <a href="/">Return Home</a>
+<body id="top">
+
+    <!-- Desktop Header -->
+    <header id="top-bar">
+        <div class="nav-content">
+            <div class="brand">SQ.</div>
+            <nav class="desktop-nav"></nav>
+            <div class="contact-actions">
+                <a href="#" class="contact-phone"></a>
+                <a href="#" class="contact-email"></a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Mobile Header -->
+    <header class="mobile-top-bar">
+        <div class="mobile-logo brand">SQ.</div>
+        <a href="#" class="mobile-call-btn"></a>
+    </header>
+
+    <main>
+        <!-- 404 Content -->
+        <section
+            style="min-height: 80vh; display: flex; align-items: center; justify-content: center; text-align: center; padding: var(--header-height) 0;">
+            <div class="container">
+                <h1
+                    style="font-size: 8rem; line-height: 1; margin: 0 0 1rem; background: linear-gradient(135deg, #fff 20%, var(--gold) 100%); background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                    404</h1>
+                <h2 style="margin-bottom: 2rem; color: var(--gold);">Page Not Found</h2>
+                <p class="text-muted" style="max-width: 500px; margin: 0 auto 3rem; font-size: 1.2rem;">
+                    The digital asset you are looking for has been moved or does not exist.
+                </p>
+
+                <a href="index.html" class="btn-primary" style="display:inline-flex;">Return to Home</a>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container"></div>
+    </footer>
+
+    <!-- Mobile Bottom Bar -->
+    <div id="mobile-bar">
+        <button class="bar-item" id="btn-menu"></button>
+        <a href="#" class="bar-item" id="btn-call"></a>
+        <button class="bar-item" id="btn-msg"></button>
+    </div>
+
+    <!-- Mobile Menu Overlay -->
+    <div id="menu-overlay">
+        <button class="menu-close" id="btn-close-menu"></button>
+        <nav class="menu-nav"></nav>
+        <div style="margin-top:3rem; text-align:center; opacity:0.6; font-size:0.9rem">
+            <p>Solutions Quasar Inc.</p>
+        </div>
+    </div>
+
 </body>
 
 </html>

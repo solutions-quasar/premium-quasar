@@ -161,37 +161,36 @@
                                 B
                             </div>
                         </div>
-                        <h3 style="margin-bottom: 0.5rem; font-size: 1.3rem;">Benjamin Dempsey</h3>
+                        <h3 style="margin-bottom: 0.5rem; font-size: 1.3rem;" data-i18n="about.team.members.0.name">
+                            Benjamin Sultan</h3>
                         <p class="text-gold" style="font-size: 0.9rem; margin-bottom: 1rem;"
-                            data-i18n="about.team.members.0.role">Founder & Lead Developer
-                        </p>
+                            data-i18n="about.team.members.0.role">Developer</p>
                         <p class="text-muted" style="font-size: 0.95rem; line-height: 1.6;"
                             data-i18n="about.team.members.0.bio">
-                            Full-stack developer with a passion for creating premium digital experiences that drive real
-                            business results.
+                            Full-stack developer dedicated to building robust and scalable digital solutions.
                         </p>
                     </div>
 
-                    <!-- Team Member 2 - Placeholder -->
+                    <!-- Team Member 2 -->
                     <div style="text-align: center;">
                         <div
                             style="width: 200px; height: 200px; margin: 0 auto 1.5rem; border-radius: 50%; background: linear-gradient(135deg, var(--gold-dim) 0%, var(--gold) 100%); border: 3px solid var(--border-gold); overflow: hidden;">
                             <div
                                 style="width: 100%; height: 100%; background: var(--bg-dark); display: flex; align-items: center; justify-content: center; font-size: 4rem; color: var(--gold);">
-                                S
+                                T
                             </div>
                         </div>
-                        <h3 style="margin-bottom: 0.5rem; font-size: 1.3rem;">Sarah Mitchell</h3>
+                        <h3 style="margin-bottom: 0.5rem; font-size: 1.3rem;" data-i18n="about.team.members.1.name">Tim
+                            Rieg</h3>
                         <p class="text-gold" style="font-size: 0.9rem; margin-bottom: 1rem;"
-                            data-i18n="about.team.members.1.role">UX/UI Designer</p>
+                            data-i18n="about.team.members.1.role">Developer</p>
                         <p class="text-muted" style="font-size: 0.95rem; line-height: 1.6;"
                             data-i18n="about.team.members.1.bio">
-                            Crafting intuitive interfaces that blend aesthetic excellence with conversion-focused design
-                            principles.
+                            Specializing in frontend performance and creating seamless user experiences.
                         </p>
                     </div>
 
-                    <!-- Team Member 3 - Placeholder -->
+                    <!-- Team Member 3 -->
                     <div style="text-align: center;">
                         <div
                             style="width: 200px; height: 200px; margin: 0 auto 1.5rem; border-radius: 50%; background: linear-gradient(135deg, var(--gold-dim) 0%, var(--gold) 100%); border: 3px solid var(--border-gold); overflow: hidden;">
@@ -200,36 +199,84 @@
                                 M
                             </div>
                         </div>
-                        <h3 style="margin-bottom: 0.5rem; font-size: 1.3rem;">Marcus Chen</h3>
+                        <h3 style="margin-bottom: 0.5rem; font-size: 1.3rem;" data-i18n="about.team.members.2.name">
+                            Mathieu Rieg</h3>
                         <p class="text-gold" style="font-size: 0.9rem; margin-bottom: 1rem;"
-                            data-i18n="about.team.members.2.role">Performance Engineer</p>
+                            data-i18n="about.team.members.2.role">Admin Director</p>
                         <p class="text-muted" style="font-size: 0.95rem; line-height: 1.6;"
                             data-i18n="about.team.members.2.bio">
-                            Optimizing every millisecond to deliver lightning-fast experiences that rank high and
-                            convert better.
+                            Overseeing strategic operations and ensuring the highest standards of service delivery.
                         </p>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- CTA Section -->
-        <section style="padding: var(--section-pad) 0; text-align: center;">
+        <!-- Contact -->
+        <section id="contact">
             <div class="container">
-                <h2 style="margin-bottom: 1.5rem;" data-i18n="about.cta.title">Ready to Work Together?</h2>
-                <p style="font-size: var(--body-lg); color: var(--text-muted); margin-bottom: 2.5rem; max-width: 600px; margin-left: auto; margin-right: auto;"
-                    data-i18n="about.cta.desc">
-                    Let's discuss how we can elevate your digital presence with a premium solution built for your
-                    business.
-                </p>
-                <a href="index.html#contact" class="btn-primary" style="display: inline-flex;">
-                    <span data-i18n="hero.cta">Book a Strategy Call</span>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                        style="width: 1em; height: 1em;">
-                        <line x1="5" y1="12" x2="19" y2="12"></line>
-                        <polyline points="12 5 19 12 12 19"></polyline>
-                    </svg>
-                </a>
+                <div class="contact-layout">
+                    <!-- Form -->
+                    <div class="form-wrapper">
+                        <h2 data-i18n="contact.title">Book a Strategy Call</h2>
+                        <p class="text-muted" style="margin-bottom:2rem;" data-i18n="contact.subtitle">Tell us what you
+                            need. We’ll reply with next
+                            steps.</p>
+
+                        <form action="https://formspree.io/f/xbjnqyj" method="POST">
+                            <!-- Placeholder Formspree, should be updated by user or left as generic demo -->
+                            <div class="form-group">
+                                <label class="form-label" data-i18n="contact.form.name">Name</label>
+                                <input type="text" name="name" class="form-input" required placeholder="John Doe"
+                                    data-i18n-placeholder="contact.form.namePlaceholder">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" data-i18n="contact.form.company">Firm / Company</label>
+                                <input type="text" name="company" class="form-input" placeholder="Miller Law Group"
+                                    data-i18n-placeholder="contact.form.companyPlaceholder">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" data-i18n="contact.form.contact">Phone or Email</label>
+                                <input type="text" name="contact_method" class="form-input" required
+                                    placeholder="john@example.com"
+                                    data-i18n-placeholder="contact.form.contactPlaceholder">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" data-i18n="contact.form.interest">Interest</label>
+                                <select name="interest" class="form-select">
+                                    <option data-i18n="contact.form.interestOptions.website">New Website</option>
+                                    <option data-i18n="contact.form.interestOptions.app">Landing Page</option>
+                                    <option data-i18n="contact.form.interestOptions.ai">SEO / Optimization</option>
+                                    <option data-i18n="contact.form.interestOptions.consult">Other</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" data-i18n="contact.form.message">Message</label>
+                                <textarea name="message" class="form-textarea" placeholder="How can we help?"
+                                    data-i18n-placeholder="contact.form.messagePlaceholder"></textarea>
+                            </div>
+                            <!-- Honeypot -->
+                            <input type="text" name="_gotcha" style="display:none">
+
+                            <button type="submit" class="btn-primary" style="width:100%"
+                                data-i18n="contact.form.submit">Send Request</button>
+                        </form>
+                    </div>
+
+                    <!-- Info -->
+                    <div>
+                        <div class="contact-card">
+                            <div>
+                                <h3 style="margin-bottom:1.5rem">Contact</h3>
+                                <p class="info-phone" style="margin-bottom:1rem"></p>
+                                <p class="info-email" style="margin-bottom:1rem"></p>
+                                <p class="info-address"></p>
+                            </div>
+
+                        </div>
+                    </div>
+
+                </div>
             </div>
         </section>
     </main>

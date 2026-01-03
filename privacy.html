@@ -3,58 +3,99 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="color-scheme" content="dark">
     <title>Privacy Policy | Solutions Quasar</title>
+    <meta name="description" content="Privacy Policy for Solutions Quasar Inc.">
     <meta name="robots" content="noindex, follow">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
-    <style>
-        :root {
-            --bg-dark: #0B0D10;
-            --text-main: #F0F0F0;
-            --gold: #D4AF37;
-        }
+    <link rel="stylesheet" href="styles.css">
 
-        body {
-            background-color: var(--bg-dark);
-            color: var(--text-main);
-            font-family: system-ui, -apple-system, sans-serif;
-            line-height: 1.6;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
+    <!-- Open Graph -->
+    <meta property="og:title" content="Privacy Policy | Solutions Quasar">
+    <meta property="og:type" content="website">
 
-        h1,
-        h2 {
-            color: var(--gold);
-        }
-
-        a {
-            color: var(--gold);
-            text-decoration: none;
-        }
-    </style>
+    <script src="script.js" defer></script>
 </head>
 
-<body>
-    <h1>Privacy Policy</h1>
-    <p>Last updated: December 30, 2025</p>
+<body id="top">
 
-    <h2>1. Introduction</h2>
-    <p>Solutions Quasar Inc. ("we," "us," or "our") respects your privacy. This Privacy Policy explains how we collect,
-        use, and share information about you when you visit our website.</p>
+    <!-- Desktop Header -->
+    <header id="top-bar">
+        <div class="nav-content">
+            <div class="brand">SQ.</div>
+            <nav class="desktop-nav"></nav>
+            <div class="contact-actions">
+                <a href="#" class="contact-phone"></a>
+                <a href="#" class="contact-email"></a>
+            </div>
+        </div>
+    </header>
 
-    <h2>2. Information We Collect</h2>
-    <p>We may collect personal information that you voluntarily provide to us when you fill out a contact form, such as
-        your name, email address, and phone number.</p>
+    <!-- Mobile Header -->
+    <header class="mobile-top-bar">
+        <div class="mobile-logo brand">SQ.</div>
+        <a href="#" class="mobile-call-btn"></a>
+    </header>
 
-    <h2>3. How We Use Your Information</h2>
-    <p>We use the information we collect to reply to your inquiries, provide services, and improve our website.</p>
+    <main>
+        <!-- Policy Content -->
+        <section style="padding: calc(var(--header-height) + 4rem) 0 4rem;">
+            <div class="container" style="max-width: 800px;">
+                <h1 style="margin-bottom: 2rem; color: var(--gold);">Privacy Policy</h1>
+                <p class="text-muted" style="margin-bottom: 2rem;">Last updated: December 30, 2025</p>
 
-    <h2>4. Contact Us</h2>
-    <p>If you have any questions about this Privacy Policy, please contact us at benjamin@solutionsquasar.ca.</p>
+                <div class="policy-content" style="line-height: 1.8;">
+                    <h2 style="color: var(--gold); margin-top: 2.5rem; margin-bottom: 1rem; font-size: 1.5rem;">1.
+                        Introduction</h2>
+                    <p style="margin-bottom: 1.5rem;">Solutions Quasar Inc. ("we," "us," or "our") respects your
+                        privacy. This Privacy Policy explains how we collect, use, and share information about you when
+                        you visit our website.</p>
 
-    <p><a href="/">Return to Home</a></p>
+                    <h2 style="color: var(--gold); margin-top: 2.5rem; margin-bottom: 1rem; font-size: 1.5rem;">2.
+                        Information We Collect</h2>
+                    <p style="margin-bottom: 1.5rem;">We may collect personal information that you voluntarily provide
+                        to us when you fill out a contact form, such as your name, email address, and phone number.</p>
+
+                    <h2 style="color: var(--gold); margin-top: 2.5rem; margin-bottom: 1rem; font-size: 1.5rem;">3. How
+                        We Use Your Information</h2>
+                    <p style="margin-bottom: 1.5rem;">We use the information we collect to reply to your inquiries,
+                        provide services, and improve our website.</p>
+
+                    <h2 style="color: var(--gold); margin-top: 2.5rem; margin-bottom: 1rem; font-size: 1.5rem;">4.
+                        Contact Us</h2>
+                    <p style="margin-bottom: 2.5rem;">If you have any questions about this Privacy Policy, please
+                        contact us at <a href="mailto:info@solutionsquasar.ca"
+                            style="color: var(--gold); text-decoration: none;">info@solutionsquasar.ca</a>.</p>
+                </div>
+
+                <a href="index.html" class="btn-primary" style="display:inline-flex; margin-top: 2rem;">&larr; Return to
+                    Home</a>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container"></div>
+    </footer>
+
+    <!-- Mobile Bottom Bar -->
+    <div id="mobile-bar">
+        <button class="bar-item" id="btn-menu"></button>
+        <a href="#" class="bar-item" id="btn-call"></a>
+        <button class="bar-item" id="btn-msg"></button>
+    </div>
+
+    <!-- Mobile Menu Overlay -->
+    <div id="menu-overlay">
+        <button class="menu-close" id="btn-close-menu"></button>
+        <nav class="menu-nav"></nav>
+        <div style="margin-top:3rem; text-align:center; opacity:0.6; font-size:0.9rem">
+            <p>Solutions Quasar Inc.</p>
+        </div>
+    </div>
+
 </body>
 
 </html>
