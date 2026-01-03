@@ -77,15 +77,16 @@
                 <div class="contact-layout">
                     <!-- Form -->
                     <div class="form-wrapper">
-                        <h2>Book a Strategy Call</h2>
+                        <h2 data-i18n="contact.title">Book a Strategy Call</h2>
                         <p class="text-muted" style="margin-bottom:2rem;">Tell us what you need. We’ll reply with next
                             steps.</p>
 
                         <form action="https://formspree.io/f/xbjnqyj" method="POST">
                             <!-- Placeholder Formspree, should be updated by user or left as generic demo -->
                             <div class="form-group">
-                                <label class="form-label">Name</label>
-                                <input type="text" name="name" class="form-input" required placeholder="John Doe">
+                                <label class="form-label" data-i18n="contact.form.name">Name</label>
+                                <input type="text" name="name" class="form-input" required
+                                    data-i18n-placeholder="contact.form.namePlaceholder" placeholder="John Doe">
                             </div>
                             <div class="form-group">
                                 <label class="form-label" data-i18n="contact.form.company">Firm / Company</label>
@@ -94,8 +95,9 @@
                                     placeholder="Miller Law Group">
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Phone or Email</label>
+                                <label class="form-label" data-i18n="contact.form.contact">Phone or Email</label>
                                 <input type="text" name="contact_method" class="form-input" required
+                                    data-i18n-placeholder="contact.form.contactPlaceholder"
                                     placeholder="john@example.com">
                             </div>
                             <div class="form-group">
