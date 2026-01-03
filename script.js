@@ -32,8 +32,20 @@ const CONFIG = {
         phone: "418-410-0856",
         phoneClean: "14184100856",
         email: "info@solutionsquasar.ca",
-        address: { en: "New Brunswick, Canada", fr: "Nouveau-Brunswick, Canada" },
-        mapUrl: "https://www.google.com/maps/search/?api=1&query=Solutions+Quasar+Inc+New+Brunswick",
+        address: { en: "Quebec & New Brunswick, Canada", fr: "Québec & Nouveau-Brunswick, Canada" },
+        offices: [
+            {
+                name: { en: "Quebec Office", fr: "Bureau de Québec" },
+                address: "131 Rue Montambault, Deschambault, QC G0A 1S0",
+                mapUrl: "https://www.google.com/maps/search/?api=1&query=131+Rue+Montambault+Deschambault+QC+G0A+1S0"
+            },
+            {
+                name: { en: "New Brunswick Office", fr: "Bureau du Nouveau-Brunswick" },
+                address: "1611 Route 950, Trois-Ruisseaux, NB E4N 2Y7",
+                mapUrl: "https://www.google.com/maps/search/?api=1&query=1611+Route+950+Trois-Ruisseaux+NB+E4N+2Y7"
+            }
+        ],
+        mapUrl: "https://www.google.com/maps/search/?api=1&query=131+Rue+Montambault+Deschambault+QC",
         mapEmbed: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d355000.0!2d-66.0!3d46.0!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zMTPCsDQ5JzUyLjYiTiA2NcKwMzUnMjMuNiJX!5e0!3m2!1sen!2sca!4v1630000000000!5m2!1sen!2sca"
     },
     nav: [
