@@ -5,6 +5,17 @@ function setLanguage(lang) {
     currentLang = lang;
     localStorage.setItem('lang', lang);
     document.documentElement.lang = lang;
+
+    // Update toggle button states immediately
+    document.querySelectorAll('.lang-btn').forEach(btn => {
+        const btnLang = btn.textContent.toLowerCase();
+        if (btnLang === lang) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+
     renderSite();
 }
 
