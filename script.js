@@ -490,7 +490,29 @@ function renderContactForm() {
 
     if (infoPhone) infoPhone.innerHTML = `<strong>${t(CONFIG.contact.info.phone)}</strong> <a href="tel:${CONFIG.business.phoneClean}">${CONFIG.business.phone}</a>`;
     if (infoEmail) infoEmail.innerHTML = `<strong>${t(CONFIG.contact.info.email)}</strong> <a href="mailto:${CONFIG.business.email}">${CONFIG.business.email}</a>`;
-    if (infoAddress) infoAddress.innerHTML = `<strong>${t(CONFIG.contact.info.address)}</strong> ${t(CONFIG.business.address)}`;
+    if (infoAddress) {
+        // Display both office addresses
+        const officesHTML = CONFIG.business.offices.map(office =>
+            `<div style="margin-top: 1rem;">
+                <strong>${t(office.name)}:</strong><br>
+                <span style="opacity: 0.8;">${office.address}</span>
+            </div>`
+        ).join('');
+        infoAddress.innerHTML = `<strong>${t(CONFIG.contact.info.address)}</strong>${officesHTML}`;
+    }
+
+    // Update directions button
+    const directionsBtn = document.querySelector('.btn-directions');
+    if (directionsBtn) {
+        directionsBtn.href = CONFIG.business.offices[0].mapUrl;
+        directionsBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:1.2em; height:1.2em; margin-right: 0.5rem;">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                <circle cx="12" cy="10" r="3"></circle>
+            </svg>
+            ${t(CONFIG.contact.info.directions)}
+        `;
+    }
 }
 
 function setupInteractions() {
