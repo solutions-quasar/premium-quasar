@@ -117,6 +117,15 @@ function seed() {
 /* Global Dark Theme overrides if needed, though Quasar dark mode handles most */
 body {
     background: #0B0D10;
+    --q-primary: #DFA53A;
+    --q-secondary: #8F6B26;
+    --q-accent: #F0C468;
+    --q-dark: #0B0D10;
+    --q-dark-page: #0B0D10;
+    --q-positive: #21BA45;
+    --q-negative: #C10015;
+    --q-info: #31CCEC;
+    --q-warning: #F2C037;
 }
 .gl-border-b {
     border-bottom: 1px solid rgba(255,255,255,0.1);
