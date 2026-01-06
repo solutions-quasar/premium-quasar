@@ -16,15 +16,76 @@ export async function initCRM() {
 
     loadClients();
 
-    // Search listener
+    // Search listener (Fuzzy)
     document.getElementById('crm-search').addEventListener('input', (e) => {
-        const term = e.target.value.toLowerCase();
+        const term = e.target.value.toLowerCase().trim();
         const items = document.querySelectorAll('.client-item');
+
         items.forEach(item => {
+            if (term.length === 0) {
+                item.style.display = 'flex';
+                return;
+            }
+
             const text = item.innerText.toLowerCase();
-            item.style.display = text.includes(term) ? 'flex' : 'none';
+
+            // 1. Exact Substring Match (Fast & Obvious)
+            if (text.includes(term)) {
+                item.style.display = 'flex';
+                return;
+            }
+
+            // 2. Fuzzy Match for Typos
+            // Split text into words (Name, Company, Title)
+            const words = text.split(/[\s•]+/); // Split by space or bullet
+
+            // Check if ANY word in the text resembles the search term
+            const isMatch = words.some(word => {
+                // Skip if length diff is too big
+                if (Math.abs(word.length - term.length) > 3) return false;
+
+                // Allow 1 typo for short words, 2 for longer
+                const maxDist = term.length > 4 ? 2 : 1;
+                return getLevenshteinDistance(term, word) <= maxDist;
+            });
+
+            item.style.display = isMatch ? 'flex' : 'none';
         });
     });
+}
+
+// Helper: Levenshtein Distance for Fuzzy Search
+function getLevenshteinDistance(a, b) {
+    if (a.length === 0) return b.length;
+    if (b.length === 0) return a.length;
+
+    const matrix = [];
+
+    for (let i = 0; i <= b.length; i++) {
+        matrix[i] = [i];
+    }
+
+    for (let j = 0; j <= a.length; j++) {
+        matrix[0][j] = j;
+    }
+
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(
+                    matrix[i - 1][j - 1] + 1, // substitution
+                    Math.min(
+                        matrix[i][j - 1] + 1, // insertion
+                        matrix[i - 1][j] + 1 // deletion
+                    )
+                );
+            }
+        }
+    }
+    return matrix[b.length][a.length]; // Return distance
+    return matrix[b.length][a.length]; // Return distance
 }
 
 async function loadClients() {
