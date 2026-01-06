@@ -13,6 +13,7 @@
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js'></script>
 </head>
 
 <body>
@@ -33,8 +34,11 @@
         <!-- Sidebar (Drawer) -->
         <aside class="drawer" id="drawer">
             <div class="drawer-header">
-                <h2>Navigation</h2>
-                <button class="icon-btn" id="close-drawer"><span class="material-icons">close</span></button>
+                <div class="logo-area">
+                    <img src="favicon.svg" alt="Q" style="width:30px; height:30px;">
+                    <span class="logo-text">Premium Quasar</span>
+                </div>
+                <!-- <button class="icon-btn" id="close-drawer"><span class="material-icons">close</span></button>  Kept separate logic if needed, but mobile overlay handles close. -->
             </div>
             <nav class="drawer-nav">
                 <a href="#dashboard" class="nav-item"><span class="material-icons">dashboard</span> Dashboard</a>
@@ -45,6 +49,21 @@
                 <a href="#calendar" class="nav-item"><span class="material-icons">event</span> Calendar</a>
                 <a href="#sales" class="nav-item"><span class="material-icons">receipt</span> Sales</a>
             </nav>
+            <div class="drawer-footer">
+                <div class="user-profile">
+                    <div class="user-avatar">AD</div>
+                    <div class="user-info">
+                        <div class="user-name">Admin User</div>
+                        <div class="user-role">Super Admin</div>
+                    </div>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-top:10px;">
+                    <button class="btn btn-sm text-gold" style="background:none; border:none; padding:0;">My
+                        Account</button>
+                    <button class="btn btn-sm text-danger"
+                        style="background:none; border:none; padding:0;">Logout</button>
+                </div>
+            </div>
         </aside>
         <div class="overlay" id="drawer-overlay"></div>
 
@@ -54,8 +73,6 @@
             <div id="view-dashboard" class="view active"></div>
             <div id="view-crm" class="view"></div>
             <div id="view-client-detail" class="view"></div>
-            <div id="view-calendar" class="view"></div>
-            <div id="view-sales" class="view"></div>
             <div id="view-calendar" class="view"></div>
             <div id="view-sales" class="view"></div>
             <div id="view-leads" class="view"></div>

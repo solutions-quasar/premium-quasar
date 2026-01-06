@@ -87,27 +87,79 @@ function renderHunterUI(container) {
             
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 2rem;">
                 <!-- Logs / Terminal -->
-                <div style="background: #000; border:1px solid var(--border); padding: 1rem; height: 300px; overflow-y: auto; font-family: monospace; font-size: 0.8rem; color: #0f0;" id="hunter-logs">
+                <div style="background: #000; border:1px solid var(--border); padding: 1rem; h-min: 300px; height: 100%; overflow-y: auto; font-family: monospace; font-size: 0.8rem; color: #0f0;" id="hunter-logs">
                     > System Ready...<br>
-                    > Waiting for command.<br>
+                    > Configure agent settings to start.<br>
                 </div>
 
-                <!-- Config Summary -->
+                <!-- Config Form -->
                 <div>
-                     <div class="text-h">Configuration</div>
+                     <div class="text-h mb-4">Configuration</div>
+                     
+                     <!-- Industry Selection -->
                      <div class="form-group">
-                        <label class="form-label">Target Cities</label>
-                        <div class="text-sm text-muted">${settings.cities.join(', ')}</div>
+                        <label class="form-label">Target Industry</label>
+                        <input type="text" id="input-industry" class="form-input" list="industry-suggestions" placeholder="e.g. Plumber, Dentist, Accountant" value="Plumber">
+                        <datalist id="industry-suggestions">
+                            <option value="Plumber">
+                            <option value="Dentist">
+                            <option value="Real Estate Agent">
+                            <option value="Accountant">
+                            <option value="Marketing Agency">
+                            <option value="Roofer">
+                            <option value="Lawyer">
+                            <option value="HVAC">
+                            <option value="Landscaper">
+                            <option value="Chiropractor">
+                        </datalist>
                      </div>
+
+                     <!-- Website Filter -->
                      <div class="form-group">
-                        <label class="form-label">Target Industries</label>
-                        <div class="text-sm text-muted">${settings.industries.join(', ')} (Editable in code for now)</div>
+                        <label class="form-label">Website Status</label>
+                        <select id="input-website-filter" class="form-input">
+                            <option value="ALL">Any (Website or No Website)</option>
+                            <option value="NO_WEBSITE">No Website (High Priority)</option>
+                            <option value="HAS_WEBSITE">Must Have Website</option>
+                        </select>
                      </div>
+
+                     <!-- Quantity -->
+                     <div class="form-group">
+                        <label class="form-label">Leads to Hunt (Max)</label>
+                        <input type="number" id="input-max-leads" class="form-input" value="10" min="1" max="50">
+                     </div>
+
+                     <div class="form-group">
+                        <label class="form-label">Target City</label>
+                        <input type="text" id="input-city" class="form-input" list="city-suggestions" placeholder="Random (or type specific city)">
+                        <datalist id="city-suggestions">
+                            <option value="Toronto, ON">
+                            <option value="Vancouver, BC">
+                            <option value="Montreal, QC">
+                            <option value="Calgary, AB">
+                            <option value="Ottawa, ON">
+                            <option value="New York, NY">
+                            <option value="Los Angeles, CA">
+                            <option value="London, UK">
+                        </datalist>
+                     </div>
+                     
                      <div class="form-group">
                         <label class="form-label">Strategy</label>
-                        <div class="text-sm text-muted">Page 2+ Results ONLY (Low Visibility Targets)</div>
+                        <div class="text-sm text-muted">Page 2+ Results (Low Visibility)</div>
                      </div>
-                     <button class="btn btn-sm" id="btn-clear-key" style="margin-top: 2rem; border-color: var(--danger); color: var(--danger);">Reset API Key</button>
+
+                     <button class="btn btn-sm" id="btn-clear-key" style="margin-top: 1rem; border-color: var(--danger); color: var(--danger);">Reset API Key</button>
+                </div>
+            </div>
+            
+            <!-- Live Preview Section -->
+            <div style="margin-top: 3rem;">
+                <div class="text-h text-gold mb-2">Recently Hunted Leads</div>
+                <div id="hunter-preview-container" class="leads-grid" style="grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));">
+                    <!-- Cards will appear here -->
+                    <div class="text-muted text-sm" style="grid-column: 1/-1;">Run the agent to see results here...</div>
                 </div>
             </div>
         </div>
@@ -125,8 +177,15 @@ function renderHunterUI(container) {
 async function runAgentJob() {
     const btn = document.getElementById('btn-run-agent');
     const logs = document.getElementById('hunter-logs');
+    const previewContainer = document.getElementById('hunter-preview-container');
     const status = document.getElementById('stat-run-status');
     const apiKey = localStorage.getItem(STORAGE_KEY_API);
+
+    // Get Inputs
+    const industryInput = document.getElementById('input-industry').value.trim() || 'Business';
+    const cityInput = document.getElementById('input-city').value.trim();
+    const websiteFilter = document.getElementById('input-website-filter').value;
+    const maxLeads = parseInt(document.getElementById('input-max-leads').value) || 10;
 
     if (!apiKey) {
         alert('Missing API Key');
@@ -135,6 +194,8 @@ async function runAgentJob() {
 
     btn.disabled = true;
     status.innerText = "Running...";
+    logs.innerHTML = ''; // Clear logs
+    if (previewContainer) previewContainer.innerHTML = ''; // Clear preview
 
     // Auto-scroll log
     const log = (msg) => {
@@ -143,12 +204,17 @@ async function runAgentJob() {
     };
 
     try {
-        log("Starting Lead Hunter Job...");
+        log(`Starting Job: Find ${maxLeads} ${industryInput} leads...`);
+        log(`Filter Mode: ${websiteFilter}`);
 
-        // 1. Pick Strategy (Random City + Industry)
-        const city = settings.cities[Math.floor(Math.random() * settings.cities.length)];
-        const industry = settings.industries[Math.floor(Math.random() * settings.industries.length)];
-        const queryTerm = `${industry} in ${city}`;
+        // 1. Pick Strategy (Manual or Random)
+        let city = cityInput;
+        if (!city) {
+            city = settings.cities[Math.floor(Math.random() * settings.cities.length)];
+            log(`City not specified. Randomly selected: ${city}`);
+        }
+
+        const queryTerm = `${industryInput} in ${city}`;
 
         log(`Strategy: Targeting "${queryTerm}"`);
         log("Connecting to Google Places API...");
@@ -156,13 +222,8 @@ async function runAgentJob() {
         // 2. Fetch from Google Places API
         const endpoint = `https://places.googleapis.com/v1/places:searchText`;
 
-        // Fetch Page 1 (to skip it? Or just process it?)
-        // PROMPT asked for "Page 2 or lower".
-        // To do this, we usually need to fetch Page 1 to get the next Page Token.
-        // HOWEVER, Google Places (New) API text search might not strictly "page" in the same old way.
-        // We will fetch 20 results, look at the token, and fetch the next page.
-
-        log("Requesting Page 1...");
+        // Fetch Page 1 to get token
+        log("Requesting Page 1 (to skip to Page 2)...");
         let response = await fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -172,11 +233,11 @@ async function runAgentJob() {
             },
             body: JSON.stringify({
                 textQuery: queryTerm,
-                maxResultCount: 20 // Max per page
+                maxResultCount: 20
             })
         });
 
-        if (!response.ok) throw new Error(`API Error: ${response.status}`);
+        if (!response.ok) throw new Error(`API Error: ${response.status} - ${response.statusText}`);
         let data = await response.json();
 
         if (!data.nextPageToken) {
@@ -185,11 +246,12 @@ async function runAgentJob() {
             return;
         }
 
-        // Wait for token to become valid (short delay recommended)
-        log("Page 1 found. Waiting to fetch Page 2 (Low Visibility)...");
+        // Wait for token
+        log("Page 1 found. Waiting 2s for token activation...");
         await new Promise(r => setTimeout(r, 2000));
 
         // Fetch Page 2
+        log("Fetching Page 2 (Low Visibility Targets)...");
         response = await fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -212,45 +274,48 @@ async function runAgentJob() {
             return;
         }
 
-        log(`Analyzing ${data.places.length} candidates from Page 2...`);
+        log(`Processing ${data.places.length} potential candidates...`);
 
         let leadsAdded = 0;
 
         for (const place of data.places) {
+            // Check max limit
+            if (leadsAdded >= maxLeads) break;
+
             const name = place.displayName?.text || "Unknown";
             const reviews = place.userRatingCount || 0;
             const website = place.websiteUri || null;
 
-            // Log for debug
-            // log(`Checking: ${name} (${reviews} revs)`);
+            // --- FILTER LOGIC ---
 
-            // Rule: Min Reviews
-            if (reviews < settings.minReviews) {
-                // log(`- Skip: < 3 reviews`);
+            // 1. Min Reviews
+            if (reviews < settings.minReviews) continue;
+
+            // 2. Website Filter
+            if (websiteFilter === 'NO_WEBSITE' && website) {
+                // Skip if we ONLY want No Website, but this one HAS one
+                continue;
+            }
+            if (websiteFilter === 'HAS_WEBSITE' && !website) {
+                // Skip if we ONLY want Has Website, but this one HAS NONE
+                console.log("Filtered out: No website");
                 continue;
             }
 
-            // Rule: Heuristics / Pain Signals
+            // --- ANALYZE ---
             const painSignals = [];
             if (!website) painSignals.push('NO_WEBSITE');
             if (reviews < 10) painSignals.push('WEAK_VISIBILITY');
 
-            // If no URL and has few reviews, it's a prime target.
-            // If it has 500 reviews, even on page 2, user might not want it? 
-            // Let's stick to the prompt's "Money making" + "Low ranking" (implied by Page 2).
-
-            // Dedupe Check (Real Firestore)
+            // --- DEDUPE ---
             const q = query(collection(db, 'leads'), where('place_id', '==', place.id));
             const existing = await getDocs(q);
-            if (!existing.empty) {
-                // log(`- Skip: Duplicate`);
-                continue;
-            }
+            if (!existing.empty) continue;
 
-            // Save to DB
+            // --- SAVE ---
             const leadData = {
                 business_name: name,
-                category: industry,
+                category: industryInput,
                 city: city,
                 address: place.formattedAddress || city,
                 google_rating: place.rating || 0,
@@ -266,10 +331,34 @@ async function runAgentJob() {
 
             await addDoc(collection(db, 'leads'), leadData);
             leadsAdded++;
-            log(`+ SAVED: ${name}`);
+            log(`+ SAVED: ${name} ${!website ? '[No Web]' : ''}`);
+
+            // --- UPDATE PREVIEW ---
+            if (previewContainer) {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.style.cssText = 'padding: 1rem; border-left: 3px solid var(--success); font-size: 0.9rem; animation: fadeIn 0.5s ease; cursor: pointer;';
+                card.innerHTML = `
+                    <div class="text-h" style="font-size:1rem; margin-bottom: 5px;">${name}</div>
+                    <div class="text-muted text-sm">${place.formattedAddress || city}</div>
+                    <div style="margin: 0.5rem 0; color: var(--gold);">${place.rating || '-'} ★ (${reviews})</div>
+                    ${!website ? '<span class="badge status-new" style="background:var(--danger); color:white;">No Website</span>' : '<span class="text-muted text-xs">Has Website</span>'}
+                `;
+                // Add click to view detail in Leads module (simulate navigation)
+                card.onclick = () => {
+                    window.location.hash = '#leads';
+                    // Ideally we would open the specific lead, but for now just navigating is good feedback.
+                }
+                previewContainer.appendChild(card);
+            }
         }
 
-        log(`JOB COMPLETE. Added ${leadsAdded} new leads from Page 2.`);
+        if (leadsAdded === 0) {
+            log("No leads met criteria on Page 2.");
+        } else {
+            log(`JOB COMPLETE. Added ${leadsAdded} new leads.`);
+        }
+
         status.innerText = "Done";
 
     } catch (e) {

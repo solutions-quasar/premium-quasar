@@ -44,8 +44,9 @@ function handleRoute() {
         if (loadFunc) loadFunc();
     }
 
-    // Update Bottom Nav
-    document.querySelectorAll('.nav-link').forEach(link => {
+    // Update Bottom Nav & Sidebar
+    const allLinks = document.querySelectorAll('.nav-link, .nav-item');
+    allLinks.forEach(link => {
         link.classList.remove('active');
         if (link.getAttribute('href') === currentHash) link.classList.add('active');
     });
@@ -57,20 +58,29 @@ function setupUI() {
     // Drawer Toggles
     const drawer = document.getElementById('drawer');
     const overlay = document.getElementById('drawer-overlay');
+    const menuBtn = document.getElementById('menu-btn');
+    const closeBtn = document.getElementById('close-drawer');
 
-    document.getElementById('menu-btn').addEventListener('click', () => {
-        if (window.innerWidth >= 1024) return; // Ignore on desktop
-        drawer.classList.add('open');
-        overlay.classList.add('active');
-    });
+    if (menuBtn) {
+        menuBtn.addEventListener('click', () => {
+            if (window.innerWidth >= 1024) return; // Ignore on desktop
+            drawer.classList.add('open');
+            overlay.classList.add('active');
+        });
+    }
 
     const closeDrawerFunc = () => {
         drawer.classList.remove('open');
         overlay.classList.remove('active');
     };
 
-    document.getElementById('close-drawer').addEventListener('click', closeDrawerFunc);
-    overlay.addEventListener('click', closeDrawerFunc);
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closeDrawerFunc);
+    }
+
+    if (overlay) {
+        overlay.addEventListener('click', closeDrawerFunc);
+    }
 
     // FAB Toggle
     const fabBtn = document.getElementById('main-fab');

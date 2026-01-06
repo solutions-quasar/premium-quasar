@@ -100,7 +100,7 @@ async function loadLeads(statusFilter) {
             }
 
             html += `
-                <div class="lead-card card" style="display:flex; flex-direction:column; gap:0.5rem; border-left: 3px solid ${getStatusColor(data.status)}">
+                <div class="lead-card card" onclick="openLeadDetail('${jsonParam}')" style="display:flex; flex-direction:column; gap:0.5rem; border-left: 3px solid ${getStatusColor(data.status)}; cursor:pointer;">
                     <div style="display:flex; justify-content:space-between; align-items:start;">
                         <div>
                             <div class="text-h" style="font-size:1.1rem;">${data.business_name}</div>
@@ -119,10 +119,10 @@ async function loadLeads(statusFilter) {
                     </div>
 
                     <div style="margin-top:auto; display:flex; gap:10px; justify-content: space-between; align-items:center;">
-                         <div style="display:flex; gap:5px;">
+                         <div style="display:flex; gap:5px;" onclick="event.stopPropagation()">
                             ${renderActionButtons(docSnap.id, data.status)}
                          </div>
-                         <button class="btn btn-sm" onclick="openLeadDetail('${jsonParam}')">View Data</button>
+                         <span class="text-xs text-info" style="margin-left:auto;">Click to View</span>
                     </div>
                 </div>
             `;
@@ -194,7 +194,7 @@ window.openLeadDetail = (encodedJson) => {
                     
                     <div id="seo-report-container">
                          <p class="text-muted text-sm">No audit run yet.</p>
-                         <button class="btn btn-block" style="border-color: var(--info); color: var(--info);" onclick="runSEOAudit('${lead.website}')">Run Quick Website Audit</button>
+                         <button class="btn btn-block" style="border-color: var(--info); color: var(--info);" onclick="runDeepAudit('${lead.website}')">Run Deep Full SEO & UX Audit</button>
                     </div>
 
                 </div>
@@ -241,6 +241,8 @@ window.openLeadDetail = (encodedJson) => {
         }
                 </div>
             </div>
+            <!-- Audit Modal Host -->
+            <div id="audit-modal-host"></div>
         </div>
     `;
 };
@@ -359,39 +361,194 @@ window.setPreviewMode = (mode, btnEl) => {
 
 // --- ACTION LOGIC ---
 
-window.runSEOAudit = (url) => {
+// Global variable to store last audit report
+window.lastAuditReport = null;
+
+// Helper to get API Key
+function getOpenAIKey() {
+    let key = localStorage.getItem('openai_api_key');
+    if (!key) {
+        key = prompt("Enter your OpenAI API Key to enable Deep SEO Audits:");
+        if (key) localStorage.setItem('openai_api_key', key);
+    }
+    return key;
+}
+
+window.runDeepAudit = async (url) => {
     const container = document.getElementById('seo-report-container');
     if (!url) {
         container.innerHTML = '<p class="text-danger">Cannot audit: No URL provided.</p>';
         return;
     }
 
-    container.innerHTML = '<p class="text-gold blink">Analyzing HTML structure, meta tags, and mobile readiness...</p>';
+    // 1. Get Credentials
+    const apiKey = getOpenAIKey();
+    if (!apiKey) {
+        container.innerHTML = '<p class="text-warning">Audit Cancelled: No API Key provided.</p>';
+        return;
+    }
 
-    // Simulate Analysis (Real implementation would require a backend proxy to fetch HTML)
-    setTimeout(() => {
-        const score = Math.floor(Math.random() * 40) + 40; // Random score 40-80
+    container.innerHTML = `
+        <div class="text-center">
+            <div class="spinner-border text-gold" role="status" style="width: 2rem; height: 2rem; border-width: 0.2em;"></div>
+            <p class="text-gold blink text-sm mt-3" id="audit-status-text">Connecting to Website...</p>
+        </div>
+    `;
+
+    try {
+        const statusText = document.getElementById('audit-status-text');
+
+        // 2. Fetch Website Content (via CORS Proxy)
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+        const response = await fetch(proxyUrl);
+        const data = await response.json();
+
+        if (!data.contents) throw new Error("Could not fetch website content.");
+
+        let htmlContent = data.contents;
+        // Truncate to avoid token limits (Keep Head + First 15000 chars of body)
+        const headMatch = htmlContent.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
+        const head = headMatch ? headMatch[0] : '';
+        const bodyMatch = htmlContent.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+        let body = bodyMatch ? bodyMatch[1] : htmlContent;
+
+        // Remove scripts/styles
+        body = body.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "");
+        body = body.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gim, "");
+        body = body.substring(0, 15000);
+
+        const cleanHtml = (head + body).replace(/\s+/g, ' ').trim();
+
+        // 3. Send to OpenAI
+        if (statusText) statusText.innerText = "Analyzing with AI (Results in ~10s)...";
+
+        const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: "gpt-3.5-turbo-1106",
+                response_format: { type: "json_object" },
+                messages: [
+                    {
+                        role: "system",
+                        content: `You are an expert SEO and UX Auditor. Analyze the provided HTML. 
+                        Return a JSON object with this EXACT structure:
+                        {
+                            "score": number (0-100),
+                            "issues": [
+                                { "type": "critical"|"warning"|"success", "icon": "error"|"warning"|"check_circle", "title": "short title", "desc": "short description" }
+                            ],
+                            "fixes": ["fix 1", "fix 2"]
+                        }
+                        Be strict yet fair.`
+                    },
+                    {
+                        role: "user",
+                        content: `Analyze this website code (${url}): \n\n ${cleanHtml}`
+                    }
+                ]
+            })
+        });
+
+        if (!aiResponse.ok) {
+            const err = await aiResponse.json();
+            throw new Error("OpenAI Error: " + (err.error?.message || aiResponse.statusText));
+        }
+
+        const aiJson = await aiResponse.json();
+        const content = aiJson.choices[0].message.content;
+        const report = JSON.parse(content);
+
+        // Add metadata
+        report.url = url;
+        report.timestamp = new Date().toLocaleDateString();
+        window.lastAuditReport = report;
+
+        // 4. Render
+        const score = report.score;
         container.innerHTML = `
-            <div class="seo-score-circle" style="background: conic-gradient(var(--${score > 70 ? 'success' : 'warning'}) 0% ${score}%, rgba(255,255,255,0.1) 0% 100%);">
-                <span class="text-h">${score}%</span>
-            </div>
-            <div style="max-height: 200px; overflow-y:auto;">
-                <div class="seo-item">
-                    <span class="material-icons text-danger">highlight_off</span>
-                    <div class="text-sm"><div>Missing H1 Tag</div><div class="text-muted">Critical for ranking</div></div>
+            <div style="display:flex; align-items:center; gap:15px; margin-bottom:1rem;">
+                <div class="seo-score-circle" style="width:60px; height:60px; font-size:1.2rem; background: conic-gradient(var(--${score > 70 ? 'success' : 'warning'}) 0% ${score}%, rgba(255,255,255,0.1) 0% 100%);">
+                    <span style="font-weight:bold;">${score}</span>
                 </div>
-                <div class="seo-item">
-                    <span class="material-icons text-warning">warning</span>
-                    <div class="text-sm"><div>Slow Mobile Load</div><div class="text-muted">Time to interactive > 3s</div></div>
-                </div>
-                <div class="seo-item">
-                     <span class="material-icons text-success">check_circle</span>
-                     <div class="text-sm"><div>SSL Secured</div><div class="text-muted">HTTPS is active</div></div>
+                <div>
+                     <div class="text-h" style="font-size:1.1rem;">AI Audit Complete</div>
+                     <div class="text-xs text-muted">${report.issues.length} Issues Found</div>
                 </div>
             </div>
-            <button class="btn btn-sm btn-block btn-primary" style="margin-top:1rem;" onclick="alert('Report generated! Ready to email.')">Generate Email Report</button>
+            
+            <button class="btn btn-primary btn-block btn-sm" onclick="openAuditPopup()">View Full Report</button>
+            <div class="text-center" style="margin-top:0.5rem;"><a href="#" class="text-xs text-muted" onclick="alert('Email draft created with AI findings!')">Email PDF to Me</a></div>
         `;
-    }, 2000);
+
+    } catch (e) {
+        console.error(e);
+        container.innerHTML = `<p class="text-danger text-sm">Error: ${e.message}</p>`;
+    }
+};
+
+window.openAuditPopup = () => {
+    const report = window.lastAuditReport;
+    if (!report) return;
+
+    const host = document.getElementById('audit-modal-host');
+
+    const issuesHtml = report.issues.map(i => `
+        <div style="display:flex; gap:10px; margin-bottom:10px; padding:10px; background:rgba(255,255,255,0.05); border-radius:8px;">
+            <span class="material-icons text-${i.type === 'critical' ? 'danger' : (i.type === 'warning' ? 'warning' : 'success')}">${i.icon}</span>
+            <div>
+                <div style="font-weight:bold; font-size:0.95rem;">${i.title}</div>
+                <div class="text-sm text-muted">${i.desc}</div>
+            </div>
+        </div>
+    `).join('');
+
+    const fixesHtml = report.fixes.map(f => `
+        <li class="text-sm" style="margin-bottom:5px; color:var(--text-main);">${f}</li>
+    `).join('');
+
+    host.innerHTML = `
+        <div class="crm-modal-overlay" style="z-index:9999;" onclick="document.getElementById('audit-modal-host').innerHTML=''">
+            <div class="crm-modal-content" style="max-width:700px;" onclick="event.stopPropagation()">
+                <div class="crm-modal-header">
+                    <div>
+                        <div class="text-h">Deep SEO & UX Audit Report</div>
+                        <div class="text-sm text-muted">Analysis for ${report.url}</div>
+                    </div>
+                    <button class="icon-btn" onclick="document.getElementById('audit-modal-host').innerHTML=''"><span class="material-icons">close</span></button>
+                </div>
+                <div class="crm-modal-body" style="max-height:60vh; overflow-y:auto;">
+                    
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:20px;">
+                        <div class="card" style="text-align:center;">
+                            <div class="text-muted text-sm uppercase">Overall Health</div>
+                            <div class="text-h text-${report.score > 70 ? 'success' : 'warning'}" style="font-size:3rem;">${report.score}/100</div>
+                        </div>
+                        <div class="card">
+                            <div class="text-muted text-sm uppercase">Summary</div>
+                            <div style="margin-top:5px;" class="text-danger"><strong>${report.issues.filter(i => i.type === 'critical').length}</strong> Critical Errors</div>
+                            <div class="text-warning"><strong>${report.issues.filter(i => i.type === 'warning').length}</strong> Warnings</div>
+                        </div>
+                    </div>
+
+                    <div class="text-h text-gold mb-2">Detailed Findings</div>
+                    <div style="margin-bottom:2rem;">
+                        ${issuesHtml}
+                    </div>
+
+                    <div class="text-h text-success mb-2">Recommended Fixes</div>
+                    <ul style="padding-left:20px; color:var(--text-muted);">
+                        ${fixesHtml}
+                    </ul>
+
+                    <button class="btn btn-primary btn-block" style="margin-top:2rem;" onclick="document.getElementById('audit-modal-host').innerHTML=''">Close Report</button>
+                </div>
+            </div>
+        </div>
+    `;
 };
 
 // ... Rest of status update logic (same as before) ...
