@@ -55,6 +55,7 @@ function setupUI() {
     const overlay = document.getElementById('drawer-overlay');
 
     document.getElementById('menu-btn').addEventListener('click', () => {
+        if (window.innerWidth >= 1024) return; // Ignore on desktop
         drawer.classList.add('open');
         overlay.classList.add('active');
     });
