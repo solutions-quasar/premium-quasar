@@ -709,7 +709,7 @@ function renderSite() {
         <div class="footer-bottom">
             <div class="footer-cred">&copy; ${new Date().getFullYear()} ${CONFIG.business.name} • ${t(CONFIG.footer.rights)}</div>
             <div class="footer-links">
-                <a href="#">${t(CONFIG.footer.terms)}</a> &nbsp;•&nbsp; <a href="#">${t(CONFIG.footer.sitemap)}</a> &nbsp;•&nbsp; <span style="opacity:0.5">${t(CONFIG.footer.designedBy)}</span>
+                <a href="#">${t(CONFIG.footer.terms)}</a> &nbsp;•&nbsp; <a href="#">${t(CONFIG.footer.sitemap)}</a> &nbsp;•&nbsp; <a href="/erp/" class="text-muted" style="text-decoration:none; opacity:0.5; font-size:0.8rem;">ERP Login</a> &nbsp;•&nbsp; <span style="opacity:0.5">${t(CONFIG.footer.designedBy)}</span>
             </div>
         </div>
     `;
