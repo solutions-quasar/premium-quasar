@@ -521,6 +521,45 @@ main {
     border-radius: 50%;
 }
 
+/* Progress Helpers */
+.progress-track {
+    background: rgba(255, 255, 255, 0.1);
+    height: 8px;
+    border-radius: 4px;
+    margin-top: 10px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    background: var(--gold);
+    height: 100%;
+    width: 0%;
+    transition: width 1s ease-in-out;
+}
+
+.circle-chart {
+    width: 120px;
+    height: 120px;
+    margin: 0 auto;
+    position: relative;
+    border-radius: 50%;
+    background: conic-gradient(var(--gold) 0% 0%, rgba(255, 255, 255, 0.1) 0% 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.circle-inner {
+    width: 90px;
+    height: 90px;
+    background: var(--bg-card);
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
 /* =========================================
    DESKTOP RESPONSIVE LAYOUT (min-width: 1024px)
    ========================================= */
@@ -560,11 +599,11 @@ main {
     #main-content {
         flex: 1;
         padding: 2rem;
+        padding-top: calc(var(--header-height) + 2rem);
         padding-bottom: 2rem;
-        /* Remove bottom nav padding */
-        max-width: 1200px;
-        /* Constrain reading width */
-        margin: 0 auto;
+        max-width: 100%;
+        /* Full screen width */
+        margin: 0;
     }
 
     /* 3. Hide Mobile Elements */
@@ -627,6 +666,233 @@ main {
 
     .list-item:hover {
         background: var(--bg-card-hover);
+    }
+
+    /* Leads View Styles */
+    .view-toggle {
+        display: flex;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 2px;
+    }
+
+    .view-toggle-btn {
+        padding: 5px 10px;
+        cursor: pointer;
+        border-radius: 4px;
+        color: var(--text-muted);
+    }
+
+    .view-toggle-btn.active {
+        background: var(--bg-dark);
+        color: var(--gold);
+    }
+
+    /* Leads Grid/List Modes */
+    .leads-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 1rem;
+    }
+
+    .leads-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .lead-card {
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .lead-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 15px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Lead Detail Fullscreen Overlay */
+    .detail-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: var(--bg-dark);
+        z-index: 300;
+        display: flex;
+        flex-direction: column;
+        animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes slideUp {
+        from {
+            transform: translateY(100%);
+        }
+
+        to {
+            transform: translateY(0);
+        }
+    }
+
+    .detail-header {
+        height: 70px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 2rem;
+        background: var(--bg-card);
+    }
+
+    .detail-body {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+    }
+
+    .detail-sidebar {
+        width: 400px;
+        border-right: 1px solid var(--border);
+        overflow-y: auto;
+        padding: 2rem;
+        background: var(--bg-card);
+    }
+
+    .detail-main {
+        flex: 1;
+        background: #000;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .preview-tabs {
+        display: flex;
+        background: var(--bg-card);
+        border-bottom: 1px solid var(--border);
+    }
+
+    .preview-tab {
+        padding: 10px 20px;
+        cursor: pointer;
+        color: var(--text-muted);
+        font-size: 0.9rem;
+        border-right: 1px solid var(--border);
+    }
+
+    .preview-tab.active {
+        background: var(--bg-dark);
+        color: var(--gold);
+        border-bottom: 2px solid var(--gold);
+    }
+
+    .preview-frame {
+        flex: 1;
+        width: 100%;
+        height: 100%;
+        border: none;
+        background: white;
+        /* Iframes usually need white bg */
+    }
+
+    /* Device Simulation Styles */
+    .preview-toolbar {
+        display: flex;
+        gap: 10px;
+        padding: 5px 20px;
+        background: var(--bg-card);
+        border-bottom: 1px solid var(--border);
+        justify-content: center;
+        align-items: center;
+    }
+
+    .device-btn {
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--text-muted);
+        padding: 4px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 0.8rem;
+    }
+
+    .device-btn:hover {
+        background: rgba(255, 255, 255, 0.05);
+    }
+
+    .device-btn.active {
+        background: var(--bg-dark);
+        color: var(--gold);
+        border-color: var(--gold);
+    }
+
+    .preview-container {
+        flex: 1;
+        background: #121212;
+        /* Dark background behind the device */
+        display: flex;
+        justify-content: center;
+        padding: 20px;
+        overflow: hidden;
+        position: relative;
+    }
+
+    .preview-frame-wrapper {
+        width: 100%;
+        height: 100%;
+        transition: width 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        background: white;
+        box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
+        border-radius: 4px;
+        /* Slight radius for device feel */
+        overflow: hidden;
+        margin: 0 auto;
+        display: flex;
+        /* Fix iframe height */
+    }
+
+    /* Device Sizes */
+    .preview-mode-mobile {
+        width: 375px !important;
+        border-radius: 20px;
+        border: 8px solid #333;
+    }
+
+    .preview-mode-tablet {
+        width: 768px !important;
+        border-radius: 12px;
+        border: 8px solid #333;
+    }
+
+    .preview-mode-desktop {
+        width: 100% !important;
+        border: none;
+        border-radius: 0;
+    }
+
+    /* SEO Report */
+    .seo-score-circle {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        background: conic-gradient(var(--gold) 0% 0%, rgba(255, 255, 255, 0.1) 0% 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1rem auto;
+    }
+
+    .seo-item {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 10px;
+        padding: 10px;
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 6px;
     }
 
     /* Modals Center on Desktop */

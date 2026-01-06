@@ -2,6 +2,8 @@ import { initDashboard } from './modules/dashboard.js';
 import { initCRM, addClient } from './modules/crm.js';
 import { initCalendar } from './modules/calendar.js';
 import { initSales } from './modules/sales.js';
+import { initLeads } from './modules/leads.js';
+import { initLeadHunter } from './modules/leadhunter.js';
 
 // Router Map
 const routes = {
@@ -9,7 +11,9 @@ const routes = {
     '#dashboard': initDashboard,
     '#crm': initCRM,
     '#calendar': initCalendar,
-    '#sales': initSales
+    '#sales': initSales,
+    '#leads': initLeads,
+    '#leadhunter': initLeadHunter
 };
 
 // State
@@ -84,16 +88,6 @@ function setupUI() {
         fabOptions.classList.remove('open');
         fabOverlay.classList.remove('active');
         fabBtn.style.transform = 'rotate(0)';
-    });
-
-    // Seed Data
-    document.getElementById('seed-data-btn').addEventListener('click', async () => {
-        if (confirm('Populate database with demo leads?')) {
-            await seedDemoData();
-            alert('Data seeded! Refreshing CRM...');
-            window.location.hash = '#crm';
-            initCRM();
-        }
     });
 }
 
