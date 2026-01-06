@@ -520,3 +520,136 @@ main {
     background: var(--gold);
     border-radius: 50%;
 }
+
+/* =========================================
+   DESKTOP RESPONSIVE LAYOUT (min-width: 1024px)
+   ========================================= */
+@media (min-width: 1024px) {
+
+    /* Layout Structure */
+    #app {
+        flex-direction: row;
+        overflow: hidden;
+    }
+
+    /* 1. Permanent Sidebar */
+    .drawer {
+        position: relative;
+        left: 0;
+        width: 250px;
+        box-shadow: none;
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        z-index: 10;
+    }
+
+    .drawer-header {
+        display: none;
+        /* Hide close button on desktop */
+    }
+
+    .drawer h2 {
+        display: block;
+        padding-left: 10px;
+        margin-top: 0;
+        color: var(--gold);
+    }
+
+    /* 2. Main Content Area */
+    #main-content {
+        flex: 1;
+        padding: 2rem;
+        padding-bottom: 2rem;
+        /* Remove bottom nav padding */
+        max-width: 1200px;
+        /* Constrain reading width */
+        margin: 0 auto;
+    }
+
+    /* 3. Hide Mobile Elements */
+    .bottom-nav {
+        display: none;
+    }
+
+    .top-bar #menu-btn {
+        display: none;
+    }
+
+    /* Hide burger menu */
+    .overlay {
+        display: none !important;
+    }
+
+    /* Disable overlays */
+
+    /* 4. Desktop Adjustments */
+    .top-bar {
+        position: absolute;
+        top: 0;
+        right: 0;
+        left: 250px;
+        /* Offset by sidebar width */
+        width: auto;
+        border-bottom: none;
+        background: transparent;
+        pointer-events: none;
+        /* Let clicks pass through to content if needed */
+    }
+
+    .top-bar .app-title {
+        display: none;
+    }
+
+    /* Breadcrumbs preferred on desktop */
+    .top-bar .top-actions {
+        pointer-events: auto;
+        padding-right: 2rem;
+    }
+
+    /* grids */
+    .stat-grid {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1.5rem;
+    }
+
+    /* FAB -> Header Button conversion */
+    /* On desktop, we hide the mobile FAB and expect 'New' buttons in the content header */
+    .fab-container {
+        display: none;
+    }
+
+    /* Better Tables/Lists */
+    .list-item {
+        padding: 1.5rem;
+        transition: background 0.2s;
+    }
+
+    .list-item:hover {
+        background: var(--bg-card-hover);
+    }
+
+    /* Modals Center on Desktop */
+    .modal {
+        width: 600px;
+        left: 50%;
+        top: 50%;
+        bottom: auto;
+        transform: translate(-50%, -50%) !important;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        max-height: 80vh;
+    }
+
+    .modal-backdrop::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        z-index: -1;
+    }
+}
