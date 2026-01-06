@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="color-scheme" content="dark">
+    <title>Solutions Quasar | Premium Web Development</title>
+    <meta name="description"
+        content="Ultra-premium, mobile-first websites for lawyers, accountants, and high-standard firms. Solutions Quasar delivers fast, secure, and converting digital assets.">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="styles.css?v=5">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="Solutions Quasar | Premium Web Development">
+    <meta property="og:description"
+        content="Websites for firms with high standards. Speed, conversion, and luxury design.">
+    <meta property="og:image" content="hero-desktop.png">
+    <meta property="og:type" content="website">
+
+    <script src="script.js?v=7" defer></script>
+</head>
+
+<body id="top">
+
+    <!-- Desktop Header -->
+    <header id="top-bar">
+        <div class="nav-content">
+            <div class="brand">SQ.</div>
+            <nav class="desktop-nav"></nav>
+            <div class="contact-actions">
+                <a href="#" class="contact-phone"></a>
+                <a href="#" class="contact-email"></a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Mobile Header -->
+    <header class="mobile-top-bar">
+        <div class="mobile-logo brand">SQ.</div>
+        <a href="#" class="mobile-call-btn"></a>
+    </header>
+
+    <main>
+        <!-- Hero -->
+        <section id="hero"></section>
+
+        <!-- Services -->
+        <section id="services">
+            <div class="container">
+                <span class="uppercase text-gold" data-i18n="services.label">Expertise</span>
+                <h2 data-i18n="services.heading">What We Do</h2>
+                <div class="services-grid"></div>
+            </div>
+        </section>
+
+        <!-- Reviews -->
+        <section id="reviews">
+            <div class="container">
+                <span class="uppercase text-gold" data-i18n="reviews.label">References</span>
+                <h2 data-i18n="reviews.heading">Trusted By Professionals</h2>
+                <div class="review-container"></div>
+            </div>
+        </section>
+
+        <!-- Why Choose Us -->
+        <section id="why-us">
+            <div class="container">
+                <span class="uppercase text-gold" data-i18n="why.title">Why Choose Us</span>
+                <h2 data-i18n="why.heading">Premium Standards</h2>
+                <div class="why-grid"></div>
+            </div>
+        </section>
+
+        <!-- Contact -->
+        <section id="contact">
+            <div class="container">
+                <div class="contact-layout">
+                    <!-- Form -->
+                    <div class="form-wrapper">
+                        <h2 data-i18n="contact.title">Book a Strategy Call</h2>
+                        <p class="text-muted" style="margin-bottom:2rem;">Tell us what you need. We’ll reply with next
+                            steps.</p>
+
+                        <form action="https://formspree.io/f/xbjnqyj" method="POST">
+                            <!-- Placeholder Formspree, should be updated by user or left as generic demo -->
+                            <div class="form-group">
+                                <label class="form-label" data-i18n="contact.form.name">Name</label>
+                                <input type="text" name="name" class="form-input" required
+                                    data-i18n-placeholder="contact.form.namePlaceholder" placeholder="John Doe">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" data-i18n="contact.form.company">Firm / Company</label>
+                                <input type="text" name="company" class="form-input"
+                                    data-i18n-placeholder="contact.form.companyPlaceholder"
+                                    placeholder="Miller Law Group">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" data-i18n="contact.form.contact">Phone or Email</label>
+                                <input type="text" name="contact_method" class="form-input" required
+                                    data-i18n-placeholder="contact.form.contactPlaceholder"
+                                    placeholder="john@example.com">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" data-i18n="contact.form.interest">Interest</label>
+                                <select name="interest" class="form-select">
+                                    <option data-i18n="contact.form.interestOptions.website">New Website</option>
+                                    <option data-i18n="contact.form.interestOptions.app">Custom App</option>
+                                    <option data-i18n="contact.form.interestOptions.ai">AI Integration</option>
+                                    <option data-i18n="contact.form.interestOptions.consult">Consultation</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" data-i18n="contact.form.message">Message</label>
+                                <textarea name="message" class="form-textarea"
+                                    data-i18n-placeholder="contact.form.messagePlaceholder"
+                                    placeholder="How can we help?"></textarea>
+                            </div>
+                            <!-- Honeypot -->
+                            <input type="text" name="_gotcha" style="display:none">
+
+                            <button type="submit" class="btn-primary" style="width:100%"
+                                data-i18n="contact.form.submit">Send Request</button>
+                        </form>
+                    </div>
+
+                    <!-- Info -->
+                    <div>
+                        <div class="contact-card">
+                            <div>
+                                <h3 style="margin-bottom:1.5rem" data-i18n="contact.info.title">Contact</h3>
+                                <p class="info-phone" style="margin-bottom:1rem"></p>
+                                <p class="info-email" style="margin-bottom:1rem"></p>
+                                <p class="info-address"></p>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <div class="brand" style="margin-bottom:1rem">SQ.</div>
+            <div class="footer-nav"></div>
+            <div class="footer-cred"></div>
+        </div>
+    </footer>
+
+    <!-- Mobile Bottom Bar -->
+    <div id="mobile-bar">
+        <button class="bar-item" id="btn-menu" aria-label="Menu" onclick="window.toggleMobileMenu()">
+            <div class="menu-icon-wrapper">
+                <div class="burger-icon">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </div>
+        </button>
+        <a href="tel:14184100856" class="bar-item" id="btn-call" aria-label="Call Us">
+            <div>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round">
+                    <path
+                        d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z">
+                    </path>
+                </svg>
+            </div>
+        </a>
+        <button class="bar-item" id="btn-msg" aria-label="Message Us" onclick="window.scrollToContact()">
+            <div>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                    <polyline points="22,6 12,13 2,6"></polyline>
+                </svg>
+            </div>
+        </button>
+    </div>
+
+    <!-- Mobile Menu Overlay -->
+    <div id="menu-overlay">
+        <button class="menu-close" id="btn-close-menu"></button>
+        <nav class="menu-nav"></nav>
+        <div style="margin-top:3rem; text-align:left; opacity:0.6; font-size:0.9rem; padding-left:2rem;">
+            <p>Solutions Quasar Inc.</p>
+        </div>
+    </div>
+
+</body>
+
+</html>
