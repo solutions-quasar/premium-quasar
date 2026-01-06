@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Deploy Static Site
 
 on:
   push:
@@ -9,41 +9,25 @@ permissions:
   contents: write
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install and Build ERP
-        working-directory: ./erp
-        run: |
-          npm install
-          npm run build
-
       - name: Prepare Deployment Artifact
         run: |
           mkdir dist
-          # Copy Landing Page Static Files
-          cp *.html dist/
-          cp *.css dist/
-          cp *.js dist/
-          cp *.png dist/ 2>/dev/null || :
-          cp *.svg dist/ 2>/dev/null || :
-          cp *.txt dist/ 2>/dev/null || :
-          cp *.xml dist/ 2>/dev/null || :
-          cp CNAME dist/ 2>/dev/null || :
+          # Copy Landing Page Root Files
+          cp *.* dist/ 2>/dev/null || :
           
-          # Create ERP directory and copy build output
-          mkdir dist/erp
-          cp -r erp/dist/* dist/erp/
+          # Copy ERP Folder (Recursively)
+          cp -r erp dist/
+          
+          # Ensure no CNAME conflicts if present
+          cp CNAME dist/ 2>/dev/null || :
 
-      - name: Deploy
+      - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
