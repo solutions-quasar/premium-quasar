@@ -152,23 +152,197 @@ main {
     padding: 8px;
 }
 
-/* Top Bar */
-.top-bar {
+/* Navigation & Sidebar Styles (Desktop) */
+.drawer-header {
     height: var(--header-height);
     display: flex;
-    align-items: center;
     justify-content: space-between;
-    padding: 0 1rem;
-    background: var(--glass);
+    align-items: center;
+    padding: 0 1.5rem;
     border-bottom: 1px solid var(--border);
-    backdrop-filter: blur(10px);
-    z-index: 50;
 }
 
-.app-title {
+.logo-area {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.logo-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--gold);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #000;
+    font-weight: bold;
+    font-size: 1.2rem;
+}
+
+.logo-text {
+    font-size: 1.1rem;
     font-weight: 700;
+    color: var(--text-main);
+    letter-spacing: 0.5px;
+}
+
+.drawer-nav {
+    padding: 1rem 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.nav-item {
+    padding: 0.85rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: all 0.2s ease;
+    border-left: 3px solid transparent;
+}
+
+.nav-item:hover {
+    background: var(--bg-card-hover);
+    color: var(--text-main);
+}
+
+.nav-item.active {
+    background: rgba(223, 165, 58, 0.15);
     color: var(--gold);
-    letter-spacing: 1px;
+    border-left-color: var(--gold);
+}
+
+.drawer-footer {
+    padding: 1.5rem;
+    border-top: 1px solid var(--border);
+    margin-top: auto;
+    /* Pushes to bottom */
+}
+
+.user-profile {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.user-profile:hover {
+    background: var(--bg-card-hover);
+}
+
+.user-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #333;
+    color: var(--gold);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    border: 1px solid var(--border);
+}
+
+.user-info {
+    flex: 1;
+}
+
+.user-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.user-role {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+/* Modals & Calendar Overrides */
+.crm-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(5px);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    animation: fadeIn 0.2s ease;
+}
+
+.crm-modal-content {
+    background: var(--bg-card);
+    width: 100%;
+    max-width: 600px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    max-height: 90vh;
+}
+
+.crm-modal-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.crm-modal-body {
+    padding: 1.5rem;
+    overflow-y: auto;
+}
+
+/* FullCalendar Dark Theme Overrides */
+:root {
+    --fc-page-bg-color: var(--bg-card);
+    --fc-neutral-bg-color: var(--bg-dark);
+    --fc-list-event-hover-bg-color: var(--bg-card-hover);
+    --fc-border-color: var(--border);
+    --fc-button-text-color: var(--text-main);
+    --fc-button-bg-color: var(--bg-card);
+    --fc-button-border-color: var(--border);
+    --fc-button-hover-bg-color: var(--bg-card-hover);
+    --fc-button-hover-border-color: var(--gold);
+    --fc-button-active-bg-color: var(--gold);
+    --fc-button-active-border-color: var(--gold);
+    --fc-event-bg-color: var(--info);
+    --fc-event-border-color: var(--info);
+    --fc-today-bg-color: rgba(223, 165, 58, 0.05);
+}
+
+.fc-toolbar-title {
+    font-size: 1.5rem !important;
+    color: var(--gold);
+}
+
+.fc-col-header-cell-cushion,
+.fc-daygrid-day-number {
+    color: var(--text-main) !important;
+    text-decoration: none !important;
+}
+
+.fc-theme-standard .fc-scrollgrid {
+    border-color: var(--border) !important;
+}
+
+.fc-theme-standard td,
+.fc-theme-standard th {
+    border-color: var(--border) !important;
 }
 
 /* Bottom Nav */

@@ -1,37 +1,60 @@
+// --- FullCalendar Integration ---
 export async function initCalendar() {
     const container = document.getElementById('view-calendar');
+    container.innerHTML = `<div id="calendar-wrapper" style="height: 100%; min-height: 600px;"></div>`;
 
-    // Generate dates
-    const days = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-    let gridHtml = '';
+    const calendarEl = document.getElementById('calendar-wrapper');
 
-    // Header
-    days.forEach(d => gridHtml += `<div class="text-center text-muted text-sm">${d}</div>`);
-
-    // Days (Mock 30 days)
-    for (let i = 1; i <= 30; i++) {
-        const isToday = i === new Date().getDate();
-        const hasEvent = [5, 12, 15, 22].includes(i);
-        gridHtml += `<div class="cal-day ${isToday ? 'today' : ''} ${hasEvent ? 'has-event' : ''}">
-            ${i}
-        </div>`;
+    // Check if FullCalendar is loaded
+    if (typeof FullCalendar === 'undefined') {
+        container.innerHTML = `<div class="text-danger">Error: FullCalendar library not loaded. Refresh.</div>`;
+        return;
     }
 
-    container.innerHTML = `
-        <div class="card">
-            <div class="text-h text-center" style="margin-bottom: 1rem;">January 2026</div>
-            <div class="calendar-grid">
-                ${gridHtml}
-            </div>
-        </div>
-        
-        <div class="text-h" style="margin-top: 2rem;">Upcoming</div>
-        <div class="list-item">
-            <div class="item-avatar" style="background:var(--info); color:white;">15</div>
-             <div class="item-content">
-                <div class="item-title">Sales Meeting</div>
-                <div class="item-subtitle">10:00 AM - Microsoft Teams</div>
-            </div>
-        </div>
-    `;
+    const calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'dayGridMonth',
+        headerToolbar: {
+            left: 'prev,next today',
+            center: 'title',
+            right: 'dayGridMonth,timeGridWeek,timeGridDay'
+        },
+        height: '100%',
+        editable: true,
+        selectable: true,
+        selectMirror: true,
+        dayMaxEvents: true,
+        themeSystem: 'standard', // Custom styled in CSS
+        events: [
+            { title: 'Screening: Tech Corp', start: new Date().toISOString().split('T')[0] + 'T10:00:00', end: new Date().toISOString().split('T')[0] + 'T11:00:00', color: 'var(--info)' },
+            { title: 'Follow-up Call', start: new Date(Date.now() + 86400000).toISOString().split('T')[0] + 'T14:30:00', color: 'var(--success)' },
+            { title: 'Quarterly Review', start: new Date(Date.now() + 172800000).toISOString().split('T')[0], color: 'var(--gold)' }
+        ],
+        select: function (arg) {
+            // Create event prompt
+            const title = prompt('Event Title:');
+            if (title) {
+                calendar.addEvent({
+                    title: title,
+                    start: arg.start,
+                    end: arg.end,
+                    allDay: arg.allDay,
+                    color: 'var(--info)'
+                })
+            }
+            calendar.unselect()
+        },
+        eventClick: function (arg) {
+            alert('Event: ' + arg.event.title + '\nTime: ' + (arg.event.start ? arg.event.start.toLocaleString() : 'All Day'));
+            // In a real app, this would open a nice modal like CRM
+        },
+        eventDrop: function (info) {
+            console.log(info.event.title + " was dropped on " + info.event.start.toISOString());
+            // Sync with DB
+        }
+    });
+
+    calendar.render();
+
+    // Fix resize issues when view changes
+    setTimeout(() => { calendar.updateSize(); }, 200);
 }
