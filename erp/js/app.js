@@ -2,7 +2,15 @@ import { db, auth } from './firebase-config.js';
 import { collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
-// ... existing code ...
+import { initDashboard } from './modules/dashboard.js';
+import { initCRM, addClient } from './modules/crm.js';
+import { initCalendar } from './modules/calendar.js';
+import { initSales } from './modules/sales.js';
+import { initLeads } from './modules/leads.js';
+import { initLeadHunter } from './modules/leadhunter.js';
+import { initColdCall } from './modules/coldcall.js';
+import { initAccount } from './modules/account.js';
+import { initTeam } from './modules/team.js';
 
 function initAuth() {
     const loginView = document.getElementById('login-view');
@@ -12,6 +20,12 @@ function initAuth() {
     const unlock = () => {
         loginView.classList.remove('active');
         appView.style.display = '';
+
+        // Default to dashboard if no specific route
+        if (!window.location.hash || window.location.hash === '#') {
+            window.location.hash = '#dashboard';
+        }
+
         handleRoute();
         setupUI();
         window.addEventListener('hashchange', handleRoute);
@@ -72,14 +86,7 @@ window.performLogout = async () => {
         console.error("Logout Error:", error);
     }
 };
-import { initCRM, addClient } from './modules/crm.js';
-import { initCalendar } from './modules/calendar.js';
-import { initSales } from './modules/sales.js';
-import { initLeads } from './modules/leads.js';
-import { initLeadHunter } from './modules/leadhunter.js';
-import { initColdCall } from './modules/coldcall.js';
-import { initAccount } from './modules/account.js';
-import { initTeam } from './modules/team.js';
+
 
 // --- SIDEBAR TOGGLE LOGIC ---
 window.toggleSidebar = () => {
