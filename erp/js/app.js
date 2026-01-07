@@ -4,6 +4,85 @@ import { initCalendar } from './modules/calendar.js';
 import { initSales } from './modules/sales.js';
 import { initLeads } from './modules/leads.js';
 import { initLeadHunter } from './modules/leadhunter.js';
+import { initColdCall } from './modules/coldcall.js';
+import { initAccount } from './modules/account.js';
+import { initTeam } from './modules/team.js';
+
+// --- SIDEBAR TOGGLE LOGIC ---
+window.toggleSidebar = () => {
+    document.body.classList.toggle('sidebar-collapsed');
+    const isCollapsed = document.body.classList.contains('sidebar-collapsed');
+    localStorage.setItem('sidebar_collapsed', isCollapsed);
+    updateSidebarIcon(isCollapsed);
+
+    // JS Brute Force: Hide text nodes to guarantee centering
+    document.querySelectorAll('.nav-item').forEach(el => {
+        if (isCollapsed) {
+            // Save original text if not already saved
+            if (!el.dataset.originalText) {
+                // Get text node only (excluding icon)
+                const text = Array.from(el.childNodes)
+                    .filter(node => node.nodeType === 3 && node.textContent.trim().length > 0)
+                    .map(node => node.textContent.trim())
+                    .join('');
+                el.dataset.originalText = text;
+            }
+            // Remove text nodes, leaving only the icon
+            Array.from(el.childNodes).forEach(node => {
+                if (node.nodeType === 3) node.remove(); // Remove text nodes
+            });
+        } else {
+            // Restore text
+            if (el.dataset.originalText && el.querySelectorAll('.material-icons').length > 0) {
+                // Check if text already exists to prevent duplication
+                const hasText = Array.from(el.childNodes).some(n => n.nodeType === 3 && n.textContent.trim().length > 0);
+                if (!hasText) {
+                    el.appendChild(document.createTextNode(' ' + el.dataset.originalText));
+                }
+            }
+        }
+    });
+};
+
+function updateSidebarIcon(collapsed) {
+    const icon = document.getElementById('sidebar-toggle-icon');
+    if (icon) icon.innerText = collapsed ? 'chevron_right' : 'chevron_left';
+
+    // Run text hiding logic on init if needed
+    if (collapsed) {
+        document.querySelectorAll('.nav-item').forEach(el => {
+            if (!el.dataset.originalText) {
+                const text = Array.from(el.childNodes)
+                    .filter(node => node.nodeType === 3)
+                    .map(node => node.textContent)
+                    .join('').trim();
+                if (text) el.dataset.originalText = text;
+            }
+            Array.from(el.childNodes).forEach(node => {
+                if (node.nodeType === 3) node.remove();
+            });
+        });
+    }
+}
+
+// Init Sidebar State
+const savedSidebarState = localStorage.getItem('sidebar_collapsed');
+if (savedSidebarState === 'true') {
+    document.body.classList.add('sidebar-collapsed');
+    updateSidebarIcon(true);
+} else {
+    // Ensure text is captured on first load even if expanded
+    setTimeout(() => {
+        document.querySelectorAll('.nav-item').forEach(el => {
+            const text = Array.from(el.childNodes)
+                .filter(node => node.nodeType === 3)
+                .map(node => node.textContent)
+                .join('').trim();
+            if (text) el.dataset.originalText = text;
+        });
+    }, 500);
+}
+// --- END SIDEBAR LOGIC ---
 
 // Router Map
 const routes = {
@@ -13,18 +92,97 @@ const routes = {
     '#calendar': initCalendar,
     '#sales': initSales,
     '#leads': initLeads,
-    '#leadhunter': initLeadHunter
+    '#leadhunter': initLeadHunter,
+    '#coldcall': initColdCall,
+    '#account': initAccount,
+    '#team': initTeam
 };
 
 // State
 let currentHash = '';
 
 // Init
+// Init
 document.addEventListener('DOMContentLoaded', () => {
-    handleRoute();
-    setupUI();
-    window.addEventListener('hashchange', handleRoute);
+    initAuth();
 });
+
+function initAuth() {
+    const loginView = document.getElementById('login-view');
+    const appView = document.getElementById('app');
+    const form = document.getElementById('login-form');
+    const session = localStorage.getItem('quasar_session');
+
+    const unlock = () => {
+        loginView.classList.remove('active');
+        appView.style.display = ''; // Clear inline 'none' to let CSS take over
+        handleRoute();
+        setupUI();
+        window.addEventListener('hashchange', handleRoute);
+    };
+
+    if (session === 'active') {
+        unlock();
+    } else {
+        // Remain locked
+    }
+
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const btn = form.querySelector('button');
+        const originalText = btn.innerText;
+        btn.innerText = 'Verifying...';
+        btn.disabled = true;
+
+        setTimeout(() => {
+            localStorage.setItem('quasar_session', 'active');
+            unlock();
+            btn.innerText = originalText;
+            btn.disabled = false;
+        }, 800);
+    });
+
+    // Logout Logic
+    const logoutBtn = Array.from(document.querySelectorAll('button')).find(el => el.textContent.trim() === 'Logout');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            showLogoutConfirmation();
+        });
+    }
+}
+
+function showLogoutConfirmation() {
+    // Create modal host if needed
+    let host = document.getElementById('modal-container');
+    if (!host) {
+        host = document.createElement('div');
+        host.id = 'modal-container';
+        document.body.appendChild(host);
+    }
+
+    host.innerHTML = `
+        <div class="crm-modal-overlay" style="z-index:9999;" onclick="document.getElementById('modal-container').innerHTML=''">
+            <div class="crm-modal-content" style="max-width:400px; text-align:center; padding:2rem;" onclick="event.stopPropagation()">
+                <div style="margin-bottom:1rem;">
+                    <span class="material-icons text-gold" style="font-size:3rem;">logout</span>
+                </div>
+                <div class="text-h mb-2">Disconnect Session?</div>
+                <p class="text-muted text-sm mb-4">You will be returned to the secure authentication screen.</p>
+                
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                    <button class="btn" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
+                    <button class="btn" style="background:var(--danger); border-color:var(--danger);" onclick="performLogout()">Logout</button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+window.performLogout = () => {
+    localStorage.removeItem('quasar_session');
+    window.location.reload();
+};
 
 function handleRoute() {
     currentHash = window.location.hash || '#dashboard'; // Default

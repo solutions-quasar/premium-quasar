@@ -8,6 +8,7 @@
     <title>Premium Quasar ERP</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/login.css">
 
     <!-- Material Icons -->
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
@@ -18,27 +19,56 @@
 
 <body>
 
-    <!-- App Shell -->
-    <div id="app">
-
-        <!-- Top Bar -->
-        <header class="top-bar">
-            <button class="icon-btn" id="menu-btn"><span class="material-icons">menu</span></button>
-            <div class="app-title">SQ. ERP</div>
-            <div class="top-actions">
-                <button class="icon-btn" id="sync-status"><span
-                        class="material-icons text-green">cloud_done</span></button>
+    <!-- Login View (Overlay) -->
+    <div id="login-view" class="login-container active">
+        <div class="login-card">
+            <div class="login-logo-area">
+                <img src="favicon.svg" alt="Q" class="login-logo-img">
             </div>
-        </header>
+            <div class="text-h text-center text-gold mb-4" style="font-size: 1.5rem;">Premium Quasar</div>
+            <p class="text-center text-muted mb-4 text-sm">Enterprise Resource Planning System</p>
+
+            <form id="login-form">
+                <div class="form-group">
+                    <label class="form-label">Email Access ID</label>
+                    <div class="input-with-icon">
+                        <span class="material-icons">person</span>
+                        <input type="email" class="form-input" placeholder="admin@quasar.com" value="admin@quasar.com"
+                            required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Secure Key</label>
+                    <div class="input-with-icon">
+                        <span class="material-icons">lock</span>
+                        <input type="password" class="form-input" placeholder="••••••••" value="password" required>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block" style="padding: 12px; margin-top: 1rem;">
+                    Authenticate
+                </button>
+            </form>
+
+            <div class="text-center mt-3">
+                <a href="#" class="text-xs text-muted">Forgot Credentials?</a>
+            </div>
+        </div>
+        <div class="login-bg-overlay"></div>
+    </div>
+
+    <!-- App Shell -->
+    <div id="app" style="display:none;">
+
+        <!-- Top Bar REMOVED -->
 
         <!-- Sidebar (Drawer) -->
         <aside class="drawer" id="drawer">
-            <div class="drawer-header">
+            <div class="drawer-header" style="display:flex;">
                 <div class="logo-area">
-                    <img src="favicon.svg" alt="Q" style="width:30px; height:30px;">
-                    <span class="logo-text">Premium Quasar</span>
+                    <img src="logo.png" alt="Quasar" style="width:auto; height:40px; border-radius:0;">
                 </div>
-                <!-- <button class="icon-btn" id="close-drawer"><span class="material-icons">close</span></button>  Kept separate logic if needed, but mobile overlay handles close. -->
             </div>
             <nav class="drawer-nav">
                 <a href="#dashboard" class="nav-item"><span class="material-icons">dashboard</span> Dashboard</a>
@@ -46,8 +76,10 @@
                 <a href="#leads" class="nav-item"><span class="material-icons">filter_list</span> Leads</a>
                 <a href="#leadhunter" class="nav-item text-gold"><span class="material-icons">track_changes</span> Lead
                     Hunter</a>
+                <a href="#coldcall" class="nav-item"><span class="material-icons">phone_in_talk</span> Cold Call</a>
                 <a href="#calendar" class="nav-item"><span class="material-icons">event</span> Calendar</a>
                 <a href="#sales" class="nav-item"><span class="material-icons">receipt</span> Sales</a>
+                <a href="#team" class="nav-item"><span class="material-icons">groups</span> Team</a>
             </nav>
             <div class="drawer-footer">
                 <div class="user-profile">
@@ -58,10 +90,15 @@
                     </div>
                 </div>
                 <div style="display:flex; justify-content:space-between; margin-top:10px;">
-                    <button class="btn btn-sm text-gold" style="background:none; border:none; padding:0;">My
-                        Account</button>
+                    <button class="btn btn-sm text-gold" style="background:none; border:none; padding:0;"
+                        onclick="window.location.hash='#account'">My Account</button>
                     <button class="btn btn-sm text-danger"
                         style="background:none; border:none; padding:0;">Logout</button>
+                </div>
+                <!-- Collapse Toggle -->
+                <div style="text-align:center; padding-top:10px; border-top:1px solid #333; margin-top:10px; cursor:pointer;"
+                    title="Toggle Sidebar" onclick="toggleSidebar()">
+                    <span class="material-icons text-muted" id="sidebar-toggle-icon">chevron_left</span>
                 </div>
             </div>
         </aside>
@@ -77,6 +114,9 @@
             <div id="view-sales" class="view"></div>
             <div id="view-leads" class="view"></div>
             <div id="view-leadhunter" class="view"></div>
+            <div id="view-coldcall" class="view"></div>
+            <div id="view-account" class="view"></div>
+            <div id="view-team" class="view"></div>
         </main>
 
         <!-- Bottom Navigation (Mobile First) -->

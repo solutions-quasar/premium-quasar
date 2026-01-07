@@ -1,5 +1,6 @@
 import { db } from '../firebase-config.js';
 import { collection, query, where, getDocs, updateDoc, doc, addDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getTeamDropdownOptions } from './team.js';
 
 // Init Leads Module
 export async function initLeads() {
@@ -23,7 +24,6 @@ export async function initLeads() {
         <div style="display:flex; gap:1rem; margin-bottom:1rem; overflow-x:auto; padding-bottom:5px;">
             <button class="btn btn-sm active-filter" data-filter="NEW">New</button>
             <button class="btn btn-sm" data-filter="APPROVED">Approved</button>
-            <button class="btn btn-sm" data-filter="CONTACT_QUEUED">Queued</button>
             <button class="btn btn-sm" data-filter="CONTACTED">Contacted</button>
             <button class="btn btn-sm" data-filter="ALL">All</button>
         </div>
@@ -106,7 +106,7 @@ async function loadLeads(statusFilter) {
                             <div class="text-h" style="font-size:1.1rem;">${data.business_name}</div>
                             <div class="text-sm text-muted">${data.category || 'Business'} • ${data.city}</div>
                         </div>
-                        <div class="text-gold" style="font-weight:bold;">${data.google_rating || '-'} ★ <span class="text-muted text-sm">(${data.google_reviews_count || 0})</span></div>
+                        <div class="text-gold" style="font-weight:bold; min-width:80px; text-align:right;">${data.google_rating || '-'} ★ <span class="text-muted text-sm">(${data.google_reviews_count || 0})</span></div>
                     </div>
                     
                     <div style="display:flex; gap:5px; flex-wrap:wrap; margin: 0.5rem 0;">
@@ -122,7 +122,6 @@ async function loadLeads(statusFilter) {
                          <div style="display:flex; gap:5px;" onclick="event.stopPropagation()">
                             ${renderActionButtons(docSnap.id, data.status)}
                          </div>
-                         <span class="text-xs text-info" style="margin-left:auto;">Click to View</span>
                     </div>
                 </div>
             `;
@@ -161,7 +160,16 @@ window.openLeadDetail = (encodedJson) => {
                 </div>
                 <div>
                     <button class="btn" onclick="document.getElementById('lead-detail-overlay').innerHTML=''">Close</button>
-                    ${lead.status === 'NEW' ? `<button class="btn btn-primary" onclick="updateLeadStatus('${lead.id}', 'APPROVED')">Approve Lead</button>` : ''}
+                    ${lead.status === 'NEW' ? `
+                        <div style="display:inline-flex; gap:5px; margin-left:10px;">
+                             <button class="btn btn-sm" style="border-color:var(--success); color:var(--success);" onclick="updateLeadStatus('${lead.id}', 'APPROVED', 'NO_WEBSITE')">No Web</button>
+                             <button class="btn btn-sm" style="border-color:var(--success); color:var(--success);" onclick="updateLeadStatus('${lead.id}', 'APPROVED', 'DATED_DESIGN')">Bad Web</button>
+                             <button class="btn btn-sm" style="border-color:var(--success); color:var(--success);" onclick="updateLeadStatus('${lead.id}', 'APPROVED', 'BAD_RANKING')">Bad SEO</button>
+                             <button class="btn btn-sm" style="border-color:var(--success); color:var(--success);" onclick="updateLeadStatus('${lead.id}', 'APPROVED', 'OTHER')">Other</button>
+                             <button class="btn btn-sm" style="border-color:var(--danger); color:var(--danger);" onclick="updateLeadStatus('${lead.id}', 'REJECTED')">Reject</button>
+                        </div>
+                    ` : ''}
+                    ${lead.status === 'APPROVED' ? `<button class="btn btn-primary ml-2" onclick="openAssignModal('${lead.id}')">Assign Agent</button>` : ''}            
                 </div>
             </div>
             <div class="detail-body">
@@ -173,6 +181,13 @@ window.openLeadDetail = (encodedJson) => {
                         <label class="form-label">Discovery Logic</label>
                         <div class="text-sm">Found via query: <strong>${lead.discovered_query}</strong></div>
                         <div class="text-sm">Result Type: <strong>Page 2+ (Low Visibility)</strong></div>
+                        ${lead.notes ? `<div class="text-sm mt-2 text-warning">Note: ${lead.notes}</div>` : ''}
+                    </div>
+                    
+                    <!-- Added Assigned To Info -->
+                    <div class="form-group">
+                        <label class="form-label">Assignment</label>
+                        <div class="text-sm">Assigned To: <strong class="text-gold">${lead.assigned_to_name || 'Unassigned'}</strong></div>
                     </div>
 
                     <div class="form-group">
@@ -207,19 +222,34 @@ window.openLeadDetail = (encodedJson) => {
                         <div class="preview-tab" onclick="setPreviewSrc('${googleSearchUrl}', this, 'google')">Search Results</div>
                     </div>
                     
-                    <!-- DEVICE TOOLBAR (Only relevant for Website) -->
+                    <!-- DEVICE TOOLBAR -->
                     <div id="device-toolbar" class="preview-toolbar" style="display: ${siteUrl ? 'flex' : 'none'};">
                         <div class="device-btn" onclick="setPreviewMode('mobile', this)"><span class="material-icons">smartphone</span> Mobile</div>
                         <div class="device-btn" onclick="setPreviewMode('tablet', this)"><span class="material-icons">tablet</span> Tablet</div>
                         <div class="device-btn active" onclick="setPreviewMode('desktop', this)"><span class="material-icons">laptop</span> Desktop</div>
                         
                         <div class="dev-slider-group">
-                            <span class="text-xs text-muted">Width:</span>
-                            <input type="range" class="dev-slider" min="320" max="1600" value="1200" oninput="setCustomWidth(this.value)">
-                            <span class="text-xs text-gold" id="width-display">100%</span>
+                             <span class="text-xs text-muted">Width:</span>
+                             <input type="range" class="dev-slider" min="320" max="1600" value="1200" oninput="setCustomWidth(this.value)">
+                             <span class="text-xs text-gold" id="width-display">100%</span>
                         </div>
                         
-                        <div class="device-btn" style="margin-left:10px;" onclick="reloadPreview()" title="Force Reload">
+                        <div style="flex:1;"></div>
+
+                        <!-- Explicit Blocked Help Button -->
+                        <div class="device-btn" style="border-color:var(--danger); color:var(--danger);" onclick="toggleScreenshotMode('${siteUrl}')" title="Use this if website refuses to connect">
+                            <span class="material-icons">broken_image</span> <span class="desktop-only text-xs ml-1">Site Blocked?</span>
+                        </div>
+
+                        <div class="device-btn" onclick="toggleScreenshotMode('${siteUrl}')" title="Switch to Screenshot">
+                            <span class="material-icons">image</span> <span class="desktop-only text-xs ml-1">Screenshot</span>
+                        </div>
+
+                        <div class="device-btn" onclick="window.open('${siteUrl}', '_blank')" title="Open External">
+                            <span class="material-icons">open_in_new</span>
+                        </div>
+
+                        <div class="device-btn" style="margin-left:5px;" onclick="reloadPreview()" title="Force Reload">
                             <span class="material-icons">refresh</span>
                         </div>
                     </div>
@@ -358,6 +388,31 @@ window.setPreviewMode = (mode, btnEl) => {
         }
     }
 };
+
+window.toggleScreenshotMode = (url) => {
+    const wrapper = document.getElementById('iframe-wrapper');
+    const frame = document.querySelector('.preview-frame');
+
+    if (frame && wrapper && url) {
+        startLoadTimer();
+        // WordPress mShots API
+        let screenshotUrl = `https://s0.wordpress.com/mshots/v1/${encodeURIComponent(url)}?w=1280&h=960`;
+
+        if (frame.src.includes('mshots')) {
+            // Revert to Live
+            console.log('Reverting to Live Iframe');
+            frame.src = url;
+        } else {
+            // Switch to Screenshot
+            console.log('Switching to Screenshot Mode');
+            frame.src = screenshotUrl;
+        }
+
+        // Brief timeout to "finish" loading since mshots is fast or returns immediately
+        setTimeout(finishLoadTimer, 1500);
+    }
+};
+
 
 // --- ACTION LOGIC ---
 
@@ -564,30 +619,36 @@ function getStatusColor(status) {
 
 function renderActionButtons(id, status) {
     if (status === 'NEW') {
-        return `
-            <button class="btn btn-sm" style="border-color:var(--success); color:var(--success);" onclick="updateLeadStatus('${id}', 'APPROVED')">Approve</button>
-            <button class="btn btn-sm" style="border-color:var(--danger); color:var(--danger);" onclick="updateLeadStatus('${id}', 'REJECTED')">Reject</button>
-        `;
+        return ''; // Buttons removed from list view as requested
     }
     if (status === 'APPROVED') {
-        return `<button class="btn btn-sm btn-primary" onclick="updateLeadStatus('${id}', 'CONTACT_QUEUED')">Push to Components</button>`;
+        return ''; // Queue removed
     }
     return '';
 }
 
-window.updateLeadStatus = async (id, newStatus) => {
+window.updateLeadStatus = async (id, newStatus, category = null) => {
     try {
-        const ref = doc(db, "leads", id);
-        await updateDoc(ref, {
+        let updateData = {
             status: newStatus,
             updated_at: new Date().toISOString()
-        });
+        };
 
-        // If approved, maybe create a client draft?
-        if (newStatus === 'APPROVED') {
-            // Optional: Auto-add to CRM? 
-            // For now, just keep in "Approved" tab
+        // If Approving, use provided category or default
+        if (newStatus === 'APPROVED' && category) {
+            updateData.lead_quality_category = category;
+
+            // If "Other", prompt for specific notes
+            if (category === 'OTHER') {
+                const note = prompt("Please enter a note for why this is 'Other' (optional):");
+                if (note) {
+                    updateData.notes = note;
+                }
+            }
         }
+
+        const ref = doc(db, "leads", id);
+        await updateDoc(ref, updateData);
 
         // Close overlay if open
         const overlay = document.getElementById('lead-detail-overlay');
@@ -600,5 +661,63 @@ window.updateLeadStatus = async (id, newStatus) => {
     } catch (e) {
         console.error(e);
         alert('Error updating status');
+    }
+};
+
+// --- LEAD ASSIGNMENT ---
+window.openAssignModal = async (leadId) => {
+    // We reuse the audit-modal-host for convenience or create a new one
+    let host = document.getElementById('audit-modal-host');
+
+    const options = await getTeamDropdownOptions();
+
+    host.innerHTML = `
+        <div class="crm-modal-overlay" onclick="document.getElementById('audit-modal-host').innerHTML=''">
+            <div class="crm-modal-content" style="max-width:400px;" onclick="event.stopPropagation()">
+                <div class="crm-modal-header">
+                    <div class="text-h">Assign Lead</div>
+                    <button class="icon-btn" onclick="document.getElementById('audit-modal-host').innerHTML=''"><span class="material-icons">close</span></button>
+                </div>
+                <div class="crm-modal-body">
+                    <input type="hidden" id="assign-lead-id" value="${leadId}">
+                    <div class="form-group">
+                        <label class="form-label">Select Sales Agent</label>
+                        <select id="assign-agent-select" class="form-input" style="background:var(--bg-dark); color:white;">
+                            ${options}
+                        </select>
+                    </div>
+                    <button class="btn btn-primary btn-block mt-3" onclick="assignLead()">Confirm Assignment</button>
+                </div>
+            </div>
+        </div>
+    `;
+};
+
+window.assignLead = async () => {
+    const leadId = document.getElementById('assign-lead-id').value;
+    const select = document.getElementById('assign-agent-select');
+    const agentId = select.value;
+    const agentName = select.options[select.selectedIndex].text;
+
+    if (!agentId) return;
+
+    try {
+        await updateDoc(doc(db, "leads", leadId), {
+            assigned_to: agentId,
+            assigned_to_name: agentName, // Storing name for easier display
+            updated_at: new Date().toISOString()
+        });
+
+        document.getElementById('audit-modal-host').innerHTML = ''; // Close modal
+        document.getElementById('lead-detail-overlay').innerHTML = ''; // Close detail to refresh
+
+        // Refresh list
+        const activeBtn = document.querySelector('button[data-filter].btn-primary');
+        if (activeBtn) activeBtn.click();
+
+        alert(`Lead assigned to ${agentName}`);
+    } catch (e) {
+        console.error(e);
+        alert('Assignment failed: ' + e.message);
     }
 };
