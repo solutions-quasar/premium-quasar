@@ -1,6 +1,6 @@
 import { db, auth } from './firebase-config.js';
 import { collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { signInWithEmailAndPassword, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence, browserSessionPersistence, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
 import { initDashboard } from './modules/dashboard.js';
 import { initCRM, addClient } from './modules/crm.js';
@@ -16,6 +16,28 @@ function initAuth() {
     const loginView = document.getElementById('login-view');
     const appView = document.getElementById('app');
     const form = document.getElementById('login-form');
+
+    // UI Elements
+    const togglePwdBtn = document.getElementById('toggle-password-btn');
+    const pwdInput = document.getElementById('login-password');
+    const rememberEmailCheckbox = document.getElementById('remember-email');
+    const stayConnectedCheckbox = document.getElementById('stay-connected');
+
+    // 1. Toggle Password Visibility
+    if (togglePwdBtn && pwdInput) {
+        togglePwdBtn.addEventListener('click', () => {
+            const type = pwdInput.getAttribute('type') === 'password' ? 'text' : 'password';
+            pwdInput.setAttribute('type', type);
+            togglePwdBtn.innerText = type === 'password' ? 'visibility' : 'visibility_off';
+        });
+    }
+
+    // 2. Pre-fill Email if Saved
+    const savedEmail = localStorage.getItem('saved_email');
+    if (savedEmail) {
+        document.getElementById('login-email').value = savedEmail;
+        if (rememberEmailCheckbox) rememberEmailCheckbox.checked = true;
+    }
 
     const unlock = () => {
         loginView.classList.remove('active');
@@ -33,8 +55,11 @@ function initAuth() {
 
     const lock = () => {
         loginView.classList.add('active');
-        document.getElementById('login-email').value = '';
+        // Do not clear email if remember me is checked, but maybe clear password
         document.getElementById('login-password').value = '';
+        if (!rememberEmailCheckbox || !rememberEmailCheckbox.checked) {
+            document.getElementById('login-email').value = '';
+        }
         window.removeEventListener('hashchange', handleRoute);
     };
 
@@ -60,7 +85,18 @@ function initAuth() {
         const email = document.getElementById('login-email').value;
         const password = document.getElementById('login-password').value;
 
+        // Save Email Logic
+        if (rememberEmailCheckbox && rememberEmailCheckbox.checked) {
+            localStorage.setItem('saved_email', email);
+        } else {
+            localStorage.removeItem('saved_email');
+        }
+
+        // Persistence Logic
+        const persistenceType = (stayConnectedCheckbox && stayConnectedCheckbox.checked) ? browserLocalPersistence : browserSessionPersistence;
+
         try {
+            await setPersistence(auth, persistenceType);
             await signInWithEmailAndPassword(auth, email, password);
             // onAuthStateChanged will handle the unlock
             btn.innerText = originalText;
@@ -74,9 +110,111 @@ function initAuth() {
     });
 
     // Logout Logic
-    // We attach this globally since the logout button might be in the sidebar (always present)
-    // or inside the modal
+    const logoutBtn = Array.from(document.querySelectorAll('button')).find(el => el.textContent.trim() === 'LOGOUT' || el.textContent.trim() === 'Logout');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            showLogoutConfirmation();
+        });
+    }
+
+    // Forgot Password Logic
+    const forgotLink = document.getElementById('forgot-password-link');
+    if (forgotLink) {
+        forgotLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            showForgotPasswordModal();
+        });
+    }
 }
+
+window.showForgotPasswordModal = () => {
+    let host = document.getElementById('modal-container');
+    if (!host) {
+        host = document.createElement('div');
+        host.id = 'modal-container';
+        document.body.appendChild(host);
+    }
+    const currentEmail = document.getElementById('login-email').value || '';
+
+    host.innerHTML = `
+        <div class="crm-modal-overlay" style="z-index:9999;" onclick="document.getElementById('modal-container').innerHTML=''">
+            <div class="crm-modal-content" style="max-width:400px; padding:2rem;" onclick="event.stopPropagation()">
+                <div class="text-h mb-2">Reset Password</div>
+                <p class="text-muted text-sm mb-4">Enter your email address to receive a reset link.</p>
+                <input type="email" id="reset-email-input" class="form-input mb-4" placeholder="Enter your email" value="${currentEmail}">
+                <div style="display:flex; justify-content:flex-end; gap:10px;">
+                    <button class="btn btn-secondary" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
+                    <button class="btn btn-primary" onclick="handlePasswordReset()">Send Link</button>
+                </div>
+            </div>
+        </div>
+    `;
+};
+
+// Toast Notification Utility
+window.showToast = (message, type = 'normal') => {
+    // Remove existing
+    const existing = document.querySelector('.crm-toast');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.className = `crm-toast ${type}`;
+
+    let icon = 'info';
+    if (type === 'success') icon = 'check_circle';
+    if (type === 'error') icon = 'error';
+
+    toast.innerHTML = `<span class="material-icons" style="color:var(--${type === 'normal' ? 'gold' : type})">${icon}</span> ${message}`;
+
+    document.body.appendChild(toast);
+
+    // Animate In
+    requestAnimationFrame(() => toast.classList.add('show'));
+
+    // Auto Dismiss
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
+};
+
+window.handlePasswordReset = async () => {
+    const email = document.getElementById('reset-email-input').value;
+    if (!email) {
+        showToast("Please enter an email address.", "error");
+        return;
+    }
+
+    // UI Feedback
+    const btn = document.querySelector('#modal-container .btn-primary');
+    const originalText = btn.innerText;
+    btn.innerText = 'Sending...';
+    btn.disabled = true;
+
+    try {
+        // Use Backend for Custom HTML Email (Premium Look)
+        const response = await fetch('http://localhost:5000/api/forgot-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
+        });
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || "Failed to send reset email.");
+        }
+
+        showToast("Secure reset link sent to " + email, "success");
+        document.getElementById('modal-container').innerHTML = '';
+    } catch (error) {
+        console.error("Reset Error:", error);
+        showToast(error.message, "error");
+        btn.innerText = originalText;
+        btn.disabled = false;
+    }
+};
 
 window.performLogout = async () => {
     try {
@@ -86,6 +224,33 @@ window.performLogout = async () => {
         console.error("Logout Error:", error);
     }
 };
+
+function showLogoutConfirmation() {
+    // Create modal host if needed
+    let host = document.getElementById('modal-container');
+    if (!host) {
+        host = document.createElement('div');
+        host.id = 'modal-container';
+        document.body.appendChild(host);
+    }
+
+    host.innerHTML = `
+        <div class="crm-modal-overlay" style="z-index:9999;" onclick="document.getElementById('modal-container').innerHTML=''">
+            <div class="crm-modal-content" style="max-width:400px; text-align:center; padding:2rem;" onclick="event.stopPropagation()">
+                <div style="margin-bottom:1rem;">
+                    <span class="material-icons text-gold" style="font-size:3rem;">logout</span>
+                </div>
+                <div class="text-h mb-2">Disconnect Session?</div>
+                <p class="text-muted text-sm mb-4">You will be returned to the secure authentication screen.</p>
+                
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                    <button class="btn" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
+                    <button class="btn" style="background:var(--danger); border-color:var(--danger);" onclick="performLogout()">Logout</button>
+                </div>
+            </div>
+        </div>
+    `;
+}
 
 
 // --- SIDEBAR TOGGLE LOGIC ---
@@ -180,69 +345,47 @@ const routes = {
 
 // State
 let currentHash = '';
+let activeBaseHash = '';
 
-// Init
 // Init
 document.addEventListener('DOMContentLoaded', () => {
     initAuth();
 });
 
-
-function showLogoutConfirmation() {
-    // Create modal host if needed
-    let host = document.getElementById('modal-container');
-    if (!host) {
-        host = document.createElement('div');
-        host.id = 'modal-container';
-        document.body.appendChild(host);
-    }
-
-    host.innerHTML = `
-        <div class="crm-modal-overlay" style="z-index:9999;" onclick="document.getElementById('modal-container').innerHTML=''">
-            <div class="crm-modal-content" style="max-width:400px; text-align:center; padding:2rem;" onclick="event.stopPropagation()">
-                <div style="margin-bottom:1rem;">
-                    <span class="material-icons text-gold" style="font-size:3rem;">logout</span>
-                </div>
-                <div class="text-h mb-2">Disconnect Session?</div>
-                <p class="text-muted text-sm mb-4">You will be returned to the secure authentication screen.</p>
-                
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-                    <button class="btn" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
-                    <button class="btn" style="background:var(--danger); border-color:var(--danger);" onclick="performLogout()">Logout</button>
-                </div>
-            </div>
-        </div>
-    `;
-}
-
-window.performLogout = () => {
-    localStorage.removeItem('quasar_session');
-    window.location.reload();
-};
-
 function handleRoute() {
-    currentHash = window.location.hash || '#dashboard'; // Default
-    if (currentHash === '') currentHash = '#dashboard';
+    const rawHash = window.location.hash || '#dashboard';
+    const baseHash = rawHash.split('?')[0]; // Ignore query params
+
+    currentHash = rawHash;
+
+    // Determine target view ID using baseHash
+    let viewId = 'view-' + baseHash.replace('#', '');
+
+    // Special Case: If we are just changing params on the same view (e.g. closing a modal), 
+    // we don't want to re-init everything.
+    const isSameView = (baseHash === activeBaseHash);
+    activeBaseHash = baseHash;
 
     // Hide all views
     document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
 
-    // Determine target view ID
-    let viewId = 'view-' + currentHash.replace('#', '');
     const viewEl = document.getElementById(viewId);
-
     if (viewEl) {
         viewEl.classList.add('active');
-        // Init module if exists
-        const loadFunc = routes[currentHash];
-        if (loadFunc) loadFunc();
+
+        // Only init module if view changed
+        if (!isSameView) {
+            const loadFunc = routes[baseHash];
+            if (loadFunc) loadFunc();
+        }
     }
 
-    // Update Bottom Nav & Sidebar
+    // Update Bottom Nav & Sidebar (using baseHash for matching)
     const allLinks = document.querySelectorAll('.nav-link, .nav-item');
     allLinks.forEach(link => {
         link.classList.remove('active');
-        if (link.getAttribute('href') === currentHash) link.classList.add('active');
+        const href = link.getAttribute('href');
+        if (href && href.split('?')[0] === baseHash) link.classList.add('active');
     });
 
     closeDrawer();

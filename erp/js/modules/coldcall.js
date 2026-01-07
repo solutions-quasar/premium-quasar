@@ -228,7 +228,7 @@ window.selectColdCallLead = async (id) => {
                             <div class="field-container" id="field-container-website">
                                 <div style="display:flex; align-items:center; gap:8px;">
                                     <span class="material-icons text-gold" style="font-size:1rem;">language</span>
-                                    <a href="${data.website}" target="_blank" class="text-info hover-underline" style="font-size:0.9rem; text-decoration:none;">
+                                    <a href="${data.website}" target="_blank" class="hover-underline" style="font-size:0.9rem; text-decoration:none; color: #60a5fa;">
                                         ${data.website ? (data.website.startsWith('http') ? new URL(data.website).hostname : data.website) : 'No Website'}
                                     </a>
                                     <span class="material-icons text-muted hover-icon" style="font-size:0.9rem; cursor:pointer;" 
@@ -699,7 +699,7 @@ window.confirmInlineEdit = async (id, field, newValue, container) => {
         html = `
             <div style="display:flex; align-items:center; gap:8px;">
                 <span class="material-icons text-gold" style="font-size:1rem;">language</span>
-                <a href="${newValue}" target="_blank" class="text-info hover-underline" style="font-size:0.9rem; text-decoration:none;">
+                <a href="${newValue}" target="_blank" class="hover-underline" style="font-size:0.9rem; text-decoration:none; color: #60a5fa;">
                     ${displayUrl}
                 </a>
                 <span class="material-icons text-muted hover-icon" style="font-size:0.9rem; cursor:pointer;" 

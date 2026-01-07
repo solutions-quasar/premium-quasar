@@ -15,6 +15,84 @@
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js'></script>
+    <style>
+        .custom-checkbox {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border: 2px solid #555;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.05);
+            cursor: pointer;
+            position: relative;
+            display: inline-block;
+            vertical-align: middle;
+            transition: all 0.2s;
+        }
+
+        .custom-checkbox:checked {
+            background-color: var(--gold);
+            border-color: var(--gold);
+        }
+
+        .custom-checkbox:checked::after {
+            content: 'check';
+            font-family: 'Material Icons';
+            position: absolute;
+            color: #000;
+            font-size: 14px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-weight: bold;
+        }
+
+        .form-label-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            user-select: none;
+        }
+
+        /* TOAST NOTIFICATION */
+        .crm-toast {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: rgba(21, 23, 28, 0.95);
+            border: 1px solid var(--border);
+            border-left: 4px solid var(--gold);
+            color: var(--text);
+            padding: 16px 24px;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            z-index: 3000;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            font-family: 'Inter', sans-serif;
+        }
+
+        .crm-toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        .crm-toast.success {
+            border-left-color: var(--success);
+        }
+
+        .crm-toast.error {
+            border-left-color: var(--danger);
+        }
+    </style>
 </head>
 
 <body>
@@ -38,20 +116,34 @@
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Secure Key</label>
-                    <div class="input-with-icon">
-                        <span class="material-icons">lock</span>
-                        <input type="password" id="login-password" class="form-input" placeholder="••••••••" required>
+                    <label class="form-label">Password</label>
+                    <div class="input-with-icon" style="position:relative;">
+                        <span class="material-icons" style="pointer-events:none;">lock</span>
+                        <input type="password" id="login-password" class="form-input" placeholder="••••••••" required
+                            style="padding-right: 45px;">
+                        <span class="material-icons" id="toggle-password-btn"
+                            style="position:absolute; right:10px; top:50%; transform:translateY(-50%); left: auto !important; cursor:pointer; color:var(--text-muted); font-size:1.2rem; user-select:none; z-index:20;">visibility</span>
                     </div>
                 </div>
 
-                <button type="submit" class="btn btn-primary btn-block" style="padding: 12px; margin-top: 1rem;">
+                <div class="form-group"
+                    style="display:flex; justify-content:space-between; align-items:center; margin-top:1rem; margin-bottom:1.5rem;">
+                    <label class="form-label-checkbox">
+                        <input type="checkbox" id="remember-email" class="custom-checkbox"> Remember Email
+                    </label>
+                    <label class="form-label-checkbox">
+                        <input type="checkbox" id="stay-connected" class="custom-checkbox" checked> Stay Connected
+                    </label>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block" style="padding: 12px;">
                     Authenticate
                 </button>
             </form>
 
             <div class="text-center mt-3">
-                <a href="#" class="text-xs text-muted">Forgot Credentials?</a>
+                <a href="#" id="forgot-password-link" class="text-xs text-muted" style="text-decoration:none;">Forgot
+                    Credentials?</a>
             </div>
         </div>
         <div class="login-bg-overlay"></div>
