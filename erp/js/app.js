@@ -64,12 +64,16 @@ function initAuth() {
     };
 
     // Real-time Auth Listener
-    onAuthStateChanged(auth, (user) => {
+    onAuthStateChanged(auth, async (user) => {
         if (user) {
             console.log('User authenticated:', user.email);
+            // Save token for external pages (like report.html)
+            const token = await user.getIdToken();
+            localStorage.setItem('authToken', token);
             unlock();
         } else {
             console.log('User signed out.');
+            localStorage.removeItem('authToken');
             lock();
         }
     });

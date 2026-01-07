@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Audit Report - Premium Quasar</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --bg-card: rgba(255, 255, 255, 0.02);
+            --gold: #dfa53a;
+            --success: #4caf50;
+            --warning: #ff9800;
+            --danger: #f44336;
+            --info: #00bcd4;
+            --text: #ffffff;
+            --muted: rgba(255, 255, 255, 0.6);
+            --border: rgba(255, 255, 255, 0.08);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #1a1a2e;
+            font-family: 'Inter', sans-serif;
+            color: var(--text);
+            min-height: 100vh;
+            padding: 40px;
+        }
+
+        .controls {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            gap: 10px;
+        }
+
+        .controls button {
+            background: var(--gold);
+            color: var(--bg);
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 700;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .controls button:hover {
+            opacity: 0.9;
+        }
+
+        /* Report Container */
+        #report-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        /* Page Styles */
+        .report-page {
+            width: 750px;
+            min-height: 1050px;
+            background: var(--bg);
+            padding: 0;
+            padding-bottom: 60px;
+            margin-bottom: 40px;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Black Header Bar */
+        .page-header {
+            background: #000000;
+            padding: 20px 40px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .page-header .header-brand {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .page-header .logo {
+            height: 40px;
+            width: auto;
+        }
+
+        .page-header .company-name {
+            font-size: 0.8rem;
+            color: var(--gold);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            font-weight: 700;
+        }
+
+        .page-header .header-text {
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.5);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        /* Page Content */
+        .page-content {
+            padding: 40px 60px;
+        }
+
+        /* Page Footer */
+        .page-footer {
+            position: absolute;
+            bottom: 30px;
+            left: 50px;
+            right: 50px;
+            border-top: 1px solid var(--border);
+            padding-top: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .page-footer .brand {
+            font-size: 10px;
+            color: var(--gold);
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        .page-footer .page-num {
+            font-size: 10px;
+            opacity: 0.5;
+        }
+
+        .page-footer .cta {
+            font-size: 9px;
+            color: var(--gold);
+        }
+
+        /* Header Section */
+        .header {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 50px;
+        }
+
+        .header-left {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 25px;
+            width: 100%;
+        }
+
+        /* Score Ring */
+        .score-ring {
+            width: 120px;
+            height: 120px;
+            position: relative;
+        }
+
+        .score-ring-bg {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            border: 8px solid var(--border);
+        }
+
+        .score-ring-progress {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            border: 8px solid transparent;
+            transform: rotate(-90deg);
+        }
+
+        .score-ring-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+
+        .score-value {
+            font-size: 2.5rem;
+            font-weight: 900;
+            line-height: 1;
+        }
+
+        .score-label {
+            font-size: 0.45rem;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 5px;
+            font-weight: 700;
+            line-height: 1.3;
+        }
+
+        /* Title Section */
+        .report-title {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .report-title h1 {
+            font-size: 1.8rem;
+            font-weight: 800;
+            letter-spacing: 2px;
+            color: #ffffff;
+        }
+
+        .report-title .url {
+            font-size: 0.8rem;
+            color: var(--gold);
+            font-family: monospace;
+            margin-top: 8px;
+        }
+
+        .report-title .tech {
+            font-size: 0.7rem;
+            color: var(--muted);
+            margin-top: 3px;
+        }
+
+        /* Branding */
+        .branding {
+            text-align: right;
+        }
+
+        .branding .solutions {
+            font-size: 0.65rem;
+            letter-spacing: 2px;
+            color: var(--gold);
+            font-weight: bold;
+        }
+
+        .branding .quasar {
+            font-size: 1.2rem;
+            font-weight: 900;
+            letter-spacing: 3px;
+        }
+
+        .branding .tagline {
+            font-size: 0.6rem;
+            color: var(--muted);
+            margin-top: 3px;
+        }
+
+        /* Executive Summary */
+        .exec-badge {
+            text-align: center;
+            margin: 50px 0 30px;
+        }
+
+        .exec-badge span {
+            display: inline-block;
+            padding: 10px 30px;
+            border: 1px solid var(--border);
+            border-radius: 50px;
+            font-size: 0.7rem;
+            letter-spacing: 3px;
+            color: var(--muted);
+            text-transform: uppercase;
+            font-weight: bold;
+        }
+
+        .exec-summary {
+            text-align: center;
+            padding: 30px;
+            margin-bottom: 60px;
+            border: 2px solid var(--gold);
+            border-radius: 20px;
+            background: rgba(223, 165, 58, 0.05);
+        }
+
+        .exec-summary p {
+            font-size: 1.2rem;
+            line-height: 1.8;
+            font-style: italic;
+            font-weight: 300;
+        }
+
+        /* Metrics Grid */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+        }
+
+        .metric-card {
+            padding: 25px;
+            background: var(--bg-card);
+            border: 2px solid var(--border);
+            border-radius: 15px;
+            text-align: center;
+            transition: border-color 0.3s ease;
+        }
+
+        .metric-card.card-success {
+            border-color: var(--success);
+            box-shadow: 0 0 15px rgba(76, 175, 80, 0.2);
+        }
+
+        .metric-card.card-warning {
+            border-color: var(--warning);
+            box-shadow: 0 0 15px rgba(255, 152, 0, 0.2);
+        }
+
+        .metric-card.card-danger {
+            border-color: var(--danger);
+            box-shadow: 0 0 15px rgba(244, 67, 54, 0.2);
+        }
+
+        .metric-card.card-info {
+            border-color: var(--info);
+            box-shadow: 0 0 15px rgba(0, 188, 212, 0.2);
+        }
+
+        .metric-card .label {
+            font-size: 0.65rem;
+            opacity: 0.5;
+            margin-bottom: 8px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .metric-card .value {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        /* Page 2: Findings */
+        .section-header {
+            margin-bottom: 10px;
+        }
+
+        .section-header .breadcrumb {
+            font-size: 0.7rem;
+            color: var(--gold);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        .section-header .url-ref {
+            position: absolute;
+            top: 60px;
+            right: 60px;
+            font-size: 0.65rem;
+            color: var(--muted);
+            font-family: monospace;
+        }
+
+        .section-title {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 35px;
+        }
+
+        .section-title h2 {
+            font-size: 1.8rem;
+            font-weight: 800;
+            letter-spacing: 2px;
+        }
+
+        /* Finding Items */
+        .finding-item {
+            display: flex;
+            gap: 18px;
+            align-items: flex-start;
+            padding: 18px 20px;
+            margin-bottom: 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+        }
+
+        .finding-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .finding-icon.critical {
+            background: linear-gradient(135deg, rgba(244, 67, 54, 0.2), rgba(183, 28, 28, 0.3));
+            border: 1px solid rgba(244, 67, 54, 0.4);
+            box-shadow: 0 4px 15px rgba(244, 67, 54, 0.3);
+        }
+
+        .finding-icon.warning {
+            background: linear-gradient(135deg, rgba(255, 152, 0, 0.2), rgba(230, 81, 0, 0.3));
+            border: 1px solid rgba(255, 152, 0, 0.4);
+            box-shadow: 0 4px 15px rgba(255, 152, 0, 0.3);
+        }
+
+        .finding-icon.success {
+            background: linear-gradient(135deg, rgba(76, 175, 80, 0.2), rgba(27, 94, 32, 0.3));
+            border: 1px solid rgba(76, 175, 80, 0.4);
+            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.3);
+        }
+
+        .finding-content h3 {
+            font-weight: 700;
+            font-size: 1rem;
+            margin-bottom: 5px;
+            letter-spacing: 0.3px;
+        }
+
+        .finding-content p {
+            font-size: 0.8rem;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        /* Page 3: Fixes */
+        .fix-item {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            padding: 22px;
+            margin-bottom: 15px;
+            background: rgba(76, 175, 80, 0.05);
+            border: 1px solid rgba(76, 175, 80, 0.1);
+            border-radius: 15px;
+        }
+
+        .fix-icon {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .fix-item p {
+            font-weight: 500;
+            font-size: 1.05rem;
+        }
+
+        /* Page 4: CTA */
+        .cta-box {
+            margin-top: 100px;
+            background: linear-gradient(135deg, #0b0d10 0%, #1e293b 100%);
+            padding: 100px 60px;
+            border-radius: 48px;
+            border: 1px solid var(--gold);
+            text-align: center;
+        }
+
+        .cta-box .subtitle {
+            color: var(--gold);
+            font-weight: 900;
+            font-size: 1.1rem;
+            margin-bottom: 25px;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+        }
+
+        .cta-box h2 {
+            font-size: 3rem;
+            font-weight: 900;
+            margin-bottom: 30px;
+            line-height: 1.1;
+        }
+
+        .cta-box p {
+            color: var(--muted);
+            line-height: 1.8;
+            margin-bottom: 60px;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+            font-size: 1.2rem;
+        }
+
+        .cta-box .website {
+            font-size: 2rem;
+            font-weight: 800;
+            margin-bottom: 15px;
+        }
+
+        .cta-box .email {
+            color: var(--gold);
+            font-size: 1.3rem;
+            font-weight: 600;
+        }
+
+        /* SVG Icons */
+        .icon-critical {
+            color: var(--danger);
+        }
+
+        .icon-warning {
+            color: var(--warning);
+        }
+
+        .icon-success {
+            color: var(--success);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="controls">
+        <button onclick="downloadPDF()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            Download PDF
+        </button>
+    </div>
+
+    <div id="report-container">
+        <!-- PAGE 1: Cover -->
+        <div class="report-page" id="page-1">
+            <div class="page-header">
+                <div class="header-brand">
+                    <img src="logo.png" alt="Quasar Logo" class="logo">
+                    <span class="company-name">SOLUTIONS QUASAR INC.</span>
+                </div>
+                <span class="header-text">Intelligence Report</span>
+            </div>
+            <div class="page-content">
+                <div class="header">
+                    <div class="header-left">
+                        <div class="score-ring">
+                            <div class="score-ring-bg"></div>
+                            <div class="score-ring-progress" id="score-progress"></div>
+                            <div class="score-ring-content">
+                                <div class="score-value" id="score-value">45</div>
+                                <div class="score-label">YOUR WEBSITE<br>SCORE</div>
+                            </div>
+                        </div>
+                        <div class="report-title">
+                            <h1 id="business-title">BUSINESS NAME</h1>
+                            <div class="url" id="report-url">http://www.example.com/</div>
+                            <div class="tech">Web HTML5 CSS3</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="exec-badge">
+                    <span>Executive Summary</span>
+                </div>
+
+                <div class="exec-summary">
+                    <p id="exec-summary-text">"The website is underperforming due to poor loading speeds, suboptimal
+                        mobile
+                        design, and a lack of essential SEO practices. These issues are likely causing significant loss
+                        in
+                        potential leads and revenue."</p>
+                </div>
+
+                <div class="metrics-grid" style="margin-bottom: 20px;">
+                    <div class="metric-card card-danger">
+                        <div class="label">Load Estimate</div>
+                        <div class="value" id="metric-load" style="color: var(--danger);">4.6s</div>
+                    </div>
+                    <div class="metric-card card-danger">
+                        <div class="label">Search Presence</div>
+                        <div class="value" id="metric-visibility" style="color: var(--danger);">Invisible</div>
+                    </div>
+                    <div class="metric-card card-warning">
+                        <div class="label">DOM Complexity</div>
+                        <div class="value" id="metric-dom" style="color: var(--warning);">High</div>
+                    </div>
+                </div>
+                <div class="metrics-grid">
+                    <div class="metric-card card-success">
+                        <div class="label">Technical SEO</div>
+                        <div class="value" style="color: var(--success);">OPTIMIZED</div>
+                    </div>
+                    <div class="metric-card card-danger">
+                        <div class="label">Structured Data</div>
+                        <div class="value" style="color: var(--danger);">INACTIVE</div>
+                    </div>
+                    <div class="metric-card card-warning">
+                        <div class="label">Mobile Score</div>
+                        <div class="value" id="metric-mobile" style="color: var(--warning);">62%</div>
+                    </div>
+                </div>
+
+                <div class="page-footer">
+                    <span class="brand">SOLUTIONS QUASAR • TECHNICAL AUDIT</span>
+                    <span class="page-num">01 / 04</span>
+                    <span class="cta">solutionsquasar.ca</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- PAGE 2: Findings -->
+        <div class="report-page" id="page-2">
+            <div class="page-header">
+                <div class="header-brand">
+                    <img src="logo.png" alt="Quasar Logo" class="logo">
+                    <span class="company-name">SOLUTIONS QUASAR INC.</span>
+                </div>
+                <span class="header-text">Intelligence Report</span>
+            </div>
+            <div class="page-content">
+                <div class="section-header">
+                    <div class="breadcrumb">02 / STRATEGIC AUDIT</div>
+                </div>
+
+                <div class="section-title">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                        <!-- Document base -->
+                        <rect x="3" y="2" width="12" height="16" rx="2" stroke="var(--gold)" stroke-width="1.5"
+                            fill="rgba(223, 165, 58, 0.1)" />
+                        <!-- Document lines -->
+                        <line x1="6" y1="6" x2="12" y2="6" stroke="var(--gold)" stroke-width="1.5"
+                            stroke-linecap="round" />
+                        <line x1="6" y1="9" x2="12" y2="9" stroke="var(--gold)" stroke-width="1.5"
+                            stroke-linecap="round" />
+                        <line x1="6" y1="12" x2="10" y2="12" stroke="var(--gold)" stroke-width="1.5"
+                            stroke-linecap="round" />
+                        <!-- Magnifying glass -->
+                        <circle cx="16" cy="14" r="5" stroke="var(--gold)" stroke-width="2"
+                            fill="rgba(223, 165, 58, 0.15)" />
+                        <line x1="19.5" y1="17.5" x2="22" y2="20" stroke="var(--gold)" stroke-width="2.5"
+                            stroke-linecap="round" />
+                        <!-- Sparkle accent -->
+                        <circle cx="14.5" cy="12.5" r="1" fill="var(--gold)" />
+                    </svg>
+                    <h2>DETAILED FINDINGS</h2>
+                </div>
+
+                <div id="findings-list">
+                    <!-- Findings will be populated by JavaScript -->
+                </div>
+
+                <div class="page-footer">
+                    <span class="brand">SOLUTIONS QUASAR • TECHNICAL AUDIT</span>
+                    <span class="page-num">02 / 04</span>
+                    <span class="cta">solutionsquasar.ca</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- PAGE 3: Fixes -->
+        <div class="report-page" id="page-3">
+            <div class="page-header">
+                <div class="header-brand">
+                    <img src="logo.png" alt="Quasar Logo" class="logo">
+                    <span class="company-name">SOLUTIONS QUASAR INC.</span>
+                </div>
+                <span class="header-text">Intelligence Report</span>
+            </div>
+            <div class="page-content">
+                <div class="section-header">
+                    <div class="breadcrumb" style="color: var(--success);">03 / ROADMAP TO GROWTH</div>
+                </div>
+
+                <div class="section-title">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--success)"
+                        stroke-width="2">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                        <polyline points="22 4 12 14.01 9 11.01" />
+                    </svg>
+                    <h2>PRIORITY FIXES</h2>
+                </div>
+
+                <div id="fixes-list">
+                    <!-- Fixes will be populated by JavaScript -->
+                </div>
+
+                <div class="page-footer">
+                    <span class="brand">SOLUTIONS QUASAR • TECHNICAL AUDIT</span>
+                    <span class="page-num">03 / 04</span>
+                    <span class="cta">solutionsquasar.ca</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- PAGE 4: CTA -->
+        <div class="report-page" id="page-4">
+            <div class="page-header">
+                <div class="header-brand">
+                    <img src="logo.png" alt="Quasar Logo" class="logo">
+                    <span class="company-name">SOLUTIONS QUASAR INC.</span>
+                </div>
+                <span class="header-text">Intelligence Report</span>
+            </div>
+            <div class="page-content">
+
+                <div class="cta-box">
+                    <div class="subtitle">NEXT STEPS</div>
+                    <h2>Stop Losing Leads Today.</h2>
+                    <p>We build ultra-premium, high-speed websites that turn your visitors into clients. Book your
+                        strategy
+                        call to discuss your migration and reclaim your digital presence.</p>
+                    <div class="website"><a href="https://solutionsquasar.ca" target="_blank"
+                            style="color: inherit; text-decoration: none;">solutionsquasar.ca</a></div>
+                    <div class="email"><a href="mailto:info@solutionsquasar.ca"
+                            style="color: inherit; text-decoration: none;">info@solutionsquasar.ca</a></div>
+                    <div class="phone" style="color: var(--muted); font-size: 1.1rem; margin-top: 10px;"><a
+                            href="tel:+14184100856" style="color: inherit; text-decoration: none;">418 410-0856</a>
+                    </div>
+                </div>
+
+                <div class="page-footer">
+                    <span class="brand">SOLUTIONS QUASAR • TECHNICAL AUDIT</span>
+                    <span class="page-num">04 / 04</span>
+                    <span class="cta">READY TO UPGRADE?</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Sample report data - this will come from localStorage in real usage
+        const sampleReport = {
+            score: 45,
+            url: "http://www.rghca.com/",
+            business_name: "RGHCA Medical Clinic",
+            executive_summary: "The website is underperforming due to poor loading speeds, suboptimal mobile design, and a lack of essential SEO practices. These issues are likely causing significant loss in potential leads and revenue.",
+            performance: {
+                fcp_estimate: "4.6s",
+                dom_complexity: "High",
+                mobile_score: "62%"
+            },
+            search_visibility: "Invisible",
+            issues: [
+                { type: "critical", title: "Dead Code and Unused Scripts", desc: "The HTML contains a lot of commented code and unused scripts, which can slow down page load times." },
+                { type: "critical", title: "Non-Optimized Images", desc: "Images are not optimized for web, leading to longer load times and reduced performance." },
+                { type: "warning", title: "Lack of H1 Tags", desc: "There are no H1 tags, which are crucial for SEO and help both users and search engines understand the content hierarchy." },
+                { type: "warning", title: "Mobile Usability Issues", desc: "Tap targets are not optimized for mobile, causing user interaction problems on smartphones." },
+                { type: "success", title: "Clear Meta Description", desc: "The website has a well-defined meta description for search engines, improving the chances of click-through." }
+            ],
+            fixes: [
+                "Remove unused scripts and optimize the HTML structure to enhance performance.",
+                "Compress and optimize images before uploading for faster loading times.",
+                "Implement a clear H1 tag that encapsulates the main topic of each page.",
+                "Revise the mobile design to ensure tap targets are at least 44px in size.",
+                "Improve accessibility by adding ARIA labels and better focus management."
+            ]
+        };
+
+        // Load report from localStorage or use sample
+        function loadReport() {
+            const stored = localStorage.getItem('auditReport');
+            return stored ? JSON.parse(stored) : sampleReport;
+        }
+
+        // Populate report
+        function populateReport() {
+            const report = loadReport();
+
+            // Score and color
+            const score = report.score;
+            const scoreColor = score >= 70 ? 'var(--success)' : (score >= 50 ? 'var(--warning)' : 'var(--danger)');
+
+            // Update score display
+            document.getElementById('score-value').textContent = score;
+            document.getElementById('score-value').style.color = scoreColor;
+
+            // Update score ring
+            const progress = document.getElementById('score-progress');
+            const percent = score / 100;
+            progress.style.borderTopColor = scoreColor;
+            progress.style.borderRightColor = score > 25 ? scoreColor : 'transparent';
+            progress.style.borderBottomColor = score > 50 ? scoreColor : 'transparent';
+            progress.style.borderLeftColor = score > 75 ? scoreColor : 'transparent';
+
+            // Update other fields
+            document.getElementById('report-url').textContent = report.url;
+            document.getElementById('exec-summary-text').textContent = `"${report.executive_summary}"`;
+
+            // Load time with color coding
+            const loadTime = report.performance?.fcp_estimate || '4.6s';
+            const loadTimeEl = document.getElementById('metric-load');
+            loadTimeEl.textContent = loadTime;
+            // Parse the numeric value (remove 's' suffix)
+            const loadSeconds = parseFloat(loadTime.replace('s', ''));
+            if (loadSeconds <= 2) {
+                loadTimeEl.style.color = 'var(--success)'; // Green - fast
+            } else if (loadSeconds <= 4) {
+                loadTimeEl.style.color = 'var(--warning)'; // Orange - medium
+            } else {
+                loadTimeEl.style.color = 'var(--danger)'; // Red - slow
+            }
+
+            document.getElementById('metric-visibility').textContent = report.search_visibility || 'Invisible';
+            document.getElementById('metric-dom').textContent = report.performance?.dom_complexity || 'High';
+            document.getElementById('metric-mobile').textContent = report.performance?.mobile_score || '62%';
+
+            // Update business name in the main title
+            const businessName = report.business_name || 'Business Website';
+            document.getElementById('business-title').textContent = businessName;
+
+            // Populate findings
+            const findingsList = document.getElementById('findings-list');
+            findingsList.innerHTML = report.issues.map(issue => {
+                const iconClass = issue.type === 'critical' ? 'critical' : (issue.type === 'success' || issue.type === 'good' ? 'success' : 'warning');
+                const iconSvg = issue.type === 'critical'
+                    ? `<svg width="22" height="22" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="var(--danger)"/><path d="M15 9L9 15M9 9l6 6" stroke="white" stroke-width="2.5" stroke-linecap="round"/></svg>`
+                    : (issue.type === 'success' || issue.type === 'good')
+                        ? `<svg width="22" height="22" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="var(--success)"/><path d="M8 12l3 3 5-6" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`
+                        : `<svg width="22" height="22" viewBox="0 0 24 24"><path d="M12 3L2 21h20L12 3z" fill="var(--warning)"/><line x1="12" y1="10" x2="12" y2="14" stroke="white" stroke-width="2.5" stroke-linecap="round"/><circle cx="12" cy="17" r="1.2" fill="white"/></svg>`;
+
+                return `
+                    <div class="finding-item">
+                        <div class="finding-icon ${iconClass}">${iconSvg}</div>
+                        <div class="finding-content">
+                            <h3>${issue.title}</h3>
+                            <p>${issue.desc}</p>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Populate fixes
+            const fixesList = document.getElementById('fixes-list');
+            fixesList.innerHTML = report.fixes.map(fix => `
+                <div class="fix-item">
+                    <div class="fix-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24">
+                            <circle cx="12" cy="12" r="10" fill="var(--success)"/>
+                            <path d="M8 12l3 3 5-6" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                        </svg>
+                    </div>
+                    <p>${fix}</p>
+                </div>
+            `).join('');
+        }
+
+        // Download PDF and save to lead
+        async function downloadPDF() {
+            const container = document.getElementById('report-container');
+            const pages = container.querySelectorAll('.report-page');
+            const report = loadReport();
+
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: 'a4'
+            });
+
+            for (let i = 0; i < pages.length; i++) {
+                if (i > 0) pdf.addPage();
+
+                const canvas = await html2canvas(pages[i], {
+                    scale: 2,
+                    useCORS: true,
+                    backgroundColor: '#0f172a'
+                });
+
+                const imgData = canvas.toDataURL('image/jpeg', 0.95);
+                const pageWidth = 210;
+                const pageHeight = (canvas.height * pageWidth) / canvas.width;
+
+                pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight);
+            }
+
+            // Generate filename with business name
+            const businessName = report.business_name || 'Business';
+            const safeName = businessName.replace(/[^a-z0-9]/gi, '_').substring(0, 30);
+            const fileName = `Audit_Report_${safeName}.pdf`;
+
+            // Save PDF locally
+            pdf.save(fileName);
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', populateReport);
+    </script>
+</body>
+
+</html>

@@ -1207,11 +1207,32 @@ body.sidebar-collapsed .nav-item span:not(.material-icons) {
     }
 
     .detail-sidebar {
-        width: 400px;
+        width: 380px;
+        min-width: 300px;
+        max-width: 600px;
         border-right: 1px solid var(--border);
         overflow-y: auto;
-        padding: 2rem;
+        padding: 0;
+        /* Removing padding here, will be handled by sections */
         background: var(--bg-card);
+        display: flex;
+        flex-direction: column;
+    }
+
+    .detail-resizer {
+        width: 4px;
+        cursor: col-resize;
+        background: transparent;
+        transition: background 0.2s;
+        z-index: 10;
+        margin-left: -2px;
+        margin-right: -2px;
+    }
+
+    .detail-resizer:hover,
+    .detail-resizer.resizing {
+        background: var(--gold);
+        opacity: 0.5;
     }
 
     .detail-main {
@@ -1220,6 +1241,7 @@ body.sidebar-collapsed .nav-item span:not(.material-icons) {
         position: relative;
         display: flex;
         flex-direction: column;
+        overflow: hidden;
     }
 
     .preview-tabs {

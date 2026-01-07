@@ -17,21 +17,25 @@ const admin = require('firebase-admin');
 app.use(cors({
     origin: ['http://localhost:3000', 'https://solutionsquasar.ca', 'http://127.0.0.1:3000']
 }));
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Initialize Firebase Admin
 try {
     // Check if the file exists to avoid immediate crash on require
     // If you haven't added the file yet, this block will be skipped/caught
     const serviceAccount = require('./serviceAccountKey.json');
+    console.log("Service Account Project ID:", serviceAccount.project_id);
+
     admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
+        credential: admin.credential.cert(serviceAccount),
+        storageBucket: 'quasar-erp-b26d5.firebasestorage.app'
     });
     console.log("Firebase Admin Initialized Successfully");
 } catch (error) {
-    console.warn("⚠️ Firebase Admin Init Failed: Missing ./serviceAccountKey.json");
-    console.warn("   To fix: Download service account from Firebase Console > Project Settings > Service Accounts");
-    console.warn("   and save it as 'serviceAccountKey.json' in the backend folder.");
+    console.error("FIREBASE INIT ERROR:", error); // PRINT THE REAL ERROR
+    console.warn("⚠️ Firebase Admin Init Failed");
+    console.warn("   To fix: ensure serviceAccountKey.json is correct and has permissions.");
 }
 
 // Authentication Middleware
@@ -211,6 +215,9 @@ app.post('/api/send-email', verifyToken, async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
+// Save PDF Report to Lead
+
 
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
