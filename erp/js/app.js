@@ -1,4 +1,77 @@
-import { initDashboard } from './modules/dashboard.js';
+import { db, auth } from './firebase-config.js';
+import { collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+// ... existing code ...
+
+function initAuth() {
+    const loginView = document.getElementById('login-view');
+    const appView = document.getElementById('app');
+    const form = document.getElementById('login-form');
+
+    const unlock = () => {
+        loginView.classList.remove('active');
+        appView.style.display = '';
+        handleRoute();
+        setupUI();
+        window.addEventListener('hashchange', handleRoute);
+    };
+
+    const lock = () => {
+        loginView.classList.add('active');
+        document.getElementById('login-email').value = '';
+        document.getElementById('login-password').value = '';
+        window.removeEventListener('hashchange', handleRoute);
+    };
+
+    // Real-time Auth Listener
+    onAuthStateChanged(auth, (user) => {
+        if (user) {
+            console.log('User authenticated:', user.email);
+            unlock();
+        } else {
+            console.log('User signed out.');
+            lock();
+        }
+    });
+
+    // Login Handler
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = form.querySelector('button');
+        const originalText = btn.innerText;
+        btn.innerText = 'Verifying...';
+        btn.disabled = true;
+
+        const email = document.getElementById('login-email').value;
+        const password = document.getElementById('login-password').value;
+
+        try {
+            await signInWithEmailAndPassword(auth, email, password);
+            // onAuthStateChanged will handle the unlock
+            btn.innerText = originalText;
+            btn.disabled = false;
+        } catch (error) {
+            console.error("Login Error:", error.code, error.message);
+            alert('Login Failed: ' + error.message);
+            btn.innerText = originalText;
+            btn.disabled = false;
+        }
+    });
+
+    // Logout Logic
+    // We attach this globally since the logout button might be in the sidebar (always present)
+    // or inside the modal
+}
+
+window.performLogout = async () => {
+    try {
+        await signOut(auth);
+        window.location.reload(); // Clean refresh
+    } catch (error) {
+        console.error("Logout Error:", error);
+    }
+};
 import { initCRM, addClient } from './modules/crm.js';
 import { initCalendar } from './modules/calendar.js';
 import { initSales } from './modules/sales.js';
@@ -107,50 +180,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initAuth();
 });
 
-function initAuth() {
-    const loginView = document.getElementById('login-view');
-    const appView = document.getElementById('app');
-    const form = document.getElementById('login-form');
-    const session = localStorage.getItem('quasar_session');
-
-    const unlock = () => {
-        loginView.classList.remove('active');
-        appView.style.display = ''; // Clear inline 'none' to let CSS take over
-        handleRoute();
-        setupUI();
-        window.addEventListener('hashchange', handleRoute);
-    };
-
-    if (session === 'active') {
-        unlock();
-    } else {
-        // Remain locked
-    }
-
-    form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const btn = form.querySelector('button');
-        const originalText = btn.innerText;
-        btn.innerText = 'Verifying...';
-        btn.disabled = true;
-
-        setTimeout(() => {
-            localStorage.setItem('quasar_session', 'active');
-            unlock();
-            btn.innerText = originalText;
-            btn.disabled = false;
-        }, 800);
-    });
-
-    // Logout Logic
-    const logoutBtn = Array.from(document.querySelectorAll('button')).find(el => el.textContent.trim() === 'Logout');
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            showLogoutConfirmation();
-        });
-    }
-}
 
 function showLogoutConfirmation() {
     // Create modal host if needed
