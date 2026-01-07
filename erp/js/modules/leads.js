@@ -1,6 +1,43 @@
-import { db } from '../firebase-config.js';
-import { collection, query, where, getDocs, updateDoc, doc, addDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { db, auth } from '../firebase-config.js';
+import { collection, query, where, getDocs, updateDoc, doc, addDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getTeamDropdownOptions } from './team.js';
+import Fuse from 'https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.mjs';
+
+// Monitor hash changes to handle browser "Back" and "Forward" buttons
+window.addEventListener('hashchange', () => {
+    const hash = window.location.hash;
+
+    // 1. Clean route (Close Overlay)
+    if (hash === '#leads' || hash === '#leads?') {
+        const overlay = document.getElementById('lead-detail-overlay');
+        if (overlay) overlay.innerHTML = '';
+        return;
+    }
+
+    // 2. ID route (Open Overlay)
+    // This supports "Forward" button navigation
+    if (hash.startsWith('#leads?id=')) {
+        const id = hash.split('id=')[1];
+        if (window.allLeadsCache) {
+            const lead = window.allLeadsCache.find(l => l.id === id);
+            if (lead) {
+                // Determine if we are already seeing this lead to prevent redraw flicker?
+                // For now, simple redraw is safer.
+                openLeadDetail(lead);
+            }
+        }
+    }
+});
+
+const escapeHtml = (text) => {
+    if (!text) return '';
+    return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+};
 
 // Init Leads Module
 export async function initLeads() {
@@ -9,13 +46,23 @@ export async function initLeads() {
 
     container.innerHTML = `
         <div class="top-actions" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-            <div class="text-h text-gold">Leads Pipeline</div>
+            <div style="display:flex; align-items:center; gap:15px;">
+                <div class="text-h text-gold">Leads Pipeline</div>
+                <input type="text" id="lead-search-input" class="form-input" placeholder="Search leads..." style="width:250px; padding:6px 12px; font-size:0.9rem;" onkeyup="handleLeadSearch(this.value)">
+            </div>
             <div style="display:flex; gap:10px; align-items:center;">
+                <button class="btn btn-primary" onclick="openNewLeadModal()" style="display:flex; align-items:center; gap:5px;">
+                    <span class="material-icons">add</span> New Lead
+                </button>
                 <!-- View Toggles -->
                 <div class="view-toggle">
                     <div class="view-toggle-btn active" id="btn-view-grid" onclick="setViewMode('grid')"><span class="material-icons" style="font-size:1.2rem;">grid_view</span></div>
                     <div class="view-toggle-btn" id="btn-view-list" onclick="setViewMode('list')"><span class="material-icons" style="font-size:1.2rem;">view_list</span></div>
                 </div>
+                <button class="btn btn-secondary" onclick="openImportModal()" style="display:flex; align-items:center; gap:5px;">
+                    <span class="material-icons" style="font-size:1.1rem;">upload_file</span> Import CSV
+                </button>
+                <input type="file" id="csv-file-input" style="display:none;" accept=".csv" onchange="handleCSVImport(this)">
                 <button class="btn" onclick="window.location.hash='#leadhunter'">Go to Hunter</button>
             </div>
         </div>
@@ -63,9 +110,105 @@ window.setViewMode = (mode) => {
     if (container) container.className = mode === 'grid' ? 'leads-grid' : 'leads-list';
 };
 
+window.allLeadsCache = []; // Store leads for client-side search
+
+// Global state for Fuse instance
+let fuseInstance = null;
+
+window.handleLeadSearch = (query) => {
+    if (!query) {
+        renderLeads(window.allLeadsCache);
+        return;
+    }
+
+    // Initialize Fuse if not already done or if data changed (we'll just re-init here for simplicity or init in loadLeads)
+    // To keep it simple and reactive to cache changes without complex state management, 
+    // we can init it here. For 100-1000 items it's very fast.
+    const options = {
+        keys: [
+            'business_name',
+            'city',
+            'category',
+            'discovered_query',
+            'notes'
+        ],
+        threshold: 0.4, // 0.0 requires perfect match, 1.0 matches anything. 0.4 is a good balance.
+        ignoreLocation: true // Find matches anywhere in the string
+    };
+
+    const fuse = new Fuse(window.allLeadsCache, options);
+    const results = fuse.search(query);
+    const filtered = results.map(r => r.item);
+
+    renderLeads(filtered);
+};
+
+function renderLeads(leads) {
+    const listContainer = document.getElementById('leads-list-container');
+
+    if (leads.length === 0) {
+        listContainer.innerHTML = `
+            <div class="card" style="text-align:center; padding:3rem;">
+                <div class="text-h text-muted">No leads found</div>
+                <p class="text-sm text-muted">Try adjusting your search or filter.</p>
+            </div>
+        `;
+        return;
+    }
+
+    let html = '';
+    leads.forEach((data) => {
+        const jsonParam = encodeURIComponent(JSON.stringify(data));
+
+        // Pain Signals Badges
+        let badges = '';
+        if (data.pain_signals && data.pain_signals.length > 0) {
+            badges = data.pain_signals.map(s => `<span class="badge badge-danger">${s.replace(/_/g, ' ')}</span>`).join('');
+        }
+
+        html += `
+            <div class="lead-card card" onclick="openLeadDetail('${jsonParam}')" style="display:flex; flex-direction:column; gap:0.5rem; border-left: 3px solid ${getStatusColor(data.status)}; cursor:pointer;">
+                <div style="display:flex; justify-content:space-between; align-items:start;">
+                    <div>
+                        <div class="text-h" style="font-size:1.1rem;">${escapeHtml(data.business_name)}</div>
+                        <div class="text-sm text-muted">${escapeHtml(data.category || 'Business')} • ${escapeHtml(data.city || '')}</div>
+                    </div>
+                    <div class="text-gold" style="font-weight:bold; min-width:80px; text-align:right;">${data.google_rating || '-'} ★ <span class="text-muted text-sm">(${data.google_reviews_count || 0})</span></div>
+                </div>
+                
+                <div style="display:flex; gap:5px; flex-wrap:wrap; margin: 0.5rem 0;">
+                    ${badges}
+                    ${data.status === 'NEW' ? `<span class="badge status-new">NEW</span>` : ''}
+                </div>
+
+                 <!-- Mini Info -->
+                <div class="text-xs text-muted" style="margin-bottom:0.5rem;">
+                     Found via: "${escapeHtml(data.discovered_query || 'N/A')}"
+                </div>
+
+                <div style="margin-top:auto; display:flex; gap:10px; justify-content: space-between; align-items:center;">
+                     <div style="display:flex; gap:5px;" onclick="event.stopPropagation()">
+                        ${renderActionButtons(data.id, data.status)}
+                     </div>
+                </div>
+            </div>
+        `;
+    });
+
+    listContainer.innerHTML = `
+        <div id="leads-grid-wrapper" class="${currentViewMode === 'grid' ? 'leads-grid' : 'leads-list'}">
+            ${html}
+        </div>
+    `;
+}
+
 async function loadLeads(statusFilter) {
     const listContainer = document.getElementById('leads-list-container');
     listContainer.innerHTML = '<div class="text-center text-muted mt-4">Fetching leads...</div>';
+
+    // reset search input
+    const searchInput = document.getElementById('lead-search-input');
+    if (searchInput) searchInput.value = '';
 
     try {
         let q;
@@ -77,77 +220,53 @@ async function loadLeads(statusFilter) {
 
         const querySnapshot = await getDocs(q);
 
-        if (querySnapshot.empty) {
-            listContainer.innerHTML = `
-                <div class="card" style="text-align:center; padding:3rem;">
-                    <div class="text-h text-muted">No leads found in '${statusFilter}'</div>
-                    <p class="text-sm text-muted">Run the Lead Hunter to find new prospects.</p>
-                    <button class="btn btn-primary" style="margin-top:1rem;" onclick="window.location.hash='#leadhunter'">Open Lead Hunter</button>
-                </div>
-            `;
-            return;
-        }
-
-        let html = '';
-        querySnapshot.forEach((docSnap) => {
-            const data = docSnap.data();
-            const jsonParam = encodeURIComponent(JSON.stringify({ ...data, id: docSnap.id }));
-
-            // Pain Signals Badges
-            let badges = '';
-            if (data.pain_signals && data.pain_signals.length > 0) {
-                badges = data.pain_signals.map(s => `<span class="badge badge-danger">${s.replace(/_/g, ' ')}</span>`).join('');
-            }
-
-            html += `
-                <div class="lead-card card" onclick="openLeadDetail('${jsonParam}')" style="display:flex; flex-direction:column; gap:0.5rem; border-left: 3px solid ${getStatusColor(data.status)}; cursor:pointer;">
-                    <div style="display:flex; justify-content:space-between; align-items:start;">
-                        <div>
-                            <div class="text-h" style="font-size:1.1rem;">${data.business_name}</div>
-                            <div class="text-sm text-muted">${data.category || 'Business'} • ${data.city}</div>
-                        </div>
-                        <div class="text-gold" style="font-weight:bold; min-width:80px; text-align:right;">${data.google_rating || '-'} ★ <span class="text-muted text-sm">(${data.google_reviews_count || 0})</span></div>
-                    </div>
-                    
-                    <div style="display:flex; gap:5px; flex-wrap:wrap; margin: 0.5rem 0;">
-                        ${badges}
-                    </div>
-
-                     <!-- Mini Info -->
-                    <div class="text-xs text-muted" style="margin-bottom:0.5rem;">
-                         Found via: "${data.discovered_query || 'N/A'}"
-                    </div>
-
-                    <div style="margin-top:auto; display:flex; gap:10px; justify-content: space-between; align-items:center;">
-                         <div style="display:flex; gap:5px;" onclick="event.stopPropagation()">
-                            ${renderActionButtons(docSnap.id, data.status)}
-                         </div>
-                    </div>
-                </div>
-            `;
+        // Cache data
+        window.allLeadsCache = [];
+        querySnapshot.forEach(docSnap => {
+            window.allLeadsCache.push({ ...docSnap.data(), id: docSnap.id });
         });
 
-        listContainer.innerHTML = `
-            <div id="leads-grid-wrapper" class="${currentViewMode === 'grid' ? 'leads-grid' : 'leads-list'}">
-                ${html}
-            </div>
-        `;
+        // Client-side Sort (Newest First)
+        window.allLeadsCache.sort((a, b) => {
+            const dateA = a.created_at ? new Date(a.created_at) : new Date(0);
+            const dateB = b.created_at ? new Date(b.created_at) : new Date(0);
+            return dateB - dateA;
+        });
+
+        renderLeads(window.allLeadsCache);
 
     } catch (e) {
         console.error(e);
+
         listContainer.innerHTML = '<div class="text-danger">Error loading leads.</div>';
     }
 }
 
 // --- DETAIL VIEW LOGIC ---
 
-window.openLeadDetail = (encodedJson) => {
-    const lead = JSON.parse(decodeURIComponent(encodedJson));
+window.openLeadDetail = (data) => {
+    let lead;
+    // Check if data is already an object or a string
+    if (typeof data === 'string') {
+        lead = JSON.parse(decodeURIComponent(data));
+    } else {
+        lead = data;
+    }
     const overlay = document.getElementById('lead-detail-overlay');
 
     // Website URL or Fallback for Iframe
     // Note: Many sites block iframe (X-Frame-Options). We handle this by showing a message if it fails, or just linking out.
     // For "Preview", we can try to show it.
+    // Verify we intend to start the timer (in case user navigated away fast)
+    startLoadTimer();
+
+    // Push State to allow Back Button support
+    // We use pushState so it doesn't trigger hashchange immediately
+    // But if user clicks BACK, it goes to #leads, triggering the close logic.
+    if (!window.location.hash.includes('?id=')) {
+        history.pushState({ leadId: lead.id }, '', `#leads?id=${lead.id}`);
+    }
+
     const siteUrl = lead.website && lead.website.startsWith('http') ? lead.website : '';
     const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(lead.business_name + ' ' + lead.city)}`;
 
@@ -155,14 +274,14 @@ window.openLeadDetail = (encodedJson) => {
         <div class="detail-overlay">
             <div class="detail-header">
                 <div>
-                     <div class="text-h">${lead.business_name}</div>
-                     <span class="badge status-${lead.status.toLowerCase()}">${lead.status}</span>
+                     <div class="text-h">${escapeHtml(lead.business_name)}</div>
+                     <span class="badge status-${lead.status.toLowerCase()}">${escapeHtml(lead.status)}</span>
                 </div>
                 <div>
-                    <button class="btn" onclick="document.getElementById('lead-detail-overlay').innerHTML=''">Close</button>
+                    <button class="btn" onclick="window.location.hash='#leads'">Close</button>
                     ${lead.status === 'NEW' ? `
                         <div style="display:inline-flex; gap:5px; margin-left:10px;">
-                             <button class="btn btn-sm" style="border-color:var(--success); color:var(--success);" onclick="updateLeadStatus('${lead.id}', 'APPROVED', 'NO_WEBSITE')">No Web</button>
+                              <button class="btn btn-sm" style="border-color:var(--success); color:var(--success);" onclick="updateLeadStatus('${lead.id}', 'APPROVED', 'NO_WEBSITE')">No Web</button>
                              <button class="btn btn-sm" style="border-color:var(--success); color:var(--success);" onclick="updateLeadStatus('${lead.id}', 'APPROVED', 'DATED_DESIGN')">Bad Web</button>
                              <button class="btn btn-sm" style="border-color:var(--success); color:var(--success);" onclick="updateLeadStatus('${lead.id}', 'APPROVED', 'BAD_RANKING')">Bad SEO</button>
                              <button class="btn btn-sm" style="border-color:var(--success); color:var(--success);" onclick="updateLeadStatus('${lead.id}', 'APPROVED', 'OTHER')">Other</button>
@@ -178,23 +297,49 @@ window.openLeadDetail = (encodedJson) => {
                     <div class="text-h text-gold" style="margin-bottom:1rem;">Lead Intelligence</div>
                     
                     <div class="form-group">
+                        <label class="form-label">Business Name</label>
+                        <input type="text" id="edit-business-name" class="form-input" value="${escapeHtml(lead.business_name)}">
+                    </div>
+
+                    <div class="form-group">
                         <label class="form-label">Discovery Logic</label>
-                        <div class="text-sm">Found via query: <strong>${lead.discovered_query}</strong></div>
+                        <div class="text-sm">Found via query: <strong>${escapeHtml(lead.discovered_query || 'N/A')}</strong></div>
                         <div class="text-sm">Result Type: <strong>Page 2+ (Low Visibility)</strong></div>
-                        ${lead.notes ? `<div class="text-sm mt-2 text-warning">Note: ${lead.notes}</div>` : ''}
                     </div>
                     
-                    <!-- Added Assigned To Info -->
-                    <div class="form-group">
-                        <label class="form-label">Assignment</label>
-                        <div class="text-sm">Assigned To: <strong class="text-gold">${lead.assigned_to_name || 'Unassigned'}</strong></div>
+                     <div class="form-group">
+                        <label class="form-label">Internal Notes</label>
+                        <textarea id="edit-notes" class="form-input" rows="3" placeholder="Add notes here...">${escapeHtml(lead.notes || '')}</textarea>
                     </div>
 
                     <div class="form-group">
                         <label class="form-label">Contact Info</label>
-                        <div class="text-sm"><span class="material-icons" style="font-size:1rem; vertical-align:middle;">location_on</span> ${lead.address}</div>
-                        ${lead.website ? `<div class="text-sm"><span class="material-icons" style="font-size:1rem; vertical-align:middle;">language</span> <a href="${lead.website}" target="_blank" class="text-gold">${lead.website}</a></div>` : '<div class="text-danger text-sm">No Website Detected</div>'}
-                        <div class="text-sm"><span class="material-icons" style="font-size:1rem; vertical-align:middle;">phone</span> ${lead.phone || 'Not found'}</div>
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
+                            <span class="material-icons text-muted" style="font-size:1rem;">location_on</span>
+                            <input type="text" id="edit-address" class="form-input" style="padding:4px;" value="${escapeHtml(lead.address || '')}" placeholder="Address">
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
+                            <span class="material-icons text-muted" style="font-size:1rem;">language</span>
+                            <input type="text" id="edit-website" class="form-input" style="padding:4px;" value="${escapeHtml(lead.website || '')}" placeholder="Website URL">
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
+                            <span class="material-icons text-muted" style="font-size:1rem;">phone</span>
+                            <input type="text" id="edit-phone" class="form-input" style="padding:4px;" value="${escapeHtml(lead.phone || '')}" placeholder="Phone">
+                        </div>
+                         <div style="display:flex; align-items:center; gap:8px;">
+                            <span class="material-icons text-muted" style="font-size:1rem;">email</span>
+                            <input type="text" id="edit-email" class="form-input" style="padding:4px;" value="${escapeHtml(lead.email || '')}" placeholder="Email">
+                        </div>
+                        
+                        <!-- Actions Row -->
+                        <div id="lead-actions-row" style="display:flex; gap:10px; margin-top:10px;">
+                            ${lead.email ?
+            `<button class="btn btn-sm btn-secondary" onclick="openEmailComposer(document.getElementById('edit-email').value, document.getElementById('edit-business-name').value)" style="flex:1;">
+                                    <span class="material-icons" style="font-size:14px; margin-right:4px;">send</span> Email
+                                 </button>`
+            : ''}
+                            <button class="btn btn-sm btn-primary" style="flex:1;" onclick="saveLeadDetails('${lead.id}')">Save Changes</button>
+                        </div>
                     </div>
 
                     <div class="form-group">
@@ -650,9 +795,8 @@ window.updateLeadStatus = async (id, newStatus, category = null) => {
         const ref = doc(db, "leads", id);
         await updateDoc(ref, updateData);
 
-        // Close overlay if open
-        const overlay = document.getElementById('lead-detail-overlay');
-        if (overlay) overlay.innerHTML = '';
+        // Close overlay via URL reset
+        window.location.hash = '#leads';
 
         // Refresh list
         const activeBtn = document.querySelector('button[data-filter].btn-primary');
@@ -709,15 +853,388 @@ window.assignLead = async () => {
         });
 
         document.getElementById('audit-modal-host').innerHTML = ''; // Close modal
-        document.getElementById('lead-detail-overlay').innerHTML = ''; // Close detail to refresh
+        window.location.hash = '#leads'; // Close detail detail via URL reset
 
         // Refresh list
         const activeBtn = document.querySelector('button[data-filter].btn-primary');
         if (activeBtn) activeBtn.click();
 
-        alert(`Lead assigned to ${agentName}`);
     } catch (e) {
         console.error(e);
-        alert('Assignment failed: ' + e.message);
+        alert('Error updating status');
+    }
+};
+
+window.handleCSVImport = async (input) => {
+    if (!input.files || !input.files[0]) return;
+    const file = input.files[0];
+    const reader = new FileReader();
+
+    reader.onload = async (e) => {
+        const text = e.target.result;
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        if (lines.length < 2) {
+            alert("CSV file seems empty or has no data rows.");
+            return;
+        }
+
+        const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
+
+        // Simple mapping helper
+        const findIdx = (keywords) => headers.findIndex(h => keywords.some(k => h.includes(k)));
+
+        const idxName = findIdx(['name', 'business', 'company', 'lead']);
+        const idxEmail = findIdx(['email', 'mail']);
+        const idxPhone = findIdx(['phone', 'tel', 'mobile', 'cell']);
+        const idxWeb = findIdx(['web', 'url', 'site']);
+        const idxAddr = findIdx(['address', 'location', 'city']);
+        const idxCat = findIdx(['category', 'industry', 'type']);
+
+        if (idxName === -1) {
+            alert("Could not detect a 'Name' or 'Business Name' column in CSV.");
+            return;
+        }
+
+        let addedCount = 0;
+        const confirmMsg = `Found ${lines.length - 1} rows. Importing...`;
+        console.log(confirmMsg);
+
+        // Inform user it started
+        const btn = document.querySelector('.btn-secondary');
+        if (btn && btn.innerText.includes('Import')) btn.innerText = 'Importing...';
+
+        for (let i = 1; i < lines.length; i++) {
+            // Split by comma ignoring quoted commas
+            const cols = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.trim().replace(/^"|"$/g, ''));
+
+            const leadData = {
+                business_name: cols[idxName] || 'Unknown',
+                email: idxEmail > -1 ? (cols[idxEmail] || '') : '',
+                phone: idxPhone > -1 ? (cols[idxPhone] || '') : '',
+                website: idxWeb > -1 ? (cols[idxWeb] || '') : '',
+                address: idxAddr > -1 ? (cols[idxAddr] || '') : '',
+                category: idxCat > -1 ? (cols[idxCat] || 'Imported') : 'Imported',
+                status: 'NEW', // Default status
+                rating: 0,
+                reviews: 0,
+                source: 'CSV Import',
+                created_at: new Date().toISOString()
+            };
+
+            try {
+                await addDoc(collection(db, "leads"), leadData);
+                addedCount++;
+            } catch (err) {
+                console.error("Error adding row " + i, err);
+            }
+        }
+
+        alert(`Successfully imported ${addedCount} leads!`);
+        input.value = ''; // Reset
+        if (btn && btn.innerText === 'Importing...') btn.innerHTML = '<span class="material-icons" style="font-size:1.1rem;">upload_file</span> Import CSV';
+
+        // Reload leads (New status)
+        const newFilterBtn = document.querySelector('button[data-filter="NEW"]');
+        if (newFilterBtn) newFilterBtn.click();
+    };
+
+    reader.readAsText(file);
+};
+
+
+window.openImportModal = () => {
+    let host = document.getElementById('import-modal-host');
+    if (!host) {
+        host = document.createElement('div');
+        host.id = 'import-modal-host';
+        document.body.appendChild(host);
+    }
+
+    host.innerHTML = `
+        <div class="crm-modal-overlay" onclick="this.parentElement.remove()">
+            <div class="crm-modal-content" style="max-width:500px;" onclick="event.stopPropagation()">
+                <div class="crm-modal-header">
+                    <div class="text-h">Import Leads CSV</div>
+                    <button class="icon-btn" onclick="document.getElementById('import-modal-host').remove()"><span class="material-icons">close</span></button>
+                </div>
+                <div class="crm-modal-body">
+                    <p class="text-muted mb-2">Import leads in bulk by uploading a CSV file.</p>
+                    <p class="text-muted text-sm mb-4">Your CSV <b>must</b> contain a header row with the following columns (flexible naming):</p>
+                    
+                    <ul class="text-sm text-muted" style="margin-bottom:1.5rem; line-height:1.6;">
+                        <li><b class="text-gold">Business Name</b> (Required)</li>
+                        <li>Email</li>
+                        <li>Phone / Tel</li>
+                        <li>Website</li>
+                        <li>Address</li>
+                        <li>Category / Industry</li>
+                    </ul>
+                    
+                    <div style="background:var(--bg-dark); padding:1rem; border-radius:6px; border:1px solid var(--border); font-family:monospace; font-size:0.8rem; color:var(--text-muted); margin-bottom:1.5rem;">
+                        Business Name, Email, Phone, Website, Category<br>
+                        <span style="color:var(--gold);">Acme Inc</span>, contact@acme.com, 555-0123, acme.com, Tech<br>
+                        <span style="color:var(--gold);">Dental Care</span>, info@dental.com, 555-0987, dental.com, Health
+                    </div>
+                </div>
+                <div style="display:flex !important; justify-content:center !important; align-items:center !important; gap:15px; margin-top:2rem; width:100%; border-top:1px solid rgba(255,255,255,0.1); padding-top:1rem;">
+                    <button class="btn btn-secondary" onclick="document.getElementById('import-modal-host').remove()">Cancel</button>
+                    <button class="btn btn-primary" onclick="document.getElementById('csv-file-input').click(); document.getElementById('import-modal-host').remove()">Select CSV File</button>
+                </div>
+            </div>
+        </div>
+    `;
+};
+
+// --- EMAIL COMPOSER ---
+window.openEmailComposer = (email, name) => {
+    // Only open if email exists
+    if (!email || email === 'undefined') {
+        alert("No valid email address found for this lead.");
+        return;
+    }
+
+    const modalId = 'email-composer-modal';
+    let modal = document.getElementById(modalId);
+
+    if (modal) modal.remove();
+
+    const html = `
+    <div id="${modalId}" class="modal-overlay" style="display:flex; align-items:center; justify-content:center; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:2000;">
+        <div class="card" style="width:600px; max-width:95vw; background:#15171C; border:1px solid #333;">
+             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; border-bottom:1px solid #333; padding-bottom:1rem;">
+                <div class="text-h">New Message to <span class="text-gold">${name}</span></div>
+                <button class="btn btn-sm" onclick="document.getElementById('${modalId}').remove()">✕</button>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">To:</label>
+                <input type="text" class="form-input" value="${email}" disabled style="opacity:0.7;">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Subject:</label>
+                <input type="text" id="email-subject" class="form-input" value="Regarding ${name} - Opportunity">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Message:</label>
+                <textarea id="email-body" class="form-input" rows="8" style="resize:vertical;">Hi there,
+
+I came across ${name} and was impressed by what I saw. I'd love to connect and discuss how we can help you grow.
+
+Best,
+The Team</textarea>
+            </div>
+
+            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">
+                <button class="btn" onclick="document.getElementById('${modalId}').remove()">Discard</button>
+                <button class="btn btn-primary" onclick="sendLeadEmail('${email}')">Send Message</button>
+            </div>
+        </div>
+    </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', html);
+};
+
+window.sendLeadEmail = async (toEmail) => {
+    const subject = document.getElementById('email-subject').value;
+    const body = document.getElementById('email-body').value;
+    const btn = document.querySelector('#email-composer-modal .btn-primary');
+
+    if (!subject || !body) {
+        showToast("Please fill in subject and message.", "error");
+        return;
+    }
+
+    btn.innerText = "Sending...";
+    btn.disabled = true;
+
+    try {
+        const user = auth.currentUser;
+        if (!user) throw new Error("You must be logged in.");
+
+        const token = await user.getIdToken();
+
+        const response = await fetch('http://localhost:5000/api/send-email', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ to: toEmail, subject, body })
+        });
+
+        const data = await response.json();
+
+        if (!data.success) throw new Error(data.message || data.error || 'Failed to send.');
+
+        showToast("Email sent successfully!", "success");
+        document.getElementById('email-composer-modal').remove();
+
+    } catch (error) {
+        console.error(error);
+        showToast("Error sending email: " + error.message, "error");
+        btn.innerText = "Send Message";
+        btn.disabled = false;
+    }
+};
+
+window.saveLeadDetails = async (leadId) => {
+    try {
+        const getVal = (id) => (document.getElementById(id) ? document.getElementById(id).value.trim() : '');
+
+        const business_name = getVal('edit-business-name');
+        const notes = getVal('edit-notes');
+        const address = getVal('edit-address');
+        const website = getVal('edit-website');
+        const phone = getVal('edit-phone');
+        const email = getVal('edit-email');
+
+        if (!business_name) {
+            showToast("Business Name is required.", "error");
+            return;
+        }
+
+        const updateData = {
+            business_name,
+            notes,
+            address,
+            website,
+            phone,
+            email,
+            updated_at: new Date().toISOString()
+        };
+
+        await updateDoc(doc(db, "leads", leadId), updateData);
+
+        // Update the header title immediately for UX
+        const headerTitle = document.querySelector('.detail-header .text-h');
+        if (headerTitle) headerTitle.innerText = business_name;
+
+        // Update Local Cache ID Match to prevent stale data if we don't reload list immediately
+        if (window.allLeadsCache) {
+            const cached = window.allLeadsCache.find(l => l.id === leadId);
+            if (cached) {
+                Object.assign(cached, updateData);
+            }
+        }
+
+        // Update Email Button visibility - Re-render Row for cleanliness
+        const actionRow = document.getElementById('lead-actions-row');
+        if (actionRow) {
+            actionRow.innerHTML = `
+                ${email ?
+                    `<button class="btn btn-sm btn-secondary" onclick="openEmailComposer(document.getElementById('edit-email').value, document.getElementById('edit-business-name').value)" style="flex:1;">
+                    <span class="material-icons" style="font-size:14px; margin-right:4px;">send</span> Email
+                </button>`
+                    : ''}
+                <button class="btn btn-sm btn-primary" style="flex:1;" onclick="saveLeadDetails('${leadId}')">Save Changes</button>
+            `;
+        }
+
+        showToast("Lead details updated successfully!", "success");
+
+        // Refresh Grid in background
+        const activeFilter = document.querySelector('button[data-filter].active-filter');
+        if (activeFilter) {
+            loadLeads(activeFilter.dataset.filter);
+        }
+
+    } catch (error) {
+        console.error("Error saving lead:", error);
+        showToast("Error updating lead: " + error.message, "error");
+    }
+};
+
+// --- NEW LEAD LOGIC ---
+
+window.openNewLeadModal = () => {
+    const host = document.getElementById('modal-container') || document.body.appendChild(document.createElement('div'));
+    host.id = 'modal-container'; // Ensure ID if created
+
+    host.innerHTML = `
+        <div class="crm-modal-overlay" onclick="document.getElementById('modal-container').innerHTML=''">
+            <div class="crm-modal-content" style="max-width:500px;" onclick="event.stopPropagation()">
+                <div class="crm-modal-header">
+                    <div class="text-h">Create New Lead</div>
+                    <button class="icon-btn" onclick="document.getElementById('modal-container').innerHTML=''"><span class="material-icons">close</span></button>
+                </div>
+                <div class="crm-modal-body">
+                    <div class="form-group">
+                        <label class="form-label">Business Name *</label>
+                        <input type="text" id="new-lead-name" class="form-input" placeholder="e.g. Acme Corp">
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+                        <div class="form-group">
+                            <label class="form-label">Category</label>
+                            <input type="text" id="new-lead-category" class="form-input" placeholder="e.g. Plumber">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">City</label>
+                            <input type="text" id="new-lead-city" class="form-input" placeholder="e.g. Toronto">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Website</label>
+                        <input type="text" id="new-lead-website" class="form-input" placeholder="https://...">
+                    </div>
+                     <div class="form-group">
+                        <label class="form-label">Notes</label>
+                        <textarea id="new-lead-notes" class="form-input" rows="2" placeholder="Optional notes..."></textarea>
+                    </div>
+
+                    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">
+                        <button class="btn btn-secondary" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
+                        <button class="btn btn-primary" onclick="saveNewLead()">Create Lead</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+};
+
+window.saveNewLead = async () => {
+    const name = document.getElementById('new-lead-name').value.trim();
+    const category = document.getElementById('new-lead-category').value.trim();
+    const city = document.getElementById('new-lead-city').value.trim();
+    const website = document.getElementById('new-lead-website').value.trim();
+    const notes = document.getElementById('new-lead-notes').value.trim();
+
+    if (!name) {
+        alert('Business Name is required');
+        return;
+    }
+
+    try {
+        const leadData = {
+            business_name: name,
+            category: category || 'Business',
+            city: city,
+            website: website,
+            notes: notes,
+            status: 'NEW',
+            created_at: new Date().toISOString(),
+            source: 'MANUAL',
+            pain_signals: !website ? ['NO_WEBSITE'] : []
+        };
+
+        const docRef = await addDoc(collection(db, "leads"), leadData);
+
+        // Close modal
+        document.getElementById('modal-container').innerHTML = '';
+
+        // Refresh List (and maybe show toast)
+        // Check if we are in 'NEW' or 'ALL' view to reload
+        const activeFilter = document.querySelector('button[data-filter].active-filter');
+        if (activeFilter) {
+            loadLeads(activeFilter.dataset.filter); // Reload current view
+        } else {
+            loadLeads('NEW'); // Default to NEW
+        }
+
+    } catch (e) {
+        console.error("Error creating lead:", e);
+        alert('Failed to create lead.');
     }
 };
