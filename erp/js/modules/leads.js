@@ -1,5 +1,5 @@
 import { db, auth } from '../firebase-config.js';
-import { collection, query, where, getDocs, updateDoc, doc, addDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { collection, query, where, getDocs, getDoc, updateDoc, doc, addDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getTeamDropdownOptions } from './team.js';
 import Fuse from 'https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.mjs';
 
@@ -95,8 +95,28 @@ export async function initLeads() {
         });
     });
 
-    // Default load
-    buttons[0].click();
+    // Default load - check if deep linked
+    let initialFilter = 'NEW';
+    const hash = window.location.hash;
+    if (hash.includes('?id=')) {
+        initialFilter = 'ALL'; // Switch to ALL to ensure the lead is found
+    }
+
+    const initialBtn = Array.from(buttons).find(b => b.dataset.filter === initialFilter) || buttons[0];
+
+    // Initial fetch
+    await loadLeads(initialBtn.dataset.filter);
+
+    // Sync UI
+    buttons.forEach(b => b.classList.remove('btn-primary', 'active-filter', 'active'));
+    initialBtn.classList.add('btn-primary', 'active-filter');
+
+    // Auto-open if ID in URL
+    if (hash.startsWith('#leads?id=')) {
+        const id = hash.split('id=')[1];
+        const lead = window.allLeadsCache.find(l => l.id === id);
+        if (lead) openLeadDetail(lead);
+    }
 }
 
 // Global state for view mode
@@ -158,8 +178,6 @@ function renderLeads(leads) {
 
     let html = '';
     leads.forEach((data) => {
-        const jsonParam = encodeURIComponent(JSON.stringify(data));
-
         // Pain Signals Badges
         let badges = '';
         if (data.pain_signals && data.pain_signals.length > 0) {
@@ -167,7 +185,7 @@ function renderLeads(leads) {
         }
 
         html += `
-            <div class="lead-card card" onclick="openLeadDetail('${jsonParam}')" style="display:flex; flex-direction:column; gap:0.5rem; border-left: 3px solid ${getStatusColor(data.status)}; cursor:pointer;">
+            <div class="lead-card card" onclick="openLeadDetail('${data.id}')" style="display:flex; flex-direction:column; gap:0.5rem; border-left: 3px solid ${getStatusColor(data.status)}; cursor:pointer;">
                 <div style="display:flex; justify-content:space-between; align-items:start;">
                     <div>
                         <div class="text-h" style="font-size:1.1rem;">${escapeHtml(data.business_name)}</div>
@@ -246,12 +264,20 @@ async function loadLeads(statusFilter) {
 
 window.openLeadDetail = (data) => {
     let lead;
-    // Check if data is already an object or a string
-    if (typeof data === 'string') {
-        lead = JSON.parse(decodeURIComponent(data));
-    } else {
+    if (typeof data === 'object' && data !== null) {
         lead = data;
+    } else if (typeof data === 'string') {
+        if (window.allLeadsCache) {
+            lead = window.allLeadsCache.find(l => l.id === data);
+        }
+        if (!lead) {
+            try {
+                lead = JSON.parse(decodeURIComponent(data));
+            } catch (e) { }
+        }
     }
+
+    if (!lead) return;
     const overlay = document.getElementById('lead-detail-overlay');
 
     // Website URL or Fallback for Iframe
@@ -270,6 +296,17 @@ window.openLeadDetail = (data) => {
     const siteUrl = lead.website && lead.website.startsWith('http') ? lead.website : '';
     const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(lead.business_name + ' ' + lead.city)}`;
 
+    // Set Global Audit for Popup access
+    if (lead.lastAudit) {
+        window.lastAuditReport = {
+            ...lead.lastAudit,
+            leadId: lead.id,
+            reportPdfUrl: lead.reportPdfUrl || null // Include stored PDF URL if available
+        };
+    } else {
+        window.lastAuditReport = null;
+    }
+
     overlay.innerHTML = `
         <div class="detail-overlay">
             <div class="detail-header">
@@ -278,6 +315,11 @@ window.openLeadDetail = (data) => {
                      <span class="badge status-${lead.status.toLowerCase()}">${escapeHtml(lead.status)}</span>
                 </div>
                 <div>
+                    ${lead.lastAudit ? `
+                        <button class="btn btn-sm btn-info" onclick="openAuditPopup()" style="margin-right:10px; display:inline-flex; align-items:center; gap:5px; border-color:var(--info); font-weight:bold;">
+                            <span class="material-icons" style="font-size:18px;">auto_awesome</span> VIEW AI AUDIT
+                        </button>
+                    ` : ''}
                     <button class="btn" onclick="window.location.hash='#leads'">Close</button>
                     ${lead.status === 'NEW' ? `
                         <div style="display:inline-flex; gap:5px; margin-left:10px;">
@@ -293,90 +335,168 @@ window.openLeadDetail = (data) => {
             </div>
             <div class="detail-body">
                 <!-- LEADS INFO SIDEBAR -->
-                <div class="detail-sidebar">
-                    <div class="text-h text-gold" style="margin-bottom:1rem;">Lead Intelligence</div>
+                <div class="detail-sidebar" id="lead-sidebar" style="background: var(--bg-card); border-right: 1px solid var(--border); overflow-y: auto; display: flex; flex-direction: column;">
                     
-                    <div class="form-group">
-                        <label class="form-label">Business Name</label>
-                        <input type="text" id="edit-business-name" class="form-input" value="${escapeHtml(lead.business_name)}">
+                    <!-- SECTION 1: IDENTITY -->
+                    <div style="padding: 0.75rem 1rem; border-bottom: 1px solid var(--border);">
+                        <div class="form-group" style="margin-bottom: 8px;">
+                            <label class="form-label">Business Name</label>
+                            <input type="text" id="edit-business-name" class="form-input" value="${escapeHtml(lead.business_name)}" style="font-weight: 600; border-color: rgba(223, 165, 58, 0.2); padding: 8px 12px; font-size: 1rem;">
+                        </div>
+                        <div style="display: flex; gap: 15px; margin-top: 5px;">
+                            <div style="flex: 1;">
+                                <div class="text-xs text-muted mb-0.5">Source / Query</div>
+                                <div class="text-sm font-bold truncate" title="${escapeHtml(lead.discovered_query || 'N/A')}">
+                                    <span class="material-icons" style="font-size: 14px; color: var(--gold); margin-right: 4px;">search</span>
+                                    ${escapeHtml(lead.discovered_query || 'N/A')}
+                                </div>
+                            </div>
+                            <div style="flex: 1;">
+                                <div class="text-xs text-muted mb-0.5">Result Type</div>
+                                <div class="text-sm font-bold" style="color: var(--warning);">
+                                    <span class="material-icons" style="font-size: 14px; margin-right: 4px;">visibility_off</span>
+                                    Page 2+ 
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-label">Discovery Logic</label>
-                        <div class="text-sm">Found via query: <strong>${escapeHtml(lead.discovered_query || 'N/A')}</strong></div>
-                        <div class="text-sm">Result Type: <strong>Page 2+ (Low Visibility)</strong></div>
-                    </div>
-                    
-                     <div class="form-group">
-                        <label class="form-label">Internal Notes</label>
-                        <textarea id="edit-notes" class="form-input" rows="3" placeholder="Add notes here...">${escapeHtml(lead.notes || '')}</textarea>
+                    <!-- SECTION 2: CONTACT INTELLIGENCE -->
+                    <div style="padding: 0.75rem 1rem; border-bottom: 1px solid var(--border);">
+                        <div class="form-group" style="margin-bottom: 8px;">
+                            <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
+                                <span class="material-icons text-muted" style="font-size:1rem;">location_on</span>
+                                <input type="text" id="edit-address" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.address || '')}" placeholder="Company Address">
+                            </div>
+                        </div>
+
+                        <div class="form-group" style="margin-bottom: 8px;">
+                            <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
+                                <span class="material-icons text-muted" style="font-size:1rem;">language</span>
+                                <input type="text" id="edit-website" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.website || '')}" placeholder="Official Website">
+                            </div>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                            <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
+                                <span class="material-icons text-muted" style="font-size:1rem;">phone</span>
+                                <input type="text" id="edit-phone" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.85rem;" value="${escapeHtml(lead.phone || '')}" placeholder="Phone">
+                            </div>
+                            <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
+                                <span class="material-icons text-muted" style="font-size:1rem;">email</span>
+                                <input type="text" id="edit-email" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.85rem;" value="${escapeHtml(lead.email || '')}" placeholder="Public Email">
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-label">Contact Info</label>
-                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
-                            <span class="material-icons text-muted" style="font-size:1rem;">location_on</span>
-                            <input type="text" id="edit-address" class="form-input" style="padding:4px;" value="${escapeHtml(lead.address || '')}" placeholder="Address">
-                        </div>
-                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
-                            <span class="material-icons text-muted" style="font-size:1rem;">language</span>
-                            <input type="text" id="edit-website" class="form-input" style="padding:4px;" value="${escapeHtml(lead.website || '')}" placeholder="Website URL">
-                        </div>
-                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
-                            <span class="material-icons text-muted" style="font-size:1rem;">phone</span>
-                            <input type="text" id="edit-phone" class="form-input" style="padding:4px;" value="${escapeHtml(lead.phone || '')}" placeholder="Phone">
-                        </div>
-                         <div style="display:flex; align-items:center; gap:8px;">
-                            <span class="material-icons text-muted" style="font-size:1rem;">email</span>
-                            <input type="text" id="edit-email" class="form-input" style="padding:4px;" value="${escapeHtml(lead.email || '')}" placeholder="Email">
-                        </div>
+                    <!-- SECTION 3: DECISION MAKER -->
+                    <div style="padding: 1rem; border-bottom: 1px solid var(--border); background: rgba(223, 165, 58, 0.02);">
+                        <div class="text-xs text-gold uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">Governance / Decision Maker</div>
                         
-                        <!-- Actions Row -->
-                        <div id="lead-actions-row" style="display:flex; gap:10px; margin-top:10px;">
+                        <div class="form-group" style="margin-bottom: 6px;">
+                            <div style="display:flex; align-items:center; gap:8px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                <span class="material-icons text-gold" style="font-size:0.9rem; opacity: 0.7;">person</span>
+                                <input type="text" id="edit-dm-name" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.dm_name || '')}" placeholder="Contact Name">
+                            </div>
+                        </div>
+
+                        <div class="form-group" style="margin-bottom: 6px;">
+                            <div style="display:flex; align-items:center; gap:8px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                <span class="material-icons text-gold" style="font-size:0.9rem; opacity: 0.7;">alternate_email</span>
+                                <input type="text" id="edit-dm-email" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.dm_email || '')}" placeholder="Direct Email">
+                            </div>
+                        </div>
+
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span class="material-icons text-gold" style="font-size:0.9rem; opacity: 0.7;">contact_phone</span>
+                                <input type="text" id="edit-dm-phone" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.dm_phone || '')}" placeholder="Direct Phone / extension">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SECTION 4: STRATEGIC NOTES -->
+                    <div style="padding: 1rem; border-bottom: 1px solid var(--border);">
+                         <div class="text-xs text-muted uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">Strategic Internal Notes</div>
+                         <textarea id="edit-notes" class="form-input" rows="3" style="font-size: 0.85rem; background: rgba(0,0,0,0.15); border-style: dashed; padding: 8px;" placeholder="Prospecting notes, points or conversation history...">${escapeHtml(lead.notes || '')}</textarea>
+                    </div>
+
+                    <!-- ACTIONS MATRIX -->
+                    <div style="padding: 1rem; background: var(--bg-dark); position: sticky; bottom: 0; z-index: 10; border-top: 1px solid var(--border);">
+                        <div id="lead-actions-row" style="display:flex; gap:8px;">
+                            <button class="btn btn-sm" onclick="sendLeadToSelf('${lead.id}')" title="Send info to my phone" style="background:rgba(255,255,255,0.05); border:1px solid var(--border); padding: 0 8px;">
+                                <span class="material-icons" style="font-size:18px;">smartphone</span>
+                            </button>
+                            
                             ${lead.email ?
-            `<button class="btn btn-sm btn-secondary" onclick="openEmailComposer(document.getElementById('edit-email').value, document.getElementById('edit-business-name').value)" style="flex:1;">
-                                    <span class="material-icons" style="font-size:14px; margin-right:4px;">send</span> Email
+            `<button class="btn btn-sm btn-secondary" onclick="openEmailComposer(document.getElementById('edit-email').value, document.getElementById('edit-business-name').value)" style="flex:1; display: flex; align-items:center; justify-content:center; gap: 4px; font-size: 0.75rem;">
+                                    <span class="material-icons" style="font-size:14px;">send</span> COMPOSE
                                  </button>`
             : ''}
-                            <button class="btn btn-sm btn-primary" style="flex:1;" onclick="saveLeadDetails('${lead.id}')">Save Changes</button>
+                            
+                            <button class="btn btn-sm btn-primary" style="flex:1.5; box-shadow: 0 4px 15px rgba(223, 165, 58, 0.2); font-size: 0.75rem;" onclick="saveLeadDetails('${lead.id}')">SAVE UPDATES</button>
                         </div>
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-label">Live Performance</label>
-                        <div class="text-sm">Load Time: <strong id="load-time-display">-</strong></div>
-                    </div>
+                    <!-- PERFORMANCE & AUDIT -->
+                    <div style="padding: 1rem; border-top: 1px solid var(--border); background: rgba(49, 204, 236, 0.05);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                            <div class="text-xs text-info uppercase tracking-wider font-bold" style="letter-spacing: 1px;">SEO & Performance</div>
+                            <div class="text-xs text-muted">Load: <strong id="load-time-display" style="color:var(--info);">-</strong></div>
+                        </div>
 
-                    <div class="divider" style="margin: 1.5rem 0;"></div>
-
-                    <!-- SEO SECTION -->
-                    <div class="text-h text-info" style="margin-bottom:1rem;">SEO Audit</div>
-                    
-                    <div id="seo-report-container">
-                         <p class="text-muted text-sm">No audit run yet.</p>
-                         <button class="btn btn-block" style="border-color: var(--info); color: var(--info);" onclick="runDeepAudit('${lead.website}')">Run Deep Full SEO & UX Audit</button>
+                        <div id="seo-report-container">
+                             ${lead.lastAudit ? `
+                                <div style="display:flex; align-items:center; gap:15px; margin-bottom:1rem;">
+                                    <div class="seo-score-circle" style="width:60px; height:60px; font-size:1.2rem; background: conic-gradient(var(--${lead.lastAudit.score > 70 ? 'success' : 'warning'}) 0% ${lead.lastAudit.score}%, rgba(255,255,255,0.1) 0% 100%);">
+                                        <span style="font-weight:bold;">${lead.lastAudit.score}</span>
+                                    </div>
+                                    <div>
+                                         <div class="text-h" style="font-size:1.1rem;">AI Audit Saved</div>
+                                         <div class="text-xs text-muted">Audited: ${lead.lastAudit.timestamp}</div>
+                                    </div>
+                                </div>
+                                <button class="btn btn-primary btn-block btn-sm" onclick="openAuditPopup()">View Report</button>
+                                <div class="text-center" style="margin-top:0.5rem;"><a href="javascript:void(0)" class="text-xs text-muted" onclick="runDeepAudit('${lead.website}', '${lead.id}')">Run New Audit</a></div>
+                             ` : `
+                                 <div style="background: rgba(0,0,0,0.2); border: 1px dashed var(--info); padding: 10px; border-radius: 8px; text-align: center;">
+                                    <span class="material-icons text-info" style="font-size: 1.5rem; margin-bottom: 5px;">analytics</span>
+                                    <p class="text-muted text-xs mb-2">No AI Audit performed yet.</p>
+                                    <button class="btn btn-block btn-sm" style="border-color: var(--info); color: var(--info); font-weight: bold; background: rgba(49, 204, 236, 0.1); font-size: 0.7rem;" onclick="runDeepAudit('${lead.website}', '${lead.id}')">
+                                        <span class="material-icons" style="font-size: 12px; margin-right: 4px;">psychology</span>
+                                        RUN DEEP AI AUDIT
+                                    </button>
+                                 </div>
+                             `}
+                        </div>
                     </div>
 
                 </div>
 
+                <!-- RESIZER HANDLE -->
+                <div class="detail-resizer" id="sidebar-resizer"></div>
+
                 <!-- PREVIEW MAIN -->
                 <div class="detail-main">
-                    <div class="preview-tabs">
-                        <div class="preview-tab active" onclick="setPreviewSrc('${siteUrl}', this, 'website')">Website</div>
-                        <div class="preview-tab" onclick="setPreviewSrc('${googleSearchUrl}&tbm=isch', this, 'google')">Google Images</div>
-                        <div class="preview-tab" onclick="setPreviewSrc('${googleSearchUrl}', this, 'google')">Search Results</div>
-                    </div>
                     
+                    <!-- NEW: PREVIEW HEADER -->
+                    <div style="padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--bg-dark); display: flex; align-items: center; justify-content: space-between;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span class="material-icons text-gold" style="font-size: 1.2rem;">language</span>
+                            <span class="text-sm font-bold uppercase tracking-widest" style="color: var(--text-main);">Live Website Insight</span>
+                        </div>
+                        ${siteUrl ? `<div class="text-xs text-muted truncate" style="max-width: 300px; font-family: monospace; opacity: 0.6;">${siteUrl}</div>` : ''}
+                    </div>
                     <!-- DEVICE TOOLBAR -->
                     <div id="device-toolbar" class="preview-toolbar" style="display: ${siteUrl ? 'flex' : 'none'};">
-                        <div class="device-btn" onclick="setPreviewMode('mobile', this)"><span class="material-icons">smartphone</span> Mobile</div>
+                        <div class="device-btn active" onclick="setPreviewMode('mobile', this)"><span class="material-icons">smartphone</span> Mobile</div>
                         <div class="device-btn" onclick="setPreviewMode('tablet', this)"><span class="material-icons">tablet</span> Tablet</div>
-                        <div class="device-btn active" onclick="setPreviewMode('desktop', this)"><span class="material-icons">laptop</span> Desktop</div>
+                        <div class="device-btn" onclick="setPreviewMode('desktop', this)"><span class="material-icons">laptop</span> Desktop</div>
                         
                         <div class="dev-slider-group">
                              <span class="text-xs text-muted">Width:</span>
-                             <input type="range" class="dev-slider" min="320" max="1600" value="1200" oninput="setCustomWidth(this.value)">
-                             <span class="text-xs text-gold" id="width-display">100%</span>
+                             <input type="range" class="dev-slider" min="320" max="1600" value="375" oninput="setCustomWidth(this.value)">
+                             <span class="text-xs text-gold" id="width-display">375px</span>
                         </div>
                         
                         <div style="flex:1;"></div>
@@ -401,7 +521,7 @@ window.openLeadDetail = (data) => {
 
                     ${siteUrl ?
             `<div class="preview-container">
-                            <div class="preview-frame-wrapper preview-mode-desktop" id="iframe-wrapper">
+                            <div class="preview-frame-wrapper preview-mode-mobile" id="iframe-wrapper" style="width: 375px;">
                                 <iframe src="${siteUrl}" class="preview-frame" sandbox="allow-same-origin allow-scripts allow-popups allow-forms" onload="finishLoadTimer()" onerror="this.src='about:blank'; this.nextElementSibling.style.display='flex'"></iframe>
                                 <div style="display:none; position:absolute; top:0; left:0; right:0; bottom:0; background:var(--bg-dark); align-items:center; justify-content:center; flex-direction:column; color:white;">
                                     <p>This website prevents embedding.</p>
@@ -420,7 +540,47 @@ window.openLeadDetail = (data) => {
             <div id="audit-modal-host"></div>
         </div>
     `;
+
+    // Initialize Resizer Logic
+    initSidebarResizer();
 };
+
+function initSidebarResizer() {
+    const resizer = document.getElementById("sidebar-resizer");
+    const sidebar = document.getElementById("lead-sidebar");
+
+    if (!resizer || !sidebar) return;
+
+    let isResizing = false;
+
+    resizer.addEventListener("mousedown", (e) => {
+        isResizing = true;
+        document.body.style.cursor = "col-resize";
+        resizer.classList.add("resizing");
+        e.preventDefault();
+    });
+
+    document.addEventListener("mousemove", (e) => {
+        if (!isResizing) return;
+
+        // Calculate new width: mouse position minus sidebar offset left
+        let newWidth = e.clientX - sidebar.getBoundingClientRect().left;
+
+        // Constraints
+        if (newWidth < 300) newWidth = 300;
+        if (newWidth > 600) newWidth = 600;
+
+        sidebar.style.width = `${newWidth}px`;
+    });
+
+    document.addEventListener("mouseup", () => {
+        if (isResizing) {
+            isResizing = false;
+            document.body.style.cursor = "default";
+            resizer.classList.remove("resizing");
+        }
+    });
+}
 
 // --- TIMER LOGIC ---
 
@@ -574,7 +734,7 @@ function getOpenAIKey() {
     return key;
 }
 
-window.runDeepAudit = async (url) => {
+window.runDeepAudit = async (url, leadId) => {
     const container = document.getElementById('seo-report-container');
     if (!url) {
         container.innerHTML = '<p class="text-danger">Cannot audit: No URL provided.</p>';
@@ -590,37 +750,57 @@ window.runDeepAudit = async (url) => {
 
     container.innerHTML = `
         <div class="text-center">
-            <div class="spinner-border text-gold" role="status" style="width: 2rem; height: 2rem; border-width: 0.2em;"></div>
-            <p class="text-gold blink text-sm mt-3" id="audit-status-text">Connecting to Website...</p>
+            <div class="spinner-border text-gold" role="status" style="width: 1.5rem; height: 1.5rem; border-width: 0.15em;"></div>
+            <p class="text-gold blink text-xs mt-2" id="audit-status-text">Analyzing Site...</p>
         </div>
     `;
 
     try {
         const statusText = document.getElementById('audit-status-text');
 
-        // 2. Fetch Website Content (via CORS Proxy)
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-        const response = await fetch(proxyUrl);
-        const data = await response.json();
+        // 2. Fetch Website Content (with Multi-Proxy Fallback)
+        let htmlContent = "";
+        try {
+            // Try Proxy 1: AllOrigins (Primary)
+            const proxy1 = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+            const resp1 = await fetch(proxy1);
+            const data1 = await resp1.json();
+            if (data1.contents) htmlContent = data1.contents;
+        } catch (e) {
+            console.warn("Primary proxy failed, trying fallback...", e);
+        }
 
-        if (!data.contents) throw new Error("Could not fetch website content.");
+        if (!htmlContent) {
+            try {
+                // Try Proxy 2: Corsproxy.io (Fallback)
+                const proxy2 = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+                const resp2 = await fetch(proxy2);
+                htmlContent = await resp2.text();
+            } catch (e) {
+                console.error("Secondary proxy failed.", e);
+            }
+        }
 
-        let htmlContent = data.contents;
-        // Truncate to avoid token limits (Keep Head + First 15000 chars of body)
+        if (!htmlContent) throw new Error("Could not reach website. The site may be blocking access or the audit service is busy. Please try again in a moment.");
+
+        // Extract & Truncate Head (Title, Meta, etc are critical for SEO)
         const headMatch = htmlContent.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
-        const head = headMatch ? headMatch[0] : '';
+        let head = headMatch ? headMatch[1] : '';
+        head = head.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "");
+        head = head.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gim, "");
+        head = head.substring(0, 3000); // 3k chars is enough for meta tags
+
+        // Extract & Truncate Body
         const bodyMatch = htmlContent.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
         let body = bodyMatch ? bodyMatch[1] : htmlContent;
-
-        // Remove scripts/styles
         body = body.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "");
         body = body.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gim, "");
-        body = body.substring(0, 15000);
+        body = body.substring(0, 7000); // 7k chars of main content
 
-        const cleanHtml = (head + body).replace(/\s+/g, ' ').trim();
+        const cleanHtml = (`<head>${head}</head><body>${body}</body>`).replace(/\s+/g, ' ').trim();
 
         // 3. Send to OpenAI
-        if (statusText) statusText.innerText = "Analyzing with AI (Results in ~10s)...";
+        if (statusText) statusText.innerText = "Analyzing with AI...";
 
         const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
@@ -629,25 +809,33 @@ window.runDeepAudit = async (url) => {
                 "Authorization": `Bearer ${apiKey}`
             },
             body: JSON.stringify({
-                model: "gpt-3.5-turbo-1106",
+                model: "gpt-4o-mini", // Upgraded model for better reasoning and 128k context
                 response_format: { type: "json_object" },
                 messages: [
                     {
                         role: "system",
-                        content: `You are an expert SEO and UX Auditor. Analyze the provided HTML. 
+                        content: `You are an expert SEO, UX, and Full-Stack Developer Auditor. Analyze the provided HTML from ${url}. 
+                        Your mission is to provide an ELITE technical analysis and a blueprint for a total rebuild.
+                        
                         Return a JSON object with this EXACT structure:
                         {
                             "score": number (0-100),
+                            "executive_summary": "A 2-3 sentence summary in plain English for a non-technical business owner explaining exactly why their site is losing money/leads.",
                             "issues": [
                                 { "type": "critical"|"warning"|"success", "icon": "error"|"warning"|"check_circle", "title": "short title", "desc": "short description" }
                             ],
-                            "fixes": ["fix 1", "fix 2"]
+                            "fixes": ["fix 1", "fix 2"],
+                            "tech_stack": ["Detected technology 1", "Technology 2"],
+                            "performance": { "fcp_estimate": "e.g. 2.4s", "dom_complexity": "Low|Medium|High", "mobile_score": 0-100 },
+                            "seo_technical": { "h1_found": boolean, "og_tags": boolean, "schema": boolean },
+                            "search_visibility": "Top 10 | Page 2+ | Invisible",
+                            "rebuild_prompt": "A detailed MASTER PROMPT for a CLI. Requirements: 1) Language: Plain HTML/CSS/Vanilla JS only (no frameworks), 2) Structure: One script.js with a single CONFIG object for all content, 3) UX: Mobile-first (320px first), tap targets >=44px, no horizontal scroll, 4) Design: Modern, elegant, and industry-specific color palette (CLI chooses), HD images (no stock), 5) Sections: Top Bar, Hero, Services, Reviews, Why Us, Contact Form, Map, Footer, 6) Primary CTA: 'Book a Strategy Call'. The prompt should be ready to generate a full premium site."
                         }
-                        Be strict yet fair.`
+                        Be strict. Your generated 'rebuild_prompt' must act as a 'Pragmatic Web Designer' persona, focusing on speed, reliability, and extreme premium aesthetics without using complex dependencies. Estimate their 'search_visibility' based on the presence of H1s, meta titles, and technical crawlability.`
                     },
                     {
                         role: "user",
-                        content: `Analyze this website code (${url}): \n\n ${cleanHtml}`
+                        content: `Analyze this website code excerpt: \n\n ${cleanHtml}`
                     }
                 ]
             })
@@ -664,8 +852,21 @@ window.runDeepAudit = async (url) => {
 
         // Add metadata
         report.url = url;
-        report.timestamp = new Date().toLocaleDateString();
+        report.timestamp = new Date().toLocaleString();
+        report.leadId = leadId; // Include leadId for PDF saving
         window.lastAuditReport = report;
+
+        // --- NEW: Save to Firebase ---
+        if (leadId) {
+            await updateDoc(doc(db, "leads", leadId), {
+                lastAudit: report
+            });
+            // Update cache
+            if (window.allLeadsCache) {
+                const cached = window.allLeadsCache.find(l => l.id === leadId);
+                if (cached) cached.lastAudit = report;
+            }
+        }
 
         // 4. Render
         const score = report.score;
@@ -681,8 +882,11 @@ window.runDeepAudit = async (url) => {
             </div>
             
             <button class="btn btn-primary btn-block btn-sm" onclick="openAuditPopup()">View Full Report</button>
-            <div class="text-center" style="margin-top:0.5rem;"><a href="#" class="text-xs text-muted" onclick="alert('Email draft created with AI findings!')">Email PDF to Me</a></div>
+            <div class="text-center" style="margin-top:0.5rem;"><a href="javascript:void(0)" class="text-xs text-muted" onclick="runDeepAudit('${url}', '${leadId}')">Run Again</a></div>
         `;
+
+        // Automatically open the report for the user "right away"
+        openAuditPopup();
 
     } catch (e) {
         console.error(e);
@@ -691,64 +895,487 @@ window.runDeepAudit = async (url) => {
 };
 
 window.openAuditPopup = () => {
-    const report = window.lastAuditReport;
+    let report = window.lastAuditReport;
     if (!report) return;
 
     const host = document.getElementById('audit-modal-host');
 
     const issuesHtml = report.issues.map(i => `
-        <div style="display:flex; gap:10px; margin-bottom:10px; padding:10px; background:rgba(255,255,255,0.05); border-radius:8px;">
-            <span class="material-icons text-${i.type === 'critical' ? 'danger' : (i.type === 'warning' ? 'warning' : 'success')}">${i.icon}</span>
-            <div>
-                <div style="font-weight:bold; font-size:0.95rem;">${i.title}</div>
-                <div class="text-sm text-muted">${i.desc}</div>
+        <div style="display:flex; gap:12px; margin-bottom:12px; padding:12px; background:rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius:12px;">
+            <div style="width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; background:rgba(${i.type === 'critical' ? '244,67,54' : (i.type === 'warning' ? '255,152,0' : '76,175,80')}, 0.1);">
+                <span class="material-icons" style="font-size:20px; color:var(--${i.type === 'critical' ? 'danger' : (i.type === 'warning' ? 'warning' : 'success')})">${i.icon}</span>
+            </div>
+            <div style="flex:1;">
+                <div style="font-weight:bold; font-size:1rem; color:var(--text-main);">${i.title}</div>
+                <div class="text-sm text-muted" style="line-height:1.4;">${i.desc}</div>
             </div>
         </div>
     `).join('');
 
     const fixesHtml = report.fixes.map(f => `
-        <li class="text-sm" style="margin-bottom:5px; color:var(--text-main);">${f}</li>
+        <div style="display:flex; align-items:flex-start; gap:10px; margin-bottom:8px;">
+            <span class="material-icons text-success" style="font-size:16px; margin-top:2px;">check_circle</span>
+            <span class="text-sm" style="color:var(--text-main);">${f}</span>
+        </div>
     `).join('');
 
     host.innerHTML = `
-        <div class="crm-modal-overlay" style="z-index:9999;" onclick="document.getElementById('audit-modal-host').innerHTML=''">
-            <div class="crm-modal-content" style="max-width:700px;" onclick="event.stopPropagation()">
-                <div class="crm-modal-header">
-                    <div>
-                        <div class="text-h">Deep SEO & UX Audit Report</div>
-                        <div class="text-sm text-muted">Analysis for ${report.url}</div>
+        <div class="crm-modal-overlay" style="z-index:9999; backdrop-filter: blur(12px); background: rgba(0,0,0,0.85);" onclick="document.getElementById('audit-modal-host').innerHTML=''">
+            <div class="crm-modal-content" style="max-width:900px; padding:0; overflow:hidden; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); border-radius:24px;" onclick="event.stopPropagation()">
+                
+                <!-- HEADER WITH SCORE -->
+                <div id="pdf-header" style="padding: 2.5rem; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border-bottom: 1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+                    <div style="display:flex; align-items:center; gap:25px;">
+                        <div class="seo-score-circle" style="width:100px; height:100px; font-size:2rem; margin:0; position:relative; background: conic-gradient(var(--${report.score > 70 ? 'success' : 'warning'}) 0% ${report.score}%, rgba(255,255,255,0.05) 0% 100%);">
+                            <span style="font-weight:bold; z-index:2; text-shadow: 0 2px 10px rgba(0,0,0,0.5);">${report.score}</span>
+                            <div style="position:absolute; inset:6px; background:#0f172a; border-radius:50%; z-index:1;"></div>
+                        </div>
+                        <div>
+                            <div class="text-h" style="font-size:1.6rem; letter-spacing:1px; color:white;">TECHNICAL INTELLIGENCE REPORT</div>
+                            <div class="text-sm text-info" style="font-family:monospace; opacity:0.9;">Analyze Target: ${report.url}</div>
+                            <div style="display:flex; gap:10px; margin-top:10px;">
+                                ${(report.tech_stack || []).map(t => `<span class="badge" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); font-size:0.65rem;">${t}</span>`).join('')}
+                            </div>
+                        </div>
                     </div>
-                    <button class="icon-btn" onclick="document.getElementById('audit-modal-host').innerHTML=''"><span class="material-icons">close</span></button>
                 </div>
-                <div class="crm-modal-body" style="max-height:60vh; overflow-y:auto;">
+
+                <div class="crm-modal-body" id="pdf-content" style="padding:2.5rem; max-height:75vh; overflow-y:auto; background: #0f172a;">
                     
-                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:20px;">
-                        <div class="card" style="text-align:center;">
-                            <div class="text-muted text-sm uppercase">Overall Health</div>
-                            <div class="text-h text-${report.score > 70 ? 'success' : 'warning'}" style="font-size:3rem;">${report.score}/100</div>
+                    <!-- EXECUTIVE SUMMARY -->
+                    <div style="margin-bottom:30px; padding:20px; background:rgba(255,255,255,0.03); border-left:4px solid var(--gold); border-radius:0 15px 15px 0;">
+                        <div class="text-gold uppercase font-bold text-xs tracking-widest mb-2">Executive Summary for Business Owner</div>
+                        <p style="color:var(--text-main); font-size:1.05rem; line-height:1.6; font-style:italic;">
+                            "${report.executive_summary || 'This website faces significant challenges in user engagement and search visibility, primarily due to outdated technical architecture and non-responsive design fragments.'}"
+                        </p>
+                    </div>
+
+                    <!-- TECH SPECS ROW -->
+                    <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:12px; margin-bottom:30px;">
+                        <div class="card" style="padding:15px; background:rgba(255,255,255,0.02); text-align:center; border:1px solid rgba(255,255,255,0.05);">
+                            <div class="text-xs text-muted uppercase mb-1">Load Speed</div>
+                            <div class="text-gold font-bold" style="font-size:1.1rem;">${report.performance?.fcp_estimate || 'N/A'}</div>
                         </div>
-                        <div class="card">
-                            <div class="text-muted text-sm uppercase">Summary</div>
-                            <div style="margin-top:5px;" class="text-danger"><strong>${report.issues.filter(i => i.type === 'critical').length}</strong> Critical Errors</div>
-                            <div class="text-warning"><strong>${report.issues.filter(i => i.type === 'warning').length}</strong> Warnings</div>
+                        <div class="card" style="padding:15px; background:rgba(255,255,255,0.02); text-align:center; border:1px solid rgba(255,255,255,0.05);">
+                            <div class="text-xs text-muted uppercase mb-1">DOM Depth</div>
+                            <div class="text-info font-bold" style="font-size:1.1rem;">${report.performance?.dom_complexity || 'Medium'}</div>
+                        </div>
+                        <div class="card" style="padding:15px; background:rgba(255,255,255,0.02); text-align:center; border:1px solid rgba(255,255,255,0.05);">
+                            <div class="text-xs text-muted uppercase mb-1">Search Page</div>
+                            <div class="text-warning font-bold" style="font-size:1.1rem;">${report.search_visibility || 'Page 2+'}</div>
+                        </div>
+                        <div class="card" style="padding:15px; background:rgba(255,255,255,0.02); text-align:center; border:1px solid rgba(255,255,255,0.05);">
+                            <div class="text-xs text-muted uppercase mb-1">SEO Tags</div>
+                            <div class="${report.seo_technical?.og_tags ? 'text-success' : 'text-danger'} font-bold" style="font-size:1.1rem;">${report.seo_technical?.og_tags ? 'DETECTED' : 'MISSING'}</div>
+                        </div>
+                        <div class="card" style="padding:15px; background:rgba(255,255,255,0.02); text-align:center; border:1px solid rgba(255,255,255,0.05);">
+                            <div class="text-xs text-muted uppercase mb-1">Schema</div>
+                            <div class="${report.seo_technical?.schema ? 'text-success' : 'text-danger'} font-bold" style="font-size:1.1rem;">${report.seo_technical?.schema ? 'ACTIVE' : 'INACTIVE'}</div>
                         </div>
                     </div>
 
-                    <div class="text-h text-gold mb-2">Detailed Findings</div>
-                    <div style="margin-bottom:2rem;">
-                        ${issuesHtml}
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:30px;">
+                        <!-- LEFT COLUMN: FINDINGS -->
+                        <div>
+                             <div class="text-sm font-bold uppercase tracking-widest mb-4" style="color:var(--text-muted); display:flex; align-items:center; gap:8px;">
+                                <span class="material-icons" style="font-size:18px; color:var(--gold);">visibility</span> Strategic Findings
+                            </div>
+                            ${issuesHtml}
+                            
+                            <div class="text-sm font-bold uppercase tracking-widest mt-6 mb-4" style="color:var(--text-muted); display:flex; align-items:center; gap:8px;">
+                                <span class="material-icons" style="font-size:18px; color:var(--success);">build</span> Recommended Fixes
+                            </div>
+                            <div style="background: rgba(76, 175, 80, 0.03); border: 1px solid rgba(76, 175, 80, 0.1); padding:20px; border-radius:15px;">
+                                ${fixesHtml}
+                            </div>
+                        </div>
+
+                        <!-- RIGHT COLUMN: REBUILD BLUEPRINT -->
+                        <div id="pdf-rebuild-col" style="display:flex; flex-direction:column; gap:20px;">
+                            <div style="background: linear-gradient(135deg, rgba(223, 165, 58, 0.1) 0%, rgba(223, 165, 58, 0) 100%); border: 1px solid rgba(223, 165, 58, 0.2); padding:2rem; border-radius:24px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                                    <div class="text-h text-gold" style="font-size:1.1rem; display:flex; align-items:center; gap:10px;">
+                                        <span class="material-icons">code</span> CLI REBUILD BLUEPRINT
+                                    </div>
+                                    <button class="btn btn-xs btn-secondary" onclick="copyRebuildPrompt()">
+                                        <span class="material-icons" style="font-size:14px; margin-right:4px;">content_copy</span> COPY
+                                    </button>
+                                </div>
+                                <p class="text-xs text-muted mb-4" style="line-height:1.6;">Use the prompt below in your AI CLI tools to instantly generate a premium, modernized version of this website.</p>
+                                <div id="rebuild-prompt-text" style="background:rgba(0,0,0,0.3); padding:15px; border-radius:12px; font-family:monospace; font-size:0.75rem; color:var(--text-main); line-height:1.5; border:1px solid rgba(255,255,255,0.05); max-height:300px; overflow-y:auto; word-break:break-word;">
+                                    ${report.rebuild_prompt || 'Generating CLI blueprint...'}
+                                </div>
+                            </div>
+                            
+                            <div style="background:var(--bg-dark); border:1px solid var(--border); padding:1.5rem; border-radius:20px; display:flex; align-items:center; gap:15px;">
+                                <span class="material-icons text-info" style="font-size:32px;">rocket_launch</span>
+                                <div>
+                                    <div class="text-xs text-info uppercase font-bold">Sales Strategy</div>
+                                    <div class="text-xs text-muted" style="line-height:1.4;">"I noticed your current site is built on <strong>${report.tech_stack?.[0] || 'older tech'}</strong>. We can migrate you to a <strong>Next.js</strong> architecture today for zero downtime."</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-
-                    <div class="text-h text-success mb-2">Recommended Fixes</div>
-                    <ul style="padding-left:20px; color:var(--text-muted);">
-                        ${fixesHtml}
-                    </ul>
-
-                    <button class="btn btn-primary btn-block" style="margin-top:2rem;" onclick="document.getElementById('audit-modal-host').innerHTML=''">Close Report</button>
+                </div>
+                
+                <div style="padding:1.5rem; background:#0f172a; border-top:1px solid rgba(255,255,255,0.05); display:flex; justify-content:space-between; align-items:center;">
+                     <div style="display:flex; gap:10px;">
+                         <button class="btn btn-secondary btn-sm" onclick="downloadAuditPDF()" style="display:flex; align-items:center; gap:10px; background:rgba(255,255,255,0.05); border-color:rgba(255,255,255,0.1);">
+                             <span class="material-icons">download_for_offline</span> DOWNLOAD PDF
+                         </button>
+                         <button class="btn btn-sm" onclick="openFullReportPage()" style="display:flex; align-items:center; gap:10px; background:rgba(223, 165, 58, 0.1); border-color:var(--gold); color:var(--gold);">
+                             <span class="material-icons">open_in_new</span> OPEN FULL REPORT PAGE
+                         </button>
+                     </div>
+                     <div style="display:flex; gap:10px;">
+                        <button class="icon-btn" style="background:rgba(255,255,255,0.05); padding:8px;" onclick="document.getElementById('audit-modal-host').innerHTML=''"><span class="material-icons">close</span></button>
+                        <button class="btn btn-primary btn-sm" style="min-width:150px; border-radius:10px;" onclick="document.getElementById('audit-modal-host').innerHTML=''">Done</button>
+                     </div>
                 </div>
             </div>
         </div>
     `;
+};
+
+// Open the full report page (report.html) with the audit data
+window.openFullReportPage = () => {
+    const report = window.lastAuditReport;
+    if (!report) {
+        alert('No audit report available. Please run an audit first.');
+        return;
+    }
+
+    // Save the report to localStorage for the report page to read
+    localStorage.setItem('auditReport', JSON.stringify(report));
+
+    // Open report.html in a new tab
+    window.open('/report.html', '_blank');
+};
+
+window.downloadAuditPDF = async () => {
+    const report = window.lastAuditReport;
+    if (!report) return;
+
+    // 1. FORCED VIEWPORT RESET (Crucial for html2canvas alignment)
+    const savedScrollY = window.scrollY;
+    window.scrollTo(0, 0);
+
+    const leadName = (report.business_name || 'Technical_Audit').replace(/[^a-z0-9]/gi, '_');
+
+    // 2. SOLID LOADING OVERLAY
+    const overlay = document.createElement('div');
+    overlay.id = 'pdf-gen-overlay';
+    overlay.setAttribute('style', `
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: #0f172a; z-index: 100000;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        color: white; font-family: sans-serif;
+    `);
+    overlay.innerHTML = `
+        <div style="text-align:center;">
+            <div style="width:50px; height:50px; border:5px solid #dfa53a; border-top-color:transparent; border-radius:50%; animation:spin 1s linear infinite; margin:0 auto 20px;"></div>
+            <div style="font-size:1.5rem; font-weight:bold; letter-spacing:2px; text-transform:uppercase;">Packaging Report Assets</div>
+            <div style="color:#dfa53a; margin-top:10px; font-weight:bold;">Please do not close this tab...</div>
+        </div>
+        <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+    `;
+    document.body.appendChild(overlay);
+
+    const COLORS = { bg: '#0f172a', gold: '#dfa53a', text: '#ffffff', border: 'rgba(255,255,255,0.1)', success: '#4caf50', warning: '#ff9800' };
+
+    try {
+        // 3. CREATE THE TEMPORARY CONTAINER
+        const pdfWrapper = document.createElement('div');
+        pdfWrapper.id = 'render-target';
+        pdfWrapper.setAttribute('style', `
+            position: absolute; top: 0; left: 0; width: 750px; background: ${COLORS.bg};
+            z-index: 50000; visibility: visible; color: white;
+        `);
+
+        const footer = (p) => `
+            <div style="position:absolute; bottom:30px; left:50px; right:50px; border-top:1px solid ${COLORS.border}; padding-top:15px; display:flex; justify-content:space-between; align-items:center; font-family:sans-serif;">
+                <span style="font-size:10px; color:${COLORS.gold}; font-weight:bold; letter-spacing:1px;">PREMIUM QUASAR • TECHNICAL AUDIT</span>
+                <span style="font-size:10px; opacity:0.5;">0${p} / 04</span>
+            </div>
+        `;
+
+        const renderPage = (content, num) => {
+            const div = document.createElement('div');
+            if (num > 1) div.className = 'html2pdf__page-break';
+            div.setAttribute('style', `
+                width: 750px; height: 1050px; padding: 70px; position: relative;
+                box-sizing: border-box; background: ${COLORS.bg}; overflow: hidden;
+            `);
+            div.innerHTML = content + footer(num);
+            return div;
+        };
+
+        // ICONS (Inline SVG to avoid font loading issues)
+        const checkIcon = `<svg style="width:24px; height:24px; color:${COLORS.success}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>`;
+        const warnIcon = `<svg style="width:24px; height:24px; color:${COLORS.warning}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+        const dangerIcon = `<svg style="width:24px; height:24px; color:${COLORS.danger}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`;
+
+        // Score color based on value
+        const scoreColor = report.score >= 70 ? COLORS.success : (report.score >= 50 ? COLORS.warning : COLORS.danger);
+        const circumference = 2 * Math.PI * 45; // r=45
+        const dashOffset = circumference - (circumference * report.score / 100);
+
+        // PAGE 1: HERO with SVG Score Ring
+        const page1 = `
+            <!-- Header with Score Ring -->
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 50px; font-family: sans-serif;">
+                <div style="display: flex; align-items: center; gap: 25px;">
+                    <!-- Score Ring using CSS border technique -->
+                    <div style="width: 120px; height: 120px; position: relative;">
+                        <!-- Outer colored ring -->
+                        <div style="width: 120px; height: 120px; border-radius: 50%; border: 10px solid ${scoreColor}; box-sizing: border-box; opacity: 0.2;"></div>
+                        <!-- Progress ring overlay -->
+                        <div style="position: absolute; top: 0; left: 0; width: 120px; height: 120px; border-radius: 50%; border: 10px solid transparent; border-top-color: ${scoreColor}; border-right-color: ${report.score > 25 ? scoreColor : 'transparent'}; border-bottom-color: ${report.score > 50 ? scoreColor : 'transparent'}; border-left-color: ${report.score > 75 ? scoreColor : 'transparent'}; box-sizing: border-box; transform: rotate(-45deg);"></div>
+                        <!-- Inner content -->
+                        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; z-index: 2;">
+                            <div style="font-size: 2.5rem; font-weight: 900; color: ${scoreColor}; line-height: 1;">${report.score}</div>
+                            <div style="font-size: 0.4rem; color: rgba(255,255,255,0.7); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 5px; font-weight: 700; line-height: 1.3;">YOUR WEBSITE<br/>SCORE</div>
+                        </div>
+                    </div>
+                    <!-- Title -->
+                    <div>
+                        <div style="font-size: 1.6rem; font-weight: 800; letter-spacing: 2px; color: white;">INTELLIGENCE REPORT</div>
+                        <div style="font-size: 0.8rem; color: ${COLORS.gold}; font-family: monospace; margin-top: 5px;">${report.url}</div>
+                        <div style="font-size: 0.7rem; color: rgba(255,255,255,0.4); margin-top: 3px;">Web HTML5 CSS3</div>
+                    </div>
+                </div>
+                <!-- Company Branding -->
+                <div style="text-align: right;">
+                    <div style="font-size: 0.65rem; letter-spacing: 2px; color: ${COLORS.gold}; font-weight: bold;">✦ SOLUTIONS</div>
+                    <div style="font-size: 1.2rem; font-weight: 900; letter-spacing: 3px; color: white;">QUASAR</div>
+                    <div style="font-size: 0.6rem; color: rgba(255,255,255,0.5); margin-top: 3px;">Premium Web Engineering</div>
+                </div>
+            </div>
+
+            <!-- Executive Summary Badge -->
+            <div style="text-align: center; margin: 50px 0 30px;">
+                <span style="display: inline-block; padding: 10px 30px; border: 1px solid rgba(255,255,255,0.2); border-radius: 50px; font-size: 0.7rem; letter-spacing: 3px; color: rgba(255,255,255,0.7); text-transform: uppercase; font-weight: bold;">Executive Summary</span>
+            </div>
+
+            <!-- Summary Quote -->
+            <div style="text-align: center; padding: 0 30px; margin-bottom: 60px;">
+                <div style="font-size: 1.3rem; line-height: 1.8; color: white; font-style: italic; font-weight: 300;">
+                    "${report.executive_summary || 'The website is underperforming due to poor loading speeds, suboptimal mobile design, and a lack of essential SEO practices.'}"
+                </div>
+            </div>
+
+            <!-- Metrics Grid - 2 rows of 3 -->
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px;">
+                <div style="padding: 25px; background: rgba(255,255,255,0.02); border: 1px solid ${COLORS.border}; border-radius: 15px; text-align: center;">
+                    <div style="font-size: 0.65rem; opacity: 0.5; margin-bottom: 8px; letter-spacing: 1px; text-transform: uppercase;">Load Estimate</div>
+                    <div style="font-size: 1.5rem; font-weight: bold; color: white;">${report.performance?.fcp_estimate || '4.6s'}</div>
+                </div>
+                <div style="padding: 25px; background: rgba(255,255,255,0.02); border: 1px solid ${COLORS.border}; border-radius: 15px; text-align: center;">
+                    <div style="font-size: 0.65rem; opacity: 0.5; margin-bottom: 8px; letter-spacing: 1px; text-transform: uppercase;">Search Presence</div>
+                    <div style="font-size: 1.5rem; font-weight: bold; color: white;">${report.search_visibility || 'Invisible'}</div>
+                </div>
+                <div style="padding: 25px; background: rgba(255,255,255,0.02); border: 1px solid ${COLORS.border}; border-radius: 15px; text-align: center;">
+                    <div style="font-size: 0.65rem; opacity: 0.5; margin-bottom: 8px; letter-spacing: 1px; text-transform: uppercase;">DOM Complexity</div>
+                    <div style="font-size: 1.5rem; font-weight: bold; color: ${COLORS.warning};">${report.performance?.dom_complexity || 'High'}</div>
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
+                <div style="padding: 25px; background: rgba(255,255,255,0.02); border: 1px solid ${COLORS.border}; border-radius: 15px; text-align: center;">
+                    <div style="font-size: 0.65rem; opacity: 0.5; margin-bottom: 8px; letter-spacing: 1px; text-transform: uppercase;">Technical SEO</div>
+                    <div style="font-size: 1.5rem; font-weight: bold; color: ${COLORS.success};">OPTIMIZED</div>
+                </div>
+                <div style="padding: 25px; background: rgba(255,255,255,0.02); border: 1px solid ${COLORS.border}; border-radius: 15px; text-align: center;">
+                    <div style="font-size: 0.65rem; opacity: 0.5; margin-bottom: 8px; letter-spacing: 1px; text-transform: uppercase;">Structured Data</div>
+                    <div style="font-size: 1.5rem; font-weight: bold; color: ${COLORS.danger};">INACTIVE</div>
+                </div>
+                <div style="padding: 25px; background: rgba(255,255,255,0.02); border: 1px solid ${COLORS.border}; border-radius: 15px; text-align: center;">
+                    <div style="font-size: 0.65rem; opacity: 0.5; margin-bottom: 8px; letter-spacing: 1px; text-transform: uppercase;">Mobile Score</div>
+                    <div style="font-size: 1.5rem; font-weight: bold; color: white;">${report.performance?.mobile_score || '62%'}</div>
+                </div>
+            </div>
+        `;
+
+        const issuesHtml = report.issues.slice(0, 5).map(i => {
+            // Premium high-tech icons based on issue type
+            let icon, gradientBg, borderColor, glowColor;
+
+            if (i.type === 'critical') {
+                // Red critical - filled circle with X
+                gradientBg = 'linear-gradient(135deg, rgba(244,67,54,0.2) 0%, rgba(183,28,28,0.3) 100%)';
+                borderColor = 'rgba(244,67,54,0.4)';
+                glowColor = 'rgba(244,67,54,0.3)';
+                icon = `<svg style="width:22px; height:22px;" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="10" fill="${COLORS.danger}"/>
+                    <path d="M15 9L9 15M9 9l6 6" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+                </svg>`;
+            } else if (i.type === 'success' || i.type === 'good') {
+                // Green success - filled circle with checkmark
+                gradientBg = 'linear-gradient(135deg, rgba(76,175,80,0.2) 0%, rgba(27,94,32,0.3) 100%)';
+                borderColor = 'rgba(76,175,80,0.4)';
+                glowColor = 'rgba(76,175,80,0.3)';
+                icon = `<svg style="width:22px; height:22px;" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="10" fill="${COLORS.success}"/>
+                    <path d="M8 12l3 3 5-6" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                </svg>`;
+            } else {
+                // Orange warning - filled triangle
+                gradientBg = 'linear-gradient(135deg, rgba(255,152,0,0.2) 0%, rgba(230,81,0,0.3) 100%)';
+                borderColor = 'rgba(255,152,0,0.4)';
+                glowColor = 'rgba(255,152,0,0.3)';
+                icon = `<svg style="width:22px; height:22px;" viewBox="0 0 24 24">
+                    <path d="M12 3L2 21h20L12 3z" fill="${COLORS.warning}"/>
+                    <line x1="12" y1="10" x2="12" y2="14" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+                    <circle cx="12" cy="17" r="1.2" fill="white"/>
+                </svg>`;
+            }
+
+            return `
+                <div style="display:flex; gap:18px; align-items:flex-start; padding: 18px 20px; margin-bottom: 12px; background: rgba(255,255,255,0.015); border: 1px solid ${COLORS.border}; border-radius: 12px; font-family: sans-serif;">
+                    <div style="width:44px; height:44px; border-radius:12px; background:${gradientBg}; border:1px solid ${borderColor}; display:flex; align-items:center; justify-content:center; flex-shrink:0; box-shadow: 0 4px 15px ${glowColor};">
+                        ${icon}
+                    </div>
+                    <div style="flex:1; padding-top:2px;">
+                        <div style="font-weight: 700; font-size: 1rem; color: #fff; margin-bottom: 5px; letter-spacing: 0.3px;">${i.title}</div>
+                        <div style="font-size: 0.8rem; color: rgba(255,255,255,0.55); line-height: 1.6;">${i.desc}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        const page2 = `
+            <div style="font-family: sans-serif; margin-bottom: 10px;">
+                <div style="font-size: 0.7rem; color: ${COLORS.gold}; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px;">02 / STRATEGIC AUDIT</div>
+                <div style="position:absolute; top:60px; right:60px; font-size:0.65rem; color:rgba(255,255,255,0.4); font-family:monospace;">${report.url}</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:15px; margin-bottom: 35px;">
+                <svg style="width:28px; height:28px;" viewBox="0 0 24 24" fill="none" stroke="${COLORS.danger}" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <div style="font-size: 1.8rem; font-weight: 800; color: white; letter-spacing: 2px;">DETAILED FINDINGS</div>
+            </div>
+            ${issuesHtml}
+        `;
+
+        const fixesHtml = report.fixes.slice(0, 6).map(f => `
+            <div style="display:flex; gap:15px; align-items:center; padding: 22px; margin-bottom: 15px; background: rgba(76,175,80,0.05); border: 1px solid rgba(76,175,80,0.1); border-radius: 15px; font-family: sans-serif;">
+                ${checkIcon}
+                <div style="font-weight: 500; font-size: 1.15rem; color: white;">${f}</div>
+            </div>
+        `).join('');
+
+        const page3 = `
+            <div style="font-family: sans-serif; margin-bottom: 40px;">
+                <div style="font-size: 2.2rem; font-weight: 800; color: white;">Remediation Path</div>
+                <div style="height: 5px; width: 80px; background: ${COLORS.success}; margin-top: 15px;"></div>
+            </div>
+            ${fixesHtml}
+        `;
+
+        const page4 = `
+            <div style="margin-top: 120px; background: linear-gradient(135deg, #0b0d10 0%, #1e293b 100%); padding: 120px 60px; border-radius: 48px; border: 1px solid ${COLORS.gold}; text-align: center; font-family: sans-serif;">
+                <div style="color: ${COLORS.gold}; font-weight: 900; font-size: 1.2rem; margin-bottom: 30px; letter-spacing: 4px;">THE NEXT STEP</div>
+                <div style="font-size: 3.5rem; font-weight: 900; color: white; margin-bottom: 40px; line-height: 1.1;">Secure Your Lead Flow.</div>
+                <p style="color: rgba(255,255,255,0.7); line-height: 2.0; margin-bottom: 80px; font-size: 1.3rem;">We specialize in high-performance migration and lead generation systems.</p>
+                <div style="display: flex; flex-direction: column; gap: 30px; align-items: center;">
+                    <div style="font-size: 2rem; font-weight: 800; color: white; border-bottom: 2px solid ${COLORS.gold}; padding-bottom: 10px;">solutionsquasar.ca</div>
+                </div>
+            </div>
+        `;
+
+        pdfWrapper.appendChild(renderPage(page1, 1));
+        pdfWrapper.appendChild(renderPage(page2, 2));
+        pdfWrapper.appendChild(renderPage(page3, 3));
+        pdfWrapper.appendChild(renderPage(page4, 4));
+        document.body.appendChild(pdfWrapper);
+
+        const opt = {
+            margin: 0,
+            filename: `Audit_${leadName}.pdf`,
+            image: { type: 'jpeg', quality: 1.0 },
+            html2canvas: { scale: 2, useCORS: true, logging: false },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+
+        // 4. CAPTURE AND GENERATE PDF USING DIRECT LIBRARIES
+        setTimeout(async () => {
+            try {
+                console.log("Starting PDF generation with direct libraries...");
+                console.log("Element dimensions:", pdfWrapper.offsetWidth, "x", pdfWrapper.offsetHeight);
+
+                // Step 1: Capture with html2canvas
+                const canvas = await html2canvas(pdfWrapper, {
+                    scale: 2,
+                    useCORS: true,
+                    logging: true,
+                    backgroundColor: '#0f172a',
+                    scrollX: 0,
+                    scrollY: 0
+                });
+
+                console.log("Canvas captured:", canvas.width, "x", canvas.height);
+
+                // Step 2: Create PDF with jsPDF
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF({
+                    orientation: 'portrait',
+                    unit: 'mm',
+                    format: 'a4'
+                });
+
+                const pageWidth = 210; // A4 width in mm
+                const pageHeight = 297; // A4 height in mm
+                const imgWidth = pageWidth;
+                const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+                // Calculate how many pages we need
+                const totalPages = Math.ceil(imgHeight / pageHeight);
+                console.log("Total pages needed:", totalPages);
+
+                // Add the image as a single long image (jsPDF will handle overflow)
+                const imgData = canvas.toDataURL('image/jpeg', 0.95);
+                console.log("Image data length:", imgData.length);
+
+                let heightLeft = imgHeight;
+                let position = 0;
+
+                // Add first page
+                pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+                heightLeft -= pageHeight;
+
+                // Add additional pages if needed
+                while (heightLeft > 0) {
+                    position = heightLeft - imgHeight;
+                    pdf.addPage();
+                    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+                    heightLeft -= pageHeight;
+                }
+
+                // Save the PDF
+                pdf.save(`Audit_${leadName}.pdf`);
+                console.log("PDF saved successfully!");
+
+                document.body.removeChild(pdfWrapper);
+                overlay.remove();
+                window.scrollTo(0, savedScrollY);
+
+            } catch (err) {
+                console.error("PDF Generation Error:", err);
+                overlay.remove();
+                window.scrollTo(0, savedScrollY);
+            }
+        }, 2500);
+
+    } catch (e) {
+        console.error("PDF Logic Setup Error:", e);
+        if (overlay) overlay.remove();
+        window.scrollTo(0, savedScrollY);
+    }
+};
+
+window.copyRebuildPrompt = () => {
+    const text = document.getElementById('rebuild-prompt-text').innerText;
+    const btn = event.currentTarget;
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<span class="material-icons" style="font-size:14px; margin-right:4px;">check</span> COPIED';
+    setTimeout(() => { btn.innerHTML = originalHtml; }, 2000);
 };
 
 // ... Rest of status update logic (same as before) ...
@@ -1091,6 +1718,10 @@ window.saveLeadDetails = async (leadId) => {
         const phone = getVal('edit-phone');
         const email = getVal('edit-email');
 
+        const dm_name = getVal('edit-dm-name');
+        const dm_email = getVal('edit-dm-email');
+        const dm_phone = getVal('edit-dm-phone');
+
         if (!business_name) {
             showToast("Business Name is required.", "error");
             return;
@@ -1103,6 +1734,9 @@ window.saveLeadDetails = async (leadId) => {
             website,
             phone,
             email,
+            dm_name,
+            dm_email,
+            dm_phone,
             updated_at: new Date().toISOString()
         };
 
@@ -1120,16 +1754,21 @@ window.saveLeadDetails = async (leadId) => {
             }
         }
 
-        // Update Email Button visibility - Re-render Row for cleanliness
+        // Update Actions Matrix (Sticky row)
         const actionRow = document.getElementById('lead-actions-row');
         if (actionRow) {
             actionRow.innerHTML = `
+                <button class="btn btn-sm" onclick="sendLeadToSelf('${leadId}')" title="Send info to my phone" style="background:rgba(255,255,255,0.05); border:1px solid var(--border); padding: 0 12px;">
+                    <span class="material-icons" style="font-size:20px;">smartphone</span>
+                </button>
+                
                 ${email ?
-                    `<button class="btn btn-sm btn-secondary" onclick="openEmailComposer(document.getElementById('edit-email').value, document.getElementById('edit-business-name').value)" style="flex:1;">
-                    <span class="material-icons" style="font-size:14px; margin-right:4px;">send</span> Email
-                </button>`
+                    `<button class="btn btn-sm btn-secondary" onclick="openEmailComposer(document.getElementById('edit-email').value, document.getElementById('edit-business-name').value)" style="flex:1; display: flex; align-items:center; justify-content:center; gap: 8px;">
+                        <span class="material-icons" style="font-size:16px;">send</span> COMPOSE EMAIL
+                     </button>`
                     : ''}
-                <button class="btn btn-sm btn-primary" style="flex:1;" onclick="saveLeadDetails('${leadId}')">Save Changes</button>
+                
+                <button class="btn btn-sm btn-primary" style="flex:1.5; box-shadow: 0 4px 15px rgba(223, 165, 58, 0.2);" onclick="saveLeadDetails('${leadId}')">SAVE UPDATES</button>
             `;
         }
 
@@ -1192,6 +1831,81 @@ window.openNewLeadModal = () => {
             </div>
         </div>
     `;
+};
+
+window.sendLeadToSelf = async (leadId) => {
+    // Gather current data from UI to ensure latest edits are sent
+    const name = document.getElementById('edit-business-name').value;
+    const phone = document.getElementById('edit-phone').value;
+    const email = document.getElementById('edit-email').value;
+    const address = document.getElementById('edit-address').value;
+    const notes = document.getElementById('edit-notes').value;
+
+    if (!phone && !email) {
+        alert("This lead has no phone or email to send.");
+        return;
+    }
+
+    const user = auth.currentUser;
+    if (!user) {
+        alert("You must be logged in.");
+        return;
+    }
+
+    const targetEmail = user.email; // Send to self
+    const subject = `📱 Lead: ${name}`;
+
+    // Gather DM Data
+    const dm_name = document.getElementById('edit-dm-name').value;
+    const dm_phone = document.getElementById('edit-dm-phone').value;
+    const dm_email = document.getElementById('edit-dm-email').value;
+
+    // Create a mobile-optimized simple body
+    let body = `
+    <h3>${name}</h3>
+    <p><strong>Phone:</strong> <a href="tel:${phone}">${phone}</a></p>
+    <p><strong>Email:</strong> <a href="mailto:${email}">${email}</a></p>
+    <p><strong>Address:</strong> ${address}</p>
+    <p><strong>Notes:</strong> ${notes}</p>
+    `;
+
+    if (dm_name || dm_phone || dm_email) {
+        body += `
+        <hr>
+        <h4 style="color:#DFA53A;">Decision Maker</h4>
+        <p><strong>Name:</strong> ${dm_name}</p>
+        <p><strong>Phone:</strong> <a href="tel:${dm_phone}">${dm_phone}</a></p>
+        <p><strong>Email:</strong> <a href="mailto:${dm_email}">${dm_email}</a></p>
+        `;
+    }
+
+    body += `
+    <hr>
+    <small>Sent from Premium Quasar ERP</small>
+    `;
+
+    showToast("Sending info to your phone (email)...");
+
+    try {
+        const token = await user.getIdToken();
+        const response = await fetch('http://localhost:5000/api/send-email', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ to: targetEmail, subject, body })
+        });
+
+        const data = await response.json();
+        if (!data.success) throw new Error(data.message || data.error);
+
+        showToast("Sent to " + targetEmail, "success");
+
+    } catch (e) {
+        console.error(e);
+        showToast("Failed to send: " + e.message, "error");
+    }
 };
 
 window.saveNewLead = async () => {

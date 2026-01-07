@@ -81,7 +81,7 @@ function renderHunterUI(container) {
                 </div>
                 <div style="text-align:right;">
                      <div class="text-h" id="stat-run-status">Idle</div>
-                     <button class="btn btn-primary" id="btn-run-agent">RUN NOW</button>
+                     <button class="btn btn-sm" id="btn-clear-key" style="border-color: var(--danger); color: var(--danger);">Reset API Key</button>
                 </div>
             </div>
             
@@ -145,12 +145,12 @@ function renderHunterUI(container) {
                         </datalist>
                      </div>
                      
-                     <div class="form-group">
-                        <label class="form-label">Strategy</label>
-                        <div class="text-sm text-muted">Page 2+ Results (Low Visibility)</div>
-                     </div>
+                      <div class="form-group">
+                         <label class="form-label">Strategy</label>
+                         <div class="text-sm text-muted">Page 2-5 Results (Deep Search)</div>
+                      </div>
 
-                     <button class="btn btn-sm" id="btn-clear-key" style="margin-top: 1rem; border-color: var(--danger); color: var(--danger);">Reset API Key</button>
+                      <button class="btn btn-primary btn-block" id="btn-run-agent" style="margin-top: 1rem;">RUN AGENT NOW</button>
                 </div>
             </div>
             
@@ -221,142 +221,147 @@ async function runAgentJob() {
 
         // 2. Fetch from Google Places API
         const endpoint = `https://places.googleapis.com/v1/places:searchText`;
-
-        // Fetch Page 1 to get token
-        log("Requesting Page 1 (to skip to Page 2)...");
-        let response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Goog-Api-Key': apiKey,
-                'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.websiteUri,places.id,nextPageToken'
-            },
-            body: JSON.stringify({
-                textQuery: queryTerm,
-                maxResultCount: 20
-            })
-        });
-
-        if (!response.ok) throw new Error(`API Error: ${response.status} - ${response.statusText}`);
-        let data = await response.json();
-
-        if (!data.nextPageToken) {
-            log("Only 1 page of results found. Stopping (Strategy requires >20 results).");
-            status.innerText = "Done";
-            return;
-        }
-
-        // Wait for token
-        log("Page 1 found. Waiting 2s for token activation...");
-        await new Promise(r => setTimeout(r, 2000));
-
-        // Fetch Page 2
-        log("Fetching Page 2 (Low Visibility Targets)...");
-        response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Goog-Api-Key': apiKey,
-                'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.websiteUri,places.id'
-            },
-            body: JSON.stringify({
-                textQuery: queryTerm,
-                maxResultCount: 20,
-                pageToken: data.nextPageToken
-            })
-        });
-
-        if (!response.ok) throw new Error(`API Page 2 Error: ${response.status}`);
-        data = await response.json();
-
-        if (!data.places || data.places.length === 0) {
-            log("Page 2 was empty.");
-            return;
-        }
-
-        log(`Processing ${data.places.length} potential candidates...`);
-
+        let currentPageToken = null;
         let leadsAdded = 0;
 
-        for (const place of data.places) {
-            // Check max limit
+        log(`Strategy: Deep Search Pages 2-5...`);
+
+        // Loop through pages 1 to 5
+        // Page 1 is fetched only to get the token for Page 2
+        for (let pageNum = 1; pageNum <= 5; pageNum++) {
             if (leadsAdded >= maxLeads) break;
 
-            const name = place.displayName?.text || "Unknown";
-            const reviews = place.userRatingCount || 0;
-            const website = place.websiteUri || null;
+            log(`Requesting Page ${pageNum}...`);
 
-            // --- FILTER LOGIC ---
-
-            // 1. Min Reviews
-            if (reviews < settings.minReviews) continue;
-
-            // 2. Website Filter
-            if (websiteFilter === 'NO_WEBSITE' && website) {
-                // Skip if we ONLY want No Website, but this one HAS one
-                continue;
-            }
-            if (websiteFilter === 'HAS_WEBSITE' && !website) {
-                // Skip if we ONLY want Has Website, but this one HAS NONE
-                console.log("Filtered out: No website");
-                continue;
-            }
-
-            // --- ANALYZE ---
-            const painSignals = [];
-            if (!website) painSignals.push('NO_WEBSITE');
-            if (reviews < 10) painSignals.push('WEAK_VISIBILITY');
-
-            // --- DEDUPE ---
-            const q = query(collection(db, 'leads'), where('place_id', '==', place.id));
-            const existing = await getDocs(q);
-            if (!existing.empty) continue;
-
-            // --- SAVE ---
-            const leadData = {
-                business_name: name,
-                category: industryInput,
-                city: city,
-                address: place.formattedAddress || city,
-                google_rating: place.rating || 0,
-                google_reviews_count: reviews,
-                website: website || '',
-                pain_signals: painSignals,
-                status: 'NEW',
-                source: 'GOOGLE_PLACES_AGENT',
-                discovered_query: queryTerm,
-                place_id: place.id,
-                created_at: new Date().toISOString()
+            const requestConfig = {
+                textQuery: queryTerm,
+                maxResultCount: 20
             };
+            if (currentPageToken) requestConfig.pageToken = currentPageToken;
 
-            await addDoc(collection(db, 'leads'), leadData);
-            leadsAdded++;
-            log(`+ SAVED: ${name} ${!website ? '[No Web]' : ''}`);
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Goog-Api-Key': apiKey,
+                    'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.websiteUri,places.id,nextPageToken'
+                },
+                body: JSON.stringify(requestConfig)
+            });
 
-            // --- UPDATE PREVIEW ---
-            if (previewContainer) {
-                const card = document.createElement('div');
-                card.className = 'card';
-                card.style.cssText = 'padding: 1rem; border-left: 3px solid var(--success); font-size: 0.9rem; animation: fadeIn 0.5s ease; cursor: pointer;';
-                card.innerHTML = `
+            if (!response.ok) {
+                const errorBody = await response.json();
+                throw new Error(`API Error Page ${pageNum}: ${response.status} - ${errorBody.error?.message || response.statusText}`);
+            }
+
+            const data = await response.json();
+            currentPageToken = data.nextPageToken;
+
+            // STRATEGY: Skip Page 1 results (Top performers), process Page 2 to 5
+            if (pageNum === 1) {
+                log("Page 1 found. Skipping top results to target internal pages...");
+                if (!currentPageToken) {
+                    log("No more results found beyond Page 1.");
+                    break;
+                }
+                log("Waiting 2s for token activation...");
+                await new Promise(r => setTimeout(r, 2000));
+                continue;
+            }
+
+            if (!data.places || data.places.length === 0) {
+                log(`No results on Page ${pageNum}.`);
+                break;
+            }
+
+            log(`Processing ${data.places.length} candidates from Page ${pageNum}...`);
+
+            for (const place of data.places) {
+                if (leadsAdded >= maxLeads) break;
+
+                const name = place.displayName?.text || "Unknown";
+                const reviews = place.userRatingCount || 0;
+                const website = place.websiteUri || null;
+
+                // --- FILTER LOGIC ---
+
+                // 1. Min Reviews
+                if (reviews < settings.minReviews) continue;
+
+                // 2. Website Filter
+                if (websiteFilter === 'NO_WEBSITE' && website) {
+                    // Skip if we ONLY want No Website, but this one HAS one
+                    continue;
+                }
+                if (websiteFilter === 'HAS_WEBSITE' && !website) {
+                    // Skip if we ONLY want Has Website, but this one HAS NONE
+                    console.log("Filtered out: No website");
+                    continue;
+                }
+
+                // --- ANALYZE ---
+                const painSignals = [];
+                if (!website) painSignals.push('NO_WEBSITE');
+                if (reviews < 10) painSignals.push('WEAK_VISIBILITY');
+
+                // --- DEDUPE ---
+                const q = query(collection(db, 'leads'), where('place_id', '==', place.id));
+                const existing = await getDocs(q);
+                if (!existing.empty) continue;
+
+                // --- SAVE ---
+                const leadData = {
+                    business_name: name,
+                    category: industryInput,
+                    city: city,
+                    address: place.formattedAddress || city,
+                    google_rating: place.rating || 0,
+                    google_reviews_count: reviews,
+                    website: website || '',
+                    pain_signals: painSignals,
+                    status: 'NEW',
+                    source: 'GOOGLE_PLACES_AGENT',
+                    discovered_query: queryTerm,
+                    place_id: place.id,
+                    created_at: new Date().toISOString()
+                };
+
+                await addDoc(collection(db, 'leads'), leadData);
+                leadsAdded++;
+                log(`+ SAVED: ${name} ${!website ? '[No Web]' : ''}`);
+
+                // --- UPDATE PREVIEW ---
+                if (previewContainer) {
+                    const card = document.createElement('div');
+                    card.className = 'card';
+                    card.style.cssText = 'padding: 1rem; border-left: 3px solid var(--success); font-size: 0.9rem; animation: fadeIn 0.5s ease; cursor: pointer;';
+                    card.innerHTML = `
                     <div class="text-h" style="font-size:1rem; margin-bottom: 5px;">${name}</div>
                     <div class="text-muted text-sm">${place.formattedAddress || city}</div>
                     <div style="margin: 0.5rem 0; color: var(--gold);">${place.rating || '-'} ★ (${reviews})</div>
                     ${!website ? '<span class="badge status-new" style="background:var(--danger); color:white;">No Website</span>' : '<span class="text-muted text-xs">Has Website</span>'}
                 `;
-                // Add click to view detail in Leads module (simulate navigation)
-                card.onclick = () => {
-                    window.location.hash = '#leads';
-                    // Ideally we would open the specific lead, but for now just navigating is good feedback.
+                    // Add click to view detail in Leads module (simulate navigation)
+                    card.onclick = () => {
+                        window.location.hash = '#leads';
+                        // Ideally we would open the specific lead, but for now just navigating is good feedback.
+                    }
+                    previewContainer.appendChild(card);
                 }
-                previewContainer.appendChild(card);
+            }
+
+            if (pageNum < 5 && currentPageToken) {
+                log(`Prep for next page... Waiting 1s...`);
+                await new Promise(r => setTimeout(r, 1000));
+            } else {
+                break;
             }
         }
 
         if (leadsAdded === 0) {
-            log("No leads met criteria on Page 2.");
+            log("No leads met criteria on Pages 2-5.");
         } else {
-            log(`JOB COMPLETE. Added ${leadsAdded} new leads.`);
+            log(`JOB COMPLETE. Added ${leadsAdded} new leads from deep search.`);
         }
 
         status.innerText = "Done";
