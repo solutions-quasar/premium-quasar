@@ -294,6 +294,23 @@ window.openLeadDetail = (data) => {
     }
 
     const siteUrl = lead.website && lead.website.startsWith('http') ? lead.website : '';
+
+    // Auto-detect Mixed Content (HTTPS dashboard trying to load HTTP site)
+    const isMixedContent = window.location.protocol === 'https:' && siteUrl.startsWith('http:');
+    let previewSrc = siteUrl;
+    let mixedContentWarning = '';
+
+    if (isMixedContent) {
+        // Fallback to screenshot immediately to prevent "white page" block
+        previewSrc = `https://s0.wordpress.com/mshots/v1/${encodeURIComponent(siteUrl)}?w=1280&h=960`;
+        mixedContentWarning = `
+            <div style="background: rgba(223, 165, 58, 0.15); border-bottom: 1px solid var(--gold); color: var(--gold); font-size: 0.75rem; padding: 6px; text-align: center; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                <span class="material-icons" style="font-size: 14px;">lock</span>
+                <span><strong>Security Notice:</strong> HTTP site detected in secure dashboard. Showing screenshot preview.</span>
+                <button class="btn btn-xs" style="font-size: 0.7rem; padding: 2px 6px; border: 1px solid var(--gold); background: transparent; color: var(--gold);" onclick="setPreviewSrc('${siteUrl}', this, 'website')">Try Live Site</button>
+            </div>
+        `;
+    }
     const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(lead.business_name + ' ' + lead.city)}`;
 
     // Set Global Audit for Popup access
@@ -521,8 +538,9 @@ window.openLeadDetail = (data) => {
 
                     ${siteUrl ?
             `<div class="preview-container">
+                            ${mixedContentWarning}
                             <div class="preview-frame-wrapper preview-mode-mobile" id="iframe-wrapper" style="width: 375px;">
-                                <iframe src="${siteUrl}" class="preview-frame" sandbox="allow-same-origin allow-scripts allow-popups allow-forms" onload="finishLoadTimer()" onerror="this.src='about:blank'; this.nextElementSibling.style.display='flex'"></iframe>
+                                <iframe src="${previewSrc}" class="preview-frame" sandbox="allow-same-origin allow-scripts allow-popups allow-forms" onload="finishLoadTimer()" onerror="this.src='about:blank'; this.nextElementSibling.style.display='flex'"></iframe>
                                 <div style="display:none; position:absolute; top:0; left:0; right:0; bottom:0; background:var(--bg-dark); align-items:center; justify-content:center; flex-direction:column; color:white;">
                                     <p>This website prevents embedding.</p>
                                     <a href="${siteUrl}" target="_blank" class="btn btn-primary">Open in New Tab</a>
