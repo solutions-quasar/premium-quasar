@@ -154,7 +154,13 @@ app.post('/api/send-email', verifyToken, async (req, res) => {
         return res.status(500).json({ success: false, message: 'Server Email Config Missing (Resend API Key)' });
     }
 
-    const fromEmail = process.env.EMAIL_FROM || 'noreply@solutionsquasar.ca';
+    // Force usage of the verified domain if possible, ignoring the sandbox default from env
+    let fromEmail = process.env.EMAIL_FROM;
+    if (!fromEmail || fromEmail.includes('resend.dev')) {
+        fromEmail = 'noreply@solutionsquasar.ca';
+    }
+
+    console.log(`Attempting to send email FROM: ${fromEmail} TO: ${to}`);
 
     try {
         const data = await resend.emails.send({
