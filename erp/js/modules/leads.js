@@ -1797,6 +1797,9 @@ window.saveLeadDetails = async (leadId) => {
         const dm_email = getVal('edit-dm-email');
         const dm_phone = getVal('edit-dm-phone');
 
+        // NEW: Capture Assigned Agent
+        const assigned_agent_id = getVal('edit-assigned-agent');
+
         if (!business_name) {
             showToast("Business Name is required.", "error");
             return;
@@ -1812,6 +1815,7 @@ window.saveLeadDetails = async (leadId) => {
             dm_name,
             dm_email,
             dm_phone,
+            assigned_agent_id, // Add to payload
             updated_at: new Date().toISOString()
         };
 
