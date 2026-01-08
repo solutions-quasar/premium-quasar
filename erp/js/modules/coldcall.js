@@ -246,8 +246,8 @@ window.selectColdCallLead = async (id) => {
                     <!-- Lead Header -->
                     <div style="display:flex; justify-content:space-between; margin-bottom:1.5rem; align-items: flex-start; gap: 20px;">
                         
-                        <!-- LEFT: Lead Info -->
-                        <div style="flex:1;">
+                        <!-- LEFT: Lead Info (Fixed Width) -->
+                        <div style="width:300px;">
                             
                             <!-- Business Name -->
                             <div class="field-container" id="field-container-business_name">
@@ -295,21 +295,21 @@ window.selectColdCallLead = async (id) => {
                             </div>
                         </div>
                         
-                        <!-- Decision Maker Info -->
+                        <!-- MIDDLE: Decision Maker Info (Centered) -->
+                        <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;">
                         ${(data.dm_name || data.dm_email || data.dm_phone) ? `
-                        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed rgba(255,255,255,0.1);">
                              <div class="text-xs text-muted uppercase mb-2" style="letter-spacing:1px; color:#DFA53A; font-weight:bold;">Decision Maker</div>
                              
                              ${data.dm_name ? `
-                             <div class="field-container" style="margin-bottom:5px;">
+                             <div class="field-container" style="margin-bottom:2px;">
                                 <div style="display:flex; align-items:center; gap:8px;">
                                     <span class="material-icons" style="font-size:1rem; color:#DFA53A;">person</span>
-                                    <span style="font-size:1rem; font-weight:500;">${data.dm_name}</span>
+                                    <span style="font-size:1.1rem; font-weight:600;">${data.dm_name}</span>
                                 </div>
                              </div>` : ''}
 
                              ${data.dm_phone ? `
-                             <div class="field-container" style="margin-bottom:5px;">
+                             <div class="field-container" style="margin-bottom:2px;">
                                 <div style="display:flex; align-items:center; gap:8px;">
                                     <span class="material-icons" style="font-size:1rem; color:#DFA53A;">contact_phone</span>
                                     <span style="font-size:1rem; font-weight:500;">${data.dm_phone}</span>
@@ -317,14 +317,14 @@ window.selectColdCallLead = async (id) => {
                              </div>` : ''}
 
                              ${data.dm_email ? `
-                             <div class="field-container" style="margin-bottom:5px;">
+                             <div class="field-container" style="margin-bottom:2px;">
                                 <div style="display:flex; align-items:center; gap:8px;">
                                     <span class="material-icons" style="font-size:1rem; color:#DFA53A;">alternate_email</span>
                                     <span style="font-size:1rem; font-weight:500;">${data.dm_email}</span>
                                 </div>
                              </div>` : ''}
-                        </div>
                         ` : ''}
+                        </div>
 
                         <!-- RIGHT: Script Selector -->
                         <div style="width:250px; text-align:right;">
