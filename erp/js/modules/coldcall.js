@@ -298,8 +298,6 @@ window.selectColdCallLead = async (id) => {
                         </div>
                         ` : ''}
 
-                    </div>
-
                         <!-- RIGHT: Category -->
                         <div style="width:200px; text-align:right;">
                              <label class="text-xs text-muted uppercase mb-1" style="display:block;">Lead Category</label>
