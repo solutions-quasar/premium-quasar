@@ -215,8 +215,17 @@ window.selectColdCallLead = async (id) => {
         } catch (e) { console.error("Error loading scripts", e); }
 
         // Find Best Script Match (Default)
+        // Find Best Script Match (Default)
         const category = data.lead_quality_category || 'OTHER';
-        let activeScript = allScripts.find(s => s.category === category) || allScripts[0] || null;
+        let activeScript = null;
+
+        if (data.selected_script_id) {
+            activeScript = allScripts.find(s => s.id === data.selected_script_id);
+        }
+
+        if (!activeScript) {
+            activeScript = allScripts.find(s => s.category === category) || allScripts[0] || null;
+        }
 
         // Store scripts globally for local switching
         window.availableScripts = allScripts;
@@ -857,12 +866,27 @@ window.autoSaveNotes = (id, text) => {
 };
 
 // Explicitly expose functions to global scope for HTML onclick handlers
-window.updateScriptView = (scriptId) => {
+window.updateScriptView = async (scriptId) => {
     if (!window.availableScripts) return;
     const script = window.availableScripts.find(s => s.id === scriptId);
+
+    // Update UI immediately
     if (script) {
         document.getElementById('script-display-title').innerText = `SCRIPT: ${script.title}`;
         document.getElementById('script-display-content').innerText = script.content;
+    }
+
+    // Save to Firestore
+    if (currentLeadId && script) {
+        try {
+            await updateDoc(doc(db, "leads", currentLeadId), {
+                selected_script_id: scriptId,
+                lead_quality_category: script.category // Keep category in sync with script
+            });
+            console.log("Script preference saved.");
+        } catch (e) {
+            console.error("Error saving script preference:", e);
+        }
     }
 };
 
