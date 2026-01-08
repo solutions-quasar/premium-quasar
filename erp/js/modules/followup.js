@@ -51,11 +51,11 @@ export async function initFollowup() {
                 </div>
                 
                 <!-- Filters -->
-                <div style="padding:0.5rem; display:flex; gap:5px; overflow-x:auto;">
-                     <button class="btn btn-sm btn-primary fu-filter" data-status="ALL">All</button>
-                     <button class="btn btn-sm fu-filter" data-status="INTERESTED">Interested</button>
-                     <button class="btn btn-sm fu-filter" data-status="CALLBACK">Call Back</button>
-                     <button class="btn btn-sm fu-filter" data-status="NOT_INTERESTED">Not Interested</button>
+                <div style="padding:0.5rem; display:flex; gap:4px; overflow-x:auto; flex-wrap:nowrap;">
+                     <button class="btn btn-sm btn-primary fu-filter" data-status="ALL" style="padding:4px 8px; font-size:0.75rem;">All</button>
+                     <button class="btn btn-sm fu-filter" data-status="INTERESTED" style="padding:4px 8px; font-size:0.75rem;">Interested</button>
+                     <button class="btn btn-sm fu-filter" data-status="CALLBACK" style="padding:4px 8px; font-size:0.75rem;">Callback</button>
+                     <button class="btn btn-sm fu-filter" data-status="NOT_INTERESTED" style="padding:4px 8px; font-size:0.75rem;">Not Int.</button>
                 </div>
 
                 <div id="fu-lead-list" style="flex:1; overflow-y:auto;">
