@@ -406,17 +406,17 @@ window.openScriptsManager = async () => {
     snap.forEach(doc => {
         const d = doc.data();
         scriptsHtml += `
-    < div class="list-item" onclick = "editScript('${doc.id}')" >
+    <div class="list-item" onclick="editScript('${doc.id}')">
         <div>
             <div style="font-weight:bold;">${d.title}</div>
             <div class="text-xs text-muted">Category: ${d.category}</div>
         </div>
-            </div >
+    </div>
     `;
     });
 
     modalHost.innerHTML = `
-    < div class="crm-modal-overlay" onclick = "document.getElementById('cc-modal-container').innerHTML=''" >
+    <div class="crm-modal-overlay" onclick="document.getElementById('cc-modal-container').innerHTML=''">
         <div class="crm-modal-content" onclick="event.stopPropagation()">
             <div class="crm-modal-header">
                 <div class="text-h">Scripts Manager</div>
@@ -452,7 +452,7 @@ window.openScriptsManager = async () => {
                     </div>
             </div>
         </div>
-        </div >
+    </div>
     `;
 };
 
