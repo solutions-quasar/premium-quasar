@@ -1,4 +1,4 @@
-import { db } from '../firebase-config.js';
+import { db, auth } from '../firebase-config.js';
 import { collection, query, where, getDocs, doc, getDoc, updateDoc, addDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 // --- STATE ---
@@ -106,13 +106,31 @@ async function loadApprovedLeads(categoryFilter) {
     const list = document.getElementById('cc-lead-list');
     list.innerHTML = '<div class="text-center text-muted mt-3"><div class="spinner-border"></div></div>';
 
+    const user = auth.currentUser;
+    if (!user) {
+        list.innerHTML = `<div class="text-center text-danger p-3">Please sign in to view calls.</div>`;
+        return;
+    }
+
+    // 1. Find the current user's "Team Member ID" by email
+    // This assumes the 'team' collection has documents with an 'email' field matching auth.currentUser.email
+    let currentAgentId = null;
+    try {
+        const teamQuery = query(collection(db, "team"), where("email", "==", user.email));
+        const teamSnap = await getDocs(teamQuery);
+        if (!teamSnap.empty) {
+            currentAgentId = teamSnap.docs[0].id;
+        } else {
+            console.warn("Current user not found in 'team' collection. Showing NO leads.");
+        }
+    } catch (e) {
+        console.error("Error fetching team profile:", e);
+    }
+
     let q = query(
         collection(db, "leads"),
         where("status", "in", ["APPROVED", "CONTACT_QUEUED", "CONTACTED"])
     );
-
-    // Client-side filtering for category if needed, or composite index
-    // Firestore limited on multiple fields unless indexed. Let's fetch Approved and filter in JS for now for simplicity in this proto.
 
     const snapshot = await getDocs(q);
     let leads = [];
@@ -122,12 +140,23 @@ async function loadApprovedLeads(categoryFilter) {
         leads.push(d);
     });
 
+    // 2. Filter by Assigned Agent
+    if (currentAgentId) {
+        // Strict filtering: User must be assigned
+        leads = leads.filter(l => l.assigned_agent_id === currentAgentId);
+    } else {
+        // If user is not in the team list, they shouldn't see any leads (or maybe all if admin?)
+        // Per request: "only be the assigned lead to the current sales person"
+        // So if no agent profile found -> empty list.
+        leads = [];
+    }
+
     if (categoryFilter !== 'ALL') {
         leads = leads.filter(l => l.lead_quality_category === categoryFilter);
     }
 
     if (leads.length === 0) {
-        list.innerHTML = `<div class="text-center text-muted p-3">No leads in this category.</div>`;
+        list.innerHTML = `<div class="text-center text-muted p-3">No leads assigned to you.</div>`;
         return;
     }
 
@@ -541,10 +570,17 @@ window.confirmMeetingBooking = async () => {
     const endTime = new Date(startTime.getTime() + duration * 60000);
 
     // Get Lead Info handling two sources (current loaded lead in UI)
-    // We can fetch from DOM or re-fetch from ID. DOM is faster.
-    const businessName = document.querySelector('#cc-workspace .text-h').innerText;
-    const phone = document.querySelector('#cc-workspace .text-right div').innerText;
-    const notes = document.getElementById('cc-notes').value;
+    // Using specific ID selectors to ensure we get the right data
+    const businessName = document.querySelector('#field-container-business_name .text-h')?.innerText || 'Unknown Lead';
+
+    // Safety check for Phone/Email selectors
+    const phoneEl = document.querySelector('#field-container-phone span:nth-of-type(2)');
+    const phone = phoneEl ? phoneEl.innerText.trim() : '';
+
+    const emailEl = document.querySelector('#field-container-email span:nth-of-type(2)');
+    const email = emailEl ? emailEl.innerText.trim() : '';
+
+    const notes = document.getElementById('cc-notes')?.value || '';
 
     // 1. Save to Internal ERP Calendar (Firestore)
     try {
@@ -552,15 +588,14 @@ window.confirmMeetingBooking = async () => {
             title: `Meeting: ${businessName}`,
             start: startTime.toISOString(),
             end: endTime.toISOString(),
-            description: `Phone: ${phone}\nNotes: ${notes}`,
+            description: `Phone: ${phone}\nEmail: ${email}\nNotes: ${notes}`,
             leadId: currentLeadId,
             type: 'meeting',
+            leadName: businessName,
             created_at: new Date().toISOString()
         });
 
         // Update Stats (Meetings Count)
-        // In a real app, we'd increment a counter or re-calc stats.
-        // For now, let's just close modal.
         document.getElementById('cc-modal-container').innerHTML = '';
 
     } catch (e) {
@@ -576,9 +611,16 @@ window.confirmMeetingBooking = async () => {
     gCalUrl.searchParams.append("action", "TEMPLATE");
     gCalUrl.searchParams.append("text", `Meeting with ${businessName}`);
     gCalUrl.searchParams.append("dates", `${formatGCal(startTime)}/${formatGCal(endTime)}`);
-    gCalUrl.searchParams.append("details", `Phone: ${phone}\n\nNotes from ERP:\n${notes}\n\nLead Link: ${window.location.origin}/#coldcall`);
+
+    const details = "Meeting Solutions Quasar Inc.";
+
+    gCalUrl.searchParams.append("details", details);
     gCalUrl.searchParams.append("location", "Google Meet");
-    gCalUrl.searchParams.append("add", phone); // Try to add guest email if we had it, using phone for ref
+
+    // Only add guest if it looks like an email
+    if (email && email.includes('@')) {
+        gCalUrl.searchParams.append("add", email);
+    }
 
     window.open(gCalUrl.toString(), '_blank');
 

@@ -72,6 +72,7 @@ export async function initLeads() {
             <button class="btn btn-sm active-filter" data-filter="NEW">New</button>
             <button class="btn btn-sm" data-filter="APPROVED">Approved</button>
             <button class="btn btn-sm" data-filter="CONTACTED">Contacted</button>
+            <button class="btn btn-sm" data-filter="AUDITED">Audited</button>
             <button class="btn btn-sm" data-filter="ALL">All</button>
         </div>
 
@@ -239,7 +240,7 @@ async function loadLeads(statusFilter) {
 
     try {
         let q;
-        if (statusFilter === 'ALL') {
+        if (statusFilter === 'ALL' || statusFilter === 'AUDITED') {
             q = query(collection(db, "leads"));
         } else {
             q = query(collection(db, "leads"), where("status", "==", statusFilter));
@@ -250,7 +251,15 @@ async function loadLeads(statusFilter) {
         // Cache data
         window.allLeadsCache = [];
         querySnapshot.forEach(docSnap => {
-            window.allLeadsCache.push({ ...docSnap.data(), id: docSnap.id });
+            const data = { ...docSnap.data(), id: docSnap.id };
+            if (statusFilter === 'AUDITED') {
+                // Filter client side for audited leads
+                if (data.lastAudit) {
+                    window.allLeadsCache.push(data);
+                }
+            } else {
+                window.allLeadsCache.push(data);
+            }
         });
 
         // Client-side Sort (Newest First)
@@ -271,7 +280,7 @@ async function loadLeads(statusFilter) {
 
 // --- DETAIL VIEW LOGIC ---
 
-window.openLeadDetail = (data) => {
+window.openLeadDetail = async (data) => {
     let lead;
     if (typeof data === 'object' && data !== null) {
         lead = data;
@@ -310,7 +319,8 @@ window.openLeadDetail = (data) => {
 
     if (isMixedContent) {
         // Fallback to screenshot immediately to prevent "white page" block
-        previewSrc = `https://s0.wordpress.com/mshots/v1/${encodeURIComponent(siteUrl)}?w=1280&h=960`;
+        // Default to mobile width (375px) since that is the default view
+        previewSrc = `https://s0.wordpress.com/mshots/v1/${encodeURIComponent(siteUrl)}?w=375&h=800`;
     }
     const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(lead.business_name + ' ' + lead.city)}`;
 
@@ -430,6 +440,22 @@ window.openLeadDetail = (data) => {
                                 <span class="material-icons text-gold" style="font-size:0.9rem; opacity: 0.7;">contact_phone</span>
                                 <input type="text" id="edit-dm-phone" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.dm_phone || '')}" placeholder="Direct Phone / extension">
                             </div>
+                        </div>
+
+                        <!-- ASSIGNED AGENT SELECTOR -->
+                         <div style="margin-top: 1rem; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 1rem;">
+                            <div class="text-xs text-muted uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">Assigned Agent</div>
+                            <select id="edit-assigned-agent" class="form-input" style="background: rgba(0,0,0,0.2); border: 1px solid var(--border); font-size: 0.9rem;">
+                                ${await getTeamDropdownOptions(lead.assigned_agent_id)}
+                            </select>
+                        </div>
+
+                        <!-- ASSIGNED AGENT SELECTOR -->
+                         <div style="margin-top: 1rem; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 1rem;">
+                            <div class="text-xs text-muted uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">Assigned Agent</div>
+                            <select id="edit-assigned-agent" class="form-input" style="background: rgba(0,0,0,0.2); border: 1px solid var(--border); font-size: 0.9rem;">
+                                ${await getTeamDropdownOptions(lead.assigned_agent_id)}
+                            </select>
                         </div>
                     </div>
 
@@ -698,16 +724,42 @@ window.setPreviewMode = (mode, btnEl) => {
         wrapper.className = `preview-frame-wrapper preview-mode-${mode}`;
 
         let widthVal = '100%';
-        if (mode === 'mobile') widthVal = '375px';
-        if (mode === 'tablet') widthVal = '768px';
+        let pixelWidth = 1200; // default for slider
+
+        if (mode === 'mobile') { widthVal = '375px'; pixelWidth = 375; }
+        if (mode === 'tablet') { widthVal = '768px'; pixelWidth = 768; }
 
         if (display) display.innerText = widthVal;
 
         // Sync slider
         if (slider) {
-            if (mode === 'mobile') slider.value = 375;
-            else if (mode === 'tablet') slider.value = 768;
-            else slider.value = 1200; // rough desktop default
+            slider.value = pixelWidth;
+        }
+
+        // --- RELOAD SCREENSHOT IF ACTIVE ---
+        // If we are viewing a screenshot (mShots), we must reload it with the new width 
+        // so the server renders the correct responsiveness.
+        const frame = document.querySelector('.preview-frame');
+        if (frame && frame.src.includes('mshots')) {
+            // Parse the original site URL from the mshots URL
+            // Format: .../v1/ENCODED_URL?w=...
+            try {
+                const parts = frame.src.split('/v1/');
+                if (parts.length > 1) {
+                    const baseUrlAndQuery = parts[1];
+                    const encodedTarget = baseUrlAndQuery.split('?')[0]; // Just the url part
+
+                    // Construct new mShots URL with new width
+                    const newScreenshotUrl = `https://s0.wordpress.com/mshots/v1/${encodedTarget}?w=${pixelWidth}&h=900`;
+
+                    console.log('Reloading Screenshot for Device Width:', pixelWidth);
+                    frame.src = newScreenshotUrl;
+
+                    if (window.startLoadTimer) window.startLoadTimer();
+                }
+            } catch (e) {
+                console.warn("Failed to update screenshot width", e);
+            }
         }
     }
 };
