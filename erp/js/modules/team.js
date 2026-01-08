@@ -67,15 +67,15 @@ window.openAddMemberModal = () => {
                 </div>
                 <div class="crm-modal-body">
                     <div class="form-group">
-                        <label class="form-label">Full Name</label>
+                        <label class="form-label" for="tm-name">Full Name</label>
                         <input type="text" id="tm-name" class="form-input" placeholder="e.g. John Doe">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Email Address</label>
+                        <label class="form-label" for="tm-email">Email Address</label>
                         <input type="email" id="tm-email" class="form-input" placeholder="john@quasar.com">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Role</label>
+                        <label class="form-label" for="tm-role">Role</label>
                         <select id="tm-role" class="form-input" style="background:var(--bg-dark); color:white;">
                             <option value="Sales Representative">Sales Representative</option>
                             <option value="Sales Manager">Sales Manager</option>
