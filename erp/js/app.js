@@ -9,6 +9,7 @@ import { initSales } from './modules/sales.js';
 import { initLeads } from './modules/leads.js';
 import { initLeadHunter } from './modules/leadhunter.js';
 import { initColdCall } from './modules/coldcall.js';
+import { initFollowup } from './modules/followup.js';
 import { initAccount } from './modules/account.js';
 import { initTeam } from './modules/team.js';
 
@@ -343,6 +344,7 @@ const routes = {
     '#leads': initLeads,
     '#leadhunter': initLeadHunter,
     '#coldcall': initColdCall,
+    '#followup': initFollowup,
     '#account': initAccount,
     '#team': initTeam
 };
