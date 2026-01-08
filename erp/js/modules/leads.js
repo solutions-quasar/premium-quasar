@@ -184,6 +184,15 @@ function renderLeads(leads) {
             badges = data.pain_signals.map(s => `<span class="badge badge-danger">${s.replace(/_/g, ' ')}</span>`).join('');
         }
 
+        // Audit Badge
+        if (data.lastAudit) {
+            const score = data.lastAudit.score !== undefined ? data.lastAudit.score : '?';
+            const color = score > 70 ? 'success' : (score > 40 ? 'gold' : 'danger');
+            badges += `<span class="badge" style="border:1px solid var(--${color}); color:var(--${color}); background:rgba(0,0,0,0.3); display:inline-flex; align-items:center; gap:4px; padding: 2px 6px;" title="AI Audit Score: ${score}">
+                <span class="material-icons" style="font-size:14px;">psychology</span> <strong style="font-size:0.8rem;">${score}</strong>
+             </span>`;
+        }
+
         html += `
             <div class="lead-card card" onclick="openLeadDetail('${data.id}')" style="display:flex; flex-direction:column; gap:0.5rem; border-left: 3px solid ${getStatusColor(data.status)}; cursor:pointer;">
                 <div style="display:flex; justify-content:space-between; align-items:start;">
