@@ -369,7 +369,7 @@ window.openLeadDetail = async (data) => {
                              <button class="btn btn-sm" style="border-color:var(--danger); color:var(--danger);" onclick="updateLeadStatus('${lead.id}', 'REJECTED')">Reject</button>
                         </div>
                     ` : ''}
-                    ${lead.status === 'APPROVED' ? `<button class="btn btn-primary ml-2" onclick="openAssignModal('${lead.id}')">Assign Agent</button>` : ''}            
+
                 </div>
             </div>
             <div class="detail-body">
