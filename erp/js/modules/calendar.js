@@ -1,6 +1,6 @@
 // --- FullCalendar Integration ---
 import { db } from '../firebase-config.js';
-import { collection, addDoc, getDocs, query, where } from 'https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore.js';
+import { collection, addDoc, getDocs, query, where } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 export async function initCalendar() {
     const container = document.getElementById('view-calendar');
@@ -27,7 +27,7 @@ export async function initCalendar() {
     }
 
     const calendar = new FullCalendar.Calendar(calendarEl, {
-        initialView: 'dayGridMonth',
+        initialView: 'timeGridWeek',
         headerToolbar: {
             left: 'prev,next today',
             center: 'title',
