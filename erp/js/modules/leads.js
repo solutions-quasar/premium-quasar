@@ -317,11 +317,115 @@ window.openLeadDetail = async (data) => {
     const isMixedContent = window.location.protocol === 'https:' && siteUrl.startsWith('http:');
     let previewSrc = siteUrl;
 
+    // Microlink Helper
+    const getMicrolinkUrl = (targetUrl, width, isMobile) => {
+        return `https://api.microlink.io/?url=${encodeURIComponent(targetUrl)}&screenshot=true&meta=false&embed=screenshot.url&viewport.width=${width}&viewport.height=800&viewport.isMobile=${isMobile}`;
+    };
+
     if (isMixedContent) {
         // Fallback to screenshot immediately to prevent "white page" block
-        // Default to mobile width (375px) since that is the default view
-        previewSrc = `https://s0.wordpress.com/mshots/v1/${encodeURIComponent(siteUrl)}?w=375&h=800`;
+        // Default to mobile width (375px) AND mobile User Agent
+        previewSrc = getMicrolinkUrl(siteUrl, 375, true);
     }
+    const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(lead.business_name + ' ' + lead.city)}`;
+
+    // ... (rest of function) ...
+
+    // ...
+
+    window.setPreviewMode = (mode, btnEl) => {
+        // Update Active Buttons
+        if (btnEl) {
+            document.querySelectorAll('.device-btn').forEach(b => b.classList.remove('active'));
+            btnEl.classList.add('active');
+        } else {
+            const desktopBtn = document.querySelectorAll('.device-btn')[2];
+            if (desktopBtn) {
+                document.querySelectorAll('.device-btn').forEach(b => b.classList.remove('active'));
+                desktopBtn.classList.add('active');
+            }
+        }
+
+        // Update Wrapper Class & Reset Inline Width
+        const wrapper = document.getElementById('iframe-wrapper');
+        const display = document.getElementById('width-display');
+        const slider = document.querySelector('.dev-slider');
+
+        if (wrapper) {
+            wrapper.style.width = ''; // Clear custom inline width
+            wrapper.className = `preview-frame-wrapper preview-mode-${mode}`;
+
+            let widthVal = '100%';
+            let pixelWidth = 1200; // default for slider
+            let isMobile = false;
+
+            if (mode === 'mobile') { widthVal = '375px'; pixelWidth = 375; isMobile = true; }
+            if (mode === 'tablet') { widthVal = '768px'; pixelWidth = 768; isMobile = true; } // Tablet often better with mobile UA
+
+            if (display) display.innerText = widthVal;
+
+            // Sync slider
+            if (slider) {
+                slider.value = pixelWidth;
+            }
+
+            // --- RELOAD SCREENSHOT IF ACTIVE ---
+            const frame = document.querySelector('.preview-frame');
+
+            // Check if we are using a screenshot service (Microlink or mShots legacy)
+            if (frame && (frame.src.includes('microlink') || frame.src.includes('mshots'))) {
+                try {
+                    // Extract original URL from Microlink or mShots
+                    let originalUrl = '';
+                    if (frame.src.includes('microlink')) {
+                        const urlParam = new URL(frame.src).searchParams.get('url');
+                        if (urlParam) originalUrl = urlParam;
+                    } else if (frame.src.includes('mshots')) {
+                        const parts = frame.src.split('/v1/');
+                        if (parts.length > 1) originalUrl = decodeURIComponent(parts[1].split('?')[0]);
+                    }
+
+                    if (originalUrl) {
+                        console.log('Reloading Screenshot for Device:', mode, pixelWidth);
+                        // Force refresh with new viewport settings
+                        const newUrl = `https://api.microlink.io/?url=${encodeURIComponent(originalUrl)}&screenshot=true&meta=false&embed=screenshot.url&viewport.width=${pixelWidth}&viewport.height=800&viewport.isMobile=${isMobile}`;
+                        frame.src = newUrl;
+                        if (window.startLoadTimer) window.startLoadTimer();
+                    }
+                } catch (e) {
+                    console.warn("Failed to update screenshot width", e);
+                }
+            }
+        }
+    };
+
+    window.toggleScreenshotMode = (url) => {
+        const wrapper = document.getElementById('iframe-wrapper');
+        const frame = document.querySelector('.preview-frame');
+
+        if (frame && wrapper && url) {
+            startLoadTimer();
+
+            // Default to mobile if current view is mobile
+            const isMobileView = wrapper.className.includes('mobile');
+            const width = isMobileView ? 375 : 1280;
+            const isMobileUA = isMobileView;
+
+            const screenshotUrl = `https://api.microlink.io/?url=${encodeURIComponent(url)}&screenshot=true&meta=false&embed=screenshot.url&viewport.width=${width}&viewport.height=800&viewport.isMobile=${isMobileUA}`;
+
+            if (frame.src.includes('api.microlink.io') || frame.src.includes('mshots')) {
+                // Revert to Live
+                console.log('Reverting to Live Iframe');
+                frame.src = url;
+            } else {
+                // Switch to Screenshot
+                console.log('Switching to Screenshot Mode');
+                frame.src = screenshotUrl;
+            }
+
+            setTimeout(finishLoadTimer, 2000);
+        }
+    };
     const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(lead.business_name + ' ' + lead.city)}`;
 
     // Set Global Audit for Popup access
