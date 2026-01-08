@@ -3,6 +3,38 @@ import { collection, query, where, getDocs, doc, getDoc, updateDoc } from "https
 
 // --- STATE ---
 let currentFollowupId = null;
+let saveTimeout = null;
+
+window.autoSaveFollowupNotes = (id, text) => {
+    const status = document.getElementById('fu-save-status');
+    if (status) {
+        status.innerText = 'Saving...';
+        status.style.opacity = '1';
+        status.className = 'text-xs text-muted';
+    }
+
+    if (saveTimeout) clearTimeout(saveTimeout);
+
+    saveTimeout = setTimeout(async () => {
+        try {
+            await updateDoc(doc(db, "leads", id), {
+                notes: text,
+                updated_at: new Date().toISOString()
+            });
+            if (status) {
+                status.innerText = 'Saved';
+                status.className = 'text-xs text-success';
+                setTimeout(() => { if (status) status.style.opacity = '0'; }, 2000);
+            }
+        } catch (e) {
+            console.error("Auto-save failed", e);
+            if (status) {
+                status.innerText = 'Error Saving';
+                status.className = 'text-xs text-danger';
+            }
+        }
+    }, 1000);
+};
 
 // --- INITIALIZATION ---
 export async function initFollowup() {
@@ -179,8 +211,13 @@ window.selectFollowupLead = async (id) => {
                 </div>
 
                 <div class="card" style="margin-bottom:1rem; background:#000; border:1px solid var(--border);">
-                    <div class="text-xs text-muted uppercase mb-2">Last Notes</div>
-                    <div style="white-space:pre-wrap; font-size:0.95rem;">${data.notes || 'No notes.'}</div>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div class="text-xs text-muted uppercase mb-2">Last Notes</div>
+                        <span id="fu-save-status" class="text-xs text-muted" style="font-style:italic; opacity:0;">Saved</span>
+                    </div>
+                    <textarea class="form-input" rows="5" style="width:100%; border:none; background:transparent; resize:none; font-size:0.95rem; line-height:1.5; outline:none;" 
+                        placeholder="Add notes..."
+                        oninput="autoSaveFollowupNotes('${id}', this.value)">${data.notes || ''}</textarea>
                 </div>
 
                 <div class="text-h text-sm uppercase text-muted mb-2">Actions</div>
