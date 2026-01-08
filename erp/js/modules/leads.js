@@ -884,7 +884,7 @@ window.runDeepAudit = async (url, leadId) => {
                 "Authorization": `Bearer ${apiKey}`
             },
             body: JSON.stringify({
-                model: "gpt-4o-mini", // Upgraded model for better reasoning and 128k context
+                model: "gpt-4o", // Upgraded to latest flagship model
                 response_format: { type: "json_object" },
                 messages: [
                     {
