@@ -205,10 +205,29 @@ window.selectColdCallLead = async (id) => {
         const data = snap.data();
         data.id = id;
 
-        // Fetch Appropriate Script
-        // Safety: Ensure category is defined strings, defaulting to 'OTHER' if missing
+        // Fetch All Scripts for Dropdown
+        let allScripts = [];
+        try {
+            const scriptsSnap = await getDocs(collection(db, "scripts"));
+            scriptsSnap.forEach(doc => {
+                allScripts.push({ id: doc.id, ...doc.data() });
+            });
+        } catch (e) { console.error("Error loading scripts", e); }
+
+        // Find Best Script Match (Default)
         const category = data.lead_quality_category || 'OTHER';
-        const script = await getBestScript(category);
+        let activeScript = allScripts.find(s => s.category === category) || allScripts[0] || null;
+
+        // Store scripts globally for local switching
+        window.availableScripts = allScripts;
+
+        // Generate Script Options
+        let scriptOptions = '';
+        allScripts.forEach(s => {
+            const isSelected = activeScript && s.id === activeScript.id ? 'selected' : '';
+            scriptOptions += `<option value="${s.id}" ${isSelected}>${s.title} (${s.category})</option>`;
+        });
+
 
         workspace.innerHTML = `
             <div style="display:flex; flex:1; overflow:hidden;">
@@ -298,16 +317,14 @@ window.selectColdCallLead = async (id) => {
                         </div>
                         ` : ''}
 
-                        <!-- RIGHT: Category -->
-                        <div style="width:200px; text-align:right;">
-                             <label class="text-xs text-muted uppercase mb-1" style="display:block;">Lead Category</label>
-                             <select onchange="changeLeadCategory('${id}', this.value)" 
+                        <!-- RIGHT: Script Selector -->
+                        <div style="width:250px; text-align:right;">
+                             <label class="text-xs text-muted uppercase mb-1" style="display:block;">Call Script</label>
+                             <select onchange="updateScriptView(this.value)" 
                                      style="width:100%; background:var(--bg-card); color:var(--text-main); border:1px solid var(--border); padding:8px; border-radius:6px; font-size:0.9rem; cursor:pointer; outline:none;">
-                                <option value="NO_WEBSITE" ${category === 'NO_WEBSITE' ? 'selected' : ''}>No Website</option>
-                                <option value="DATED_DESIGN" ${category === 'DATED_DESIGN' ? 'selected' : ''}>Dated Design</option>
-                                <option value="BAD_RANKING" ${category === 'BAD_RANKING' ? 'selected' : ''}>Bad Ranking</option>
-                                <option value="OTHER" ${category === 'OTHER' ? 'selected' : ''}>Other</option>
+                                ${scriptOptions || '<option value="">No Scripts Available</option>'}
                             </select>
+                            <div class="text-xs text-muted mt-1" style="cursor:pointer; text-decoration:underline;" onclick="openScriptsManager()">Manage Scripts</div>
                         </div>
 
                     </div>
@@ -315,10 +332,9 @@ window.selectColdCallLead = async (id) => {
                     <!-- Script Section -->
                     <div class="card" style="background:#000; border:1px solid var(--gold-dim);">
                         <div style="display:flex; justify-content:space-between; border-bottom:1px solid var(--border); padding:10px;">
-                            <span class="text-gold font-bold">SCRIPT: ${script ? script.title : 'General / Default'}</span>
-                            <button class="text-xs btn" onclick="openScriptsManager()">Change</button>
+                            <span class="text-gold font-bold" id="script-display-title">SCRIPT: ${activeScript ? activeScript.title : 'None Selected'}</span>
                         </div>
-                        <div style="padding:1.5rem; line-height:1.6; font-size:1rem; white-space:pre-wrap;">${script ? script.content : 'No script found for this category. Please add one in the Scripts Manager.'}</div>
+                        <div id="script-display-content" style="padding:1.5rem; line-height:1.6; font-size:1rem; white-space:pre-wrap;">${activeScript ? activeScript.content : 'No script found. Please add one in the Scripts Manager.'}</div>
                     </div>
 
                     <!-- Notes -->
@@ -841,5 +857,14 @@ window.autoSaveNotes = (id, text) => {
 };
 
 // Explicitly expose functions to global scope for HTML onclick handlers
+window.updateScriptView = (scriptId) => {
+    if (!window.availableScripts) return;
+    const script = window.availableScripts.find(s => s.id === scriptId);
+    if (script) {
+        document.getElementById('script-display-title').innerText = `SCRIPT: ${script.title}`;
+        document.getElementById('script-display-content').innerText = script.content;
+    }
+};
+
 window.initColdCall = initColdCall;
 console.log('hacker_voice_im_in: Cold Call Module Loaded');
