@@ -333,100 +333,7 @@ window.openLeadDetail = async (data) => {
 
     // ...
 
-    window.setPreviewMode = (mode, btnEl) => {
-        // Update Active Buttons
-        if (btnEl) {
-            document.querySelectorAll('.device-btn').forEach(b => b.classList.remove('active'));
-            btnEl.classList.add('active');
-        } else {
-            const desktopBtn = document.querySelectorAll('.device-btn')[2];
-            if (desktopBtn) {
-                document.querySelectorAll('.device-btn').forEach(b => b.classList.remove('active'));
-                desktopBtn.classList.add('active');
-            }
-        }
 
-        // Update Wrapper Class & Reset Inline Width
-        const wrapper = document.getElementById('iframe-wrapper');
-        const display = document.getElementById('width-display');
-        const slider = document.querySelector('.dev-slider');
-
-        if (wrapper) {
-            wrapper.style.width = ''; // Clear custom inline width
-            wrapper.className = `preview-frame-wrapper preview-mode-${mode}`;
-
-            let widthVal = '100%';
-            let pixelWidth = 1200; // default for slider
-            let isMobile = false;
-
-            if (mode === 'mobile') { widthVal = '375px'; pixelWidth = 375; isMobile = true; }
-            if (mode === 'tablet') { widthVal = '768px'; pixelWidth = 768; isMobile = true; } // Tablet often better with mobile UA
-
-            if (display) display.innerText = widthVal;
-
-            // Sync slider
-            if (slider) {
-                slider.value = pixelWidth;
-            }
-
-            // --- RELOAD SCREENSHOT IF ACTIVE ---
-            const frame = document.querySelector('.preview-frame');
-
-            // Check if we are using a screenshot service (Microlink or mShots legacy)
-            if (frame && (frame.src.includes('microlink') || frame.src.includes('mshots'))) {
-                try {
-                    // Extract original URL from Microlink or mShots
-                    let originalUrl = '';
-                    if (frame.src.includes('microlink')) {
-                        const urlParam = new URL(frame.src).searchParams.get('url');
-                        if (urlParam) originalUrl = urlParam;
-                    } else if (frame.src.includes('mshots')) {
-                        const parts = frame.src.split('/v1/');
-                        if (parts.length > 1) originalUrl = decodeURIComponent(parts[1].split('?')[0]);
-                    }
-
-                    if (originalUrl) {
-                        console.log('Reloading Screenshot for Device:', mode, pixelWidth);
-                        // Force refresh with new viewport settings
-                        const newUrl = `https://api.microlink.io/?url=${encodeURIComponent(originalUrl)}&screenshot=true&meta=false&embed=screenshot.url&viewport.width=${pixelWidth}&viewport.height=800&viewport.isMobile=${isMobile}`;
-                        frame.src = newUrl;
-                        if (window.startLoadTimer) window.startLoadTimer();
-                    }
-                } catch (e) {
-                    console.warn("Failed to update screenshot width", e);
-                }
-            }
-        }
-    };
-
-    window.toggleScreenshotMode = (url) => {
-        const wrapper = document.getElementById('iframe-wrapper');
-        const frame = document.querySelector('.preview-frame');
-
-        if (frame && wrapper && url) {
-            startLoadTimer();
-
-            // Default to mobile if current view is mobile
-            const isMobileView = wrapper.className.includes('mobile');
-            const width = isMobileView ? 375 : 1280;
-            const isMobileUA = isMobileView;
-
-            const screenshotUrl = `https://api.microlink.io/?url=${encodeURIComponent(url)}&screenshot=true&meta=false&embed=screenshot.url&viewport.width=${width}&viewport.height=800&viewport.isMobile=${isMobileUA}`;
-
-            if (frame.src.includes('api.microlink.io') || frame.src.includes('mshots')) {
-                // Revert to Live
-                console.log('Reverting to Live Iframe');
-                frame.src = url;
-            } else {
-                // Switch to Screenshot
-                console.log('Switching to Screenshot Mode');
-                frame.src = screenshotUrl;
-            }
-
-            setTimeout(finishLoadTimer, 2000);
-        }
-    };
-    const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(lead.business_name + ' ' + lead.city)}`;
 
     // Set Global Audit for Popup access
     if (lead.lastAudit) {
@@ -554,13 +461,7 @@ window.openLeadDetail = async (data) => {
                             </select>
                         </div>
 
-                        <!-- ASSIGNED AGENT SELECTOR -->
-                         <div style="margin-top: 1rem; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 1rem;">
-                            <div class="text-xs text-muted uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">Assigned Agent</div>
-                            <select id="edit-assigned-agent" class="form-input" style="background: rgba(0,0,0,0.2); border: 1px solid var(--border); font-size: 0.9rem;">
-                                ${await getTeamDropdownOptions(lead.assigned_agent_id)}
-                            </select>
-                        </div>
+
                     </div>
 
                     <!-- SECTION 4: STRATEGIC NOTES -->
@@ -1808,17 +1709,17 @@ window.openEmailComposer = (email, name) => {
             </div>
             
             <div class="form-group">
-                <label class="form-label">To:</label>
-                <input type="text" class="form-input" value="${email}" disabled style="opacity:0.7;">
+                <label class="form-label" for="email-to">To:</label>
+                <input type="text" id="email-to" class="form-input" value="${email}" disabled style="opacity:0.7;">
             </div>
 
             <div class="form-group">
-                <label class="form-label">Subject:</label>
+                <label class="form-label" for="email-subject">Subject:</label>
                 <input type="text" id="email-subject" class="form-input" value="Regarding ${name} - Opportunity">
             </div>
 
             <div class="form-group">
-                <label class="form-label">Message:</label>
+                <label class="form-label" for="email-body">Message:</label>
                 <textarea id="email-body" class="form-input" rows="8" style="resize:vertical;">Hi there,
 
 I came across ${name} and was impressed by what I saw. I'd love to connect and discuss how we can help you grow.
@@ -1975,25 +1876,25 @@ window.openNewLeadModal = () => {
                 </div>
                 <div class="crm-modal-body">
                     <div class="form-group">
-                        <label class="form-label">Business Name *</label>
+                        <label class="form-label" for="new-lead-name">Business Name *</label>
                         <input type="text" id="new-lead-name" class="form-input" placeholder="e.g. Acme Corp">
                     </div>
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
                         <div class="form-group">
-                            <label class="form-label">Category</label>
+                            <label class="form-label" for="new-lead-category">Category</label>
                             <input type="text" id="new-lead-category" class="form-input" placeholder="e.g. Plumber">
                         </div>
                         <div class="form-group">
-                            <label class="form-label">City</label>
+                            <label class="form-label" for="new-lead-city">City</label>
                             <input type="text" id="new-lead-city" class="form-input" placeholder="e.g. Toronto">
                         </div>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Website</label>
+                        <label class="form-label" for="new-lead-website">Website</label>
                         <input type="text" id="new-lead-website" class="form-input" placeholder="https://...">
                     </div>
                      <div class="form-group">
-                        <label class="form-label">Notes</label>
+                        <label class="form-label" for="new-lead-notes">Notes</label>
                         <textarea id="new-lead-notes" class="form-input" rows="2" placeholder="Optional notes..."></textarea>
                     </div>
 

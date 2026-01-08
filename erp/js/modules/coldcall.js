@@ -430,11 +430,11 @@ window.openScriptsManager = async () => {
                     <div id="script-editor" style="display:none;">
                         <input type="hidden" id="edit-script-id">
                             <div class="form-group">
-                                <label class="form-label">Title</label>
+                                <label class="form-label" for="edit-script-title">Title</label>
                                 <input type="text" id="edit-script-title" class="form-input">
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Category</label>
+                                <label class="form-label" for="edit-script-cat">Category</label>
                                 <select id="edit-script-cat" class="form-input" style="color:white; background:var(--bg-dark);">
                                     <option value="GENERAL">General</option>
                                     <option value="NO_WEBSITE">No Website</option>
@@ -444,7 +444,7 @@ window.openScriptsManager = async () => {
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Script Body</label>
+                                <label class="form-label" for="edit-script-body">Script Body</label>
                                 <textarea id="edit-script-body" class="form-input" rows="10"></textarea>
                             </div>
                             <button class="btn btn-primary btn-block" onclick="saveScript()">Save Script</button>
@@ -524,11 +524,11 @@ window.openMeetingModal = () => {
                 </div>
                 <div class="crm-modal-body">
                     <div class="form-group">
-                        <label class="form-label">Meeting Date & Time</label>
+                        <label class="form-label" for="meeting-date">Meeting Date & Time</label>
                         <input type="datetime-local" id="meeting-date" class="form-input">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Duration</label>
+                        <label class="form-label" for="meeting-duration">Duration</label>
                         <select id="meeting-duration" class="form-input" style="background:var(--bg-dark); color:white;">
                             <option value="15">15 Minutes</option>
                             <option value="30" selected>30 Minutes</option>
