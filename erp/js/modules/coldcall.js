@@ -25,7 +25,7 @@ export async function initColdCall() {
              <!-- Injected via renderStats() -->
         </div>
 
-        <div style="display:grid; grid-template-columns: 350px 1fr; gap:1rem; height: calc(100vh - 220px);">
+        <div style="display:grid; grid-template-columns: 350px 1fr; gap:1rem; height: calc(100vh - 140px);">
             
             <!-- LEFT: Lead List -->
             <div class="card" style="display:flex; flex-direction:column; padding:0; overflow:hidden;">
@@ -79,25 +79,25 @@ function renderStats() {
     // TODO: Connect 'Actual' to real logs later. For now, 0 or mock.
     // TODO: Connect 'Actual' to real logs later. For now, 0 or mock.
     bar.innerHTML = `
-        <div style="display:flex; align-items:center; margin-right:20px; border-right:1px solid var(--border); padding-right:20px; cursor:pointer;" onclick="editTargets()" title="Edit Targets">
-            <span class="material-icons text-gold" style="font-size:2rem; margin-right:10px;">track_changes</span>
-            <div class="text-h" style="font-size:1.2rem;">Targets</div>
+        <div style="display:flex; align-items:center; margin-right:15px; border-right:1px solid var(--border); padding-right:15px; cursor:pointer;" onclick="editTargets()" title="Edit Targets">
+            <span class="material-icons text-gold" style="font-size:1.5rem; margin-right:8px;">track_changes</span>
+            <div class="text-h" style="font-size:1rem;">Targets</div>
         </div>
-        <div class="stat-item">
+        <div class="stat-item" style="padding: 0 10px;">
             <div class="text-xs text-muted">Calls</div>
-            <div class="text-h">0 / <span class="text-gold edit-target" onclick="editTargets()">${currentSettings.targetCalls}</span></div>
+            <div class="text-h" style="font-size:1rem;">0 / <span class="text-gold edit-target" onclick="editTargets()">${currentSettings.targetCalls}</span></div>
         </div>
-        <div class="stat-item">
+        <div class="stat-item" style="padding: 0 10px;">
             <div class="text-xs text-muted">Meetings</div>
-            <div class="text-h">0 / <span class="text-gold edit-target" onclick="editTargets()">${currentSettings.targetMeetings}</span></div>
+            <div class="text-h" style="font-size:1rem;">0 / <span class="text-gold edit-target" onclick="editTargets()">${currentSettings.targetMeetings}</span></div>
         </div>
-        <div class="stat-item">
+        <div class="stat-item" style="padding: 0 10px;">
             <div class="text-xs text-muted">Sales</div>
-            <div class="text-h">0 / <span class="text-gold edit-target" onclick="editTargets()">${currentSettings.targetSales}</span></div>
+            <div class="text-h" style="font-size:1rem;">0 / <span class="text-gold edit-target" onclick="editTargets()">${currentSettings.targetSales}</span></div>
         </div>
-        <div class="stat-item">
+        <div class="stat-item" style="padding: 0 10px;">
             <div class="text-xs text-muted">Revenue</div>
-            <div class="text-h">$0 / <span class="text-gold edit-target" onclick="editTargets()">${currentSettings.targetRevenue}</span></div>
+            <div class="text-h" style="font-size:1rem;">$0 / <span class="text-gold edit-target" onclick="editTargets()">${currentSettings.targetRevenue}</span></div>
         </div>
     `;
 }
@@ -684,10 +684,41 @@ window.confirmMeetingBooking = async () => {
     logOutcome('MEETING_BOOKED');
 };
 
-window.logOutcome = (outcome) => {
+window.logOutcome = async (outcome) => {
+    if (!currentLeadId) return;
+
     const notes = document.getElementById('cc-notes').value;
-    alert(`Outcome Logged: ${outcome} \nNotes: ${notes} `);
-    // Actual logic: Add to 'interactions' subcollection of lead, update lead status
+
+    // Optimistic UI update: Remove from list immediately
+    const listItem = document.querySelector(`.cc-list-item[onclick*="${currentLeadId}"]`);
+    if (listItem) {
+        listItem.style.display = 'none'; // Animate out?
+        listItem.remove();
+    }
+    document.getElementById('cc-workspace').innerHTML = `
+        <div style="padding:2rem; text-align:center; color:var(--text-muted); margin-top:10%;">
+            <span class="material-icons text-success" style="font-size:3rem;">check_circle</span>
+            <p>Outcome Logged: ${outcome.replace('_', ' ')}</p>
+            <p class="text-xs">Select another lead to continue.</p>
+        </div>
+    `;
+
+    try {
+        await updateDoc(doc(db, "leads", currentLeadId), {
+            status: outcome,
+            notes: notes, // Ensure latest notes are saved
+            last_contacted: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        });
+
+        // Refresh Lists if needed, or just rely on removal
+        renderStats(); // Update stats counters
+
+    } catch (e) {
+        console.error("Error logging outcome:", e);
+        alert("Error saving outcome: " + e.message);
+        // Revert UI changes if needed, but for now simple error is enough
+    }
 };
 
 // --- CHANGE CATEGORY LOGIC ---
