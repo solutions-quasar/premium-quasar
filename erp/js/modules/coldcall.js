@@ -266,6 +266,39 @@ window.selectColdCallLead = async (id) => {
                                 </div>
                             </div>
                         </div>
+                        
+                        <!-- Decision Maker Info -->
+                        ${(data.dm_name || data.dm_email || data.dm_phone) ? `
+                        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed rgba(255,255,255,0.1);">
+                             <div class="text-xs text-muted uppercase mb-2" style="letter-spacing:1px; color:#DFA53A; font-weight:bold;">Decision Maker</div>
+                             
+                             ${data.dm_name ? `
+                             <div class="field-container" style="margin-bottom:5px;">
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <span class="material-icons" style="font-size:1rem; color:#DFA53A;">person</span>
+                                    <span style="font-size:1rem; font-weight:500;">${data.dm_name}</span>
+                                </div>
+                             </div>` : ''}
+
+                             ${data.dm_phone ? `
+                             <div class="field-container" style="margin-bottom:5px;">
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <span class="material-icons" style="font-size:1rem; color:#DFA53A;">contact_phone</span>
+                                    <span style="font-size:1rem; font-weight:500;">${data.dm_phone}</span>
+                                </div>
+                             </div>` : ''}
+
+                             ${data.dm_email ? `
+                             <div class="field-container" style="margin-bottom:5px;">
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <span class="material-icons" style="font-size:1rem; color:#DFA53A;">alternate_email</span>
+                                    <span style="font-size:1rem; font-weight:500;">${data.dm_email}</span>
+                                </div>
+                             </div>` : ''}
+                        </div>
+                        ` : ''}
+
+                    </div>
 
                         <!-- RIGHT: Category -->
                         <div style="width:200px; text-align:right;">
