@@ -598,13 +598,13 @@
                     </div>
                 </div>
                 <div class="metrics-grid">
-                    <div class="metric-card card-success">
+                    <div class="metric-card card-success" id="card-tech-seo">
                         <div class="label">Technical SEO</div>
-                        <div class="value" style="color: var(--success);">OPTIMIZED</div>
+                        <div class="value" id="metric-tech-seo" style="color: var(--success);">OPTIMIZED</div>
                     </div>
-                    <div class="metric-card card-danger">
+                    <div class="metric-card card-danger" id="card-structured-data">
                         <div class="label">Structured Data</div>
-                        <div class="value" style="color: var(--danger);">INACTIVE</div>
+                        <div class="value" id="metric-structured-data" style="color: var(--danger);">INACTIVE</div>
                     </div>
                     <div class="metric-card card-warning">
                         <div class="label">Mobile Score</div>
@@ -815,6 +815,47 @@
             document.getElementById('metric-visibility').textContent = report.search_visibility || 'Invisible';
             document.getElementById('metric-dom').textContent = report.performance?.dom_complexity || 'High';
             document.getElementById('metric-mobile').textContent = report.performance?.mobile_score || '62%';
+
+            // --- DYNAMIC TECHNICAL SEO STATUS ---
+            // Calculate based on issues found to avoid contradictions
+            const issues = report.issues || [];
+            const criticalCount = issues.filter(i => i.type === 'critical').length;
+            const warningCount = issues.filter(i => i.type === 'warning').length;
+
+            const techSeoCard = document.getElementById('card-tech-seo');
+            const techSeoVal = document.getElementById('metric-tech-seo');
+
+            if (criticalCount > 0) {
+                techSeoVal.textContent = 'CRITICAL';
+                techSeoVal.style.color = 'var(--danger)';
+                techSeoCard.className = 'metric-card card-danger';
+            } else if (warningCount > 1 || report.score < 70) {
+                techSeoVal.textContent = 'NEEDS WORK';
+                techSeoVal.style.color = 'var(--warning)';
+                techSeoCard.className = 'metric-card card-warning';
+            } else {
+                techSeoVal.textContent = 'OPTIMIZED';
+                techSeoVal.style.color = 'var(--success)';
+                techSeoCard.className = 'metric-card card-success';
+            }
+
+            // --- DYNAMIC STRUCTURED DATA STATUS ---
+            // Check if schema or structured data is mentioned in "success" issues or check tech flags
+            const hasSchema = (report.seo_technical && report.seo_technical.schema) ||
+                issues.some(i => i.type === 'success' && (i.title.includes('Schema') || i.title.includes('Structured Data')));
+
+            const structCard = document.getElementById('card-structured-data');
+            const structVal = document.getElementById('metric-structured-data');
+
+            if (hasSchema) {
+                structVal.textContent = 'ACTIVE';
+                structVal.style.color = 'var(--success)';
+                structCard.className = 'metric-card card-success';
+            } else {
+                structVal.textContent = 'MISSING'; // Changed from INACTIVE for clarity
+                structVal.style.color = 'var(--danger)';
+                structCard.className = 'metric-card card-danger';
+            }
 
             // Update business name in the main title
             const businessName = report.business_name || 'Business Website';

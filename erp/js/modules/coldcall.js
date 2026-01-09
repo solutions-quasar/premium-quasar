@@ -251,11 +251,19 @@ window.selectColdCallLead = async (id) => {
                             
                             <!-- Business Name -->
                             <div class="field-container" id="field-container-business_name">
-                                <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                                <div style="display:flex; align-items:center; gap:10px; margin-bottom:5px;">
                                     <div class="text-h" style="font-size:1.8rem; line-height:1.2;">${data.business_name}</div>
                                     <span class="material-icons text-muted hover-icon" style="font-size:1.1rem; cursor:pointer;" 
                                           onclick="enableInlineEdit('${id}', 'business_name', '${data.business_name.replace(/'/g, "\\'")}')" 
                                           title="Edit Name">edit</span>
+                                </div>
+                                <!-- Pain Points -->
+                                <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:10px;">
+                                    ${data.pain_signals && data.pain_signals.length > 0 ?
+                data.pain_signals.map(s =>
+                    `<span style="background:rgba(244, 67, 54, 0.15); color:var(--danger); border:1px solid var(--danger); padding:3px 8px; border-radius:4px; font-size:0.7rem; font-weight:bold; letter-spacing:0.5px;">${s.replace(/_/g, ' ')}</span>`
+                ).join('')
+                : ''}
                                 </div>
                             </div>
 
