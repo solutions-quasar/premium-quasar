@@ -165,7 +165,7 @@ const CONFIG = {
             title: { en: "The People Behind the Work", fr: "Les Personnes Derrière le Travail" },
             members: [
                 { name: "Benjamin Sultan", role: { en: "Developer", fr: "Développeur" }, bio: { en: "Full-stack developer dedicated to building robust and scalable digital solutions.", fr: "Développeur full-stack dédié à la construction de solutions numériques robustes et évolutives." } },
-                { name: "Tim Rieg", role: { en: "Developer", fr: "Développeur" }, bio: { en: "Specializing in frontend performance and creating seamless user experiences.", fr: "Spécialisé dans la performance frontend et la création d'expériences utilisateur fluides." } },
+                { name: "Tim Rieg", role: { en: "Web and AI Consultant", fr: "Consultant Web et IA" }, bio: { en: "Specializing in frontend performance and creating seamless user experiences.", fr: "Spécialisé dans la performance frontend et la création d'expériences utilisateur fluides." } },
                 { name: "Mathieu Rieg", role: { en: "Admin Director", fr: "Directeur Administratif" }, bio: { en: "Overseeing strategic operations and ensuring the highest standards of service delivery.", fr: "Supervision des opérations stratégiques et garantie des plus hauts standards de prestation de services." } }
             ]
         },

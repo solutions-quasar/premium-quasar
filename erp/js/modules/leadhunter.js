@@ -99,19 +99,76 @@ function renderHunterUI(container) {
                      <!-- Industry Selection -->
                      <div class="form-group">
                         <label class="form-label">Target Industry</label>
-                        <input type="text" id="input-industry" class="form-input" list="industry-suggestions" placeholder="e.g. Plumber, Dentist, Accountant" value="Plumber">
-                        <datalist id="industry-suggestions">
-                            <option value="Plumber">
-                            <option value="Dentist">
-                            <option value="Real Estate Agent">
-                            <option value="Accountant">
-                            <option value="Marketing Agency">
-                            <option value="Roofer">
-                            <option value="Lawyer">
-                            <option value="HVAC">
-                            <option value="Landscaper">
-                            <option value="Chiropractor">
-                        </datalist>
+                        <select id="input-industry" class="form-input" onchange="window.toggleCustomIndustry(this)">
+                            <!-- Home Services -->
+                            <option value="Plumber">Plumber</option>
+                            <option value="Electrician">Electrician</option>
+                            <option value="HVAC Contractor">HVAC Contractor</option>
+                            <option value="Roofer">Roofer</option>
+                            <option value="Landscaper">Landscaper</option>
+                            <option value="General Contractor">General Contractor</option>
+                            <option value="Painter">Painter</option>
+                            <option value="Flooring Specialist">Flooring Specialist</option>
+                            <option value="Window & Door Installer">Window & Door Installer</option>
+                            <option value="Pest Control">Pest Control</option>
+                            <option value="Pool Service">Pool Service</option>
+                            <option value="Locksmith">Locksmith</option>
+                            <option value="Movers">Movers</option>
+                            <option value="Cleaning Service">Cleaning Service</option>
+                            <option value="Solar Installer">Solar Installer</option>
+                            <option value="Garage Door Repair">Garage Door Repair</option>
+                            <option value="Restoration Service">Restoration Service</option>
+                            
+                            <!-- Health & Wellness -->
+                            <option value="Dentist">Dentist</option>
+                            <option value="Orthodontist">Orthodontist</option>
+                            <option value="Chiropractor">Chiropractor</option>
+                            <option value="Physiotherapist">Physiotherapist</option>
+                            <option value="Plastic Surgeon">Plastic Surgeon</option>
+                            <option value="Dermatologist">Dermatologist</option>
+                            <option value="Optometrist">Optometrist</option>
+                            <option value="Veterinarian">Veterinarian</option>
+                            <option value="Med Spa">Med Spa</option>
+                            <option value="Massage Therapist">Massage Therapist</option>
+                            <option value="Gym / Fitness Center">Gym / Fitness Center</option>
+                            <option value="Yoga Studio">Yoga Studio</option>
+                            
+                            <!-- Professional Services -->
+                            <option value="Real Estate Agent">Real Estate Agent</option>
+                            <option value="Mortgage Broker">Mortgage Broker</option>
+                            <option value="Insurance Agent">Insurance Agent</option>
+                            <option value="Accountant / CPA">Accountant / CPA</option>
+                            <option value="Lawyer - Personal Injury">Lawyer - Personal Injury</option>
+                            <option value="Lawyer - Family Law">Lawyer - Family Law</option>
+                            <option value="Lawyer - Criminal Defense">Lawyer - Criminal Defense</option>
+                            <option value="Financial Advisor">Financial Advisor</option>
+                            <option value="Architect">Architect</option>
+                            <option value="Interior Designer">Interior Designer</option>
+                            
+                            <!-- Automotive -->
+                            <option value="Auto Repair Shop">Auto Repair Shop</option>
+                            <option value="Auto Body Shop">Auto Body Shop</option>
+                            <option value="Car Detailer">Car Detailer</option>
+                            <option value="Tire Shop">Tire Shop</option>
+                            <option value="Towing Service">Towing Service</option>
+                            
+                            <!-- Events & Lifestyle -->
+                            <option value="Wedding Planner">Wedding Planner</option>
+                            <option value="Photographer">Photographer</option>
+                            <option value="Florist">Florist</option>
+                            <option value="Caterer">Caterer</option>
+                            <option value="Event Venue">Event Venue</option>
+                             
+                            <!-- B2B & Other -->
+                            <option value="Marketing Agency">Marketing Agency</option>
+                            <option value="Web Design Agency">Web Design Agency</option>
+                            <option value="IT Support / MSP">IT Support / MSP</option>
+                            <option value="Printing & Signage">Printing & Signage</option>
+                            <option value="Commercial Cleaner">Commercial Cleaner</option>
+                            
+                            <option value="CUSTOM">-- Custom --</option>
+                        </select>
+                        <input type="text" id="input-industry-custom" class="form-input mt-2" style="display:none; margin-top:8px;" placeholder="Enter custom industry...">
                      </div>
 
                      <!-- Website Filter -->
@@ -132,17 +189,96 @@ function renderHunterUI(container) {
 
                      <div class="form-group">
                         <label class="form-label">Target City</label>
-                        <input type="text" id="input-city" class="form-input" list="city-suggestions" placeholder="Random (or type specific city)">
-                        <datalist id="city-suggestions">
-                            <option value="Toronto, ON">
-                            <option value="Vancouver, BC">
-                            <option value="Montreal, QC">
-                            <option value="Calgary, AB">
-                            <option value="Ottawa, ON">
-                            <option value="New York, NY">
-                            <option value="Los Angeles, CA">
-                            <option value="London, UK">
-                        </datalist>
+                        <select id="input-city" class="form-input" onchange="window.toggleCustomCity(this)">
+                            <option value="">-- Random City --</option>
+                            
+                            <optgroup label="Ontario">
+                                <option value="Toronto, ON">Toronto, ON</option>
+                                <option value="Ottawa, ON">Ottawa, ON</option>
+                                <option value="Mississauga, ON">Mississauga, ON</option>
+                                <option value="Brampton, ON">Brampton, ON</option>
+                                <option value="Hamilton, ON">Hamilton, ON</option>
+                                <option value="London, ON">London, ON</option>
+                                <option value="Markham, ON">Markham, ON</option>
+                                <option value="Vaughan, ON">Vaughan, ON</option>
+                            </optgroup>
+
+                            <optgroup label="British Columbia">
+                                <option value="Vancouver, BC">Vancouver, BC</option>
+                                <option value="Surrey, BC">Surrey, BC</option>
+                                <option value="Burnaby, BC">Burnaby, BC</option>
+                                <option value="Richmond, BC">Richmond, BC</option>
+                                <option value="Kelowna, BC">Kelowna, BC</option>
+                                <option value="Victoria, BC">Victoria, BC</option>
+                            </optgroup>
+
+                            <optgroup label="Quebec">
+                                <option value="Montreal, QC">Montreal, QC</option>
+                                <option value="Quebec City, QC">Quebec City, QC</option>
+                                <option value="Laval, QC">Laval, QC</option>
+                                <option value="Gatineau, QC">Gatineau, QC</option>
+                                <option value="Longueuil, QC">Longueuil, QC</option>
+                                <option value="Sherbrooke, QC">Sherbrooke, QC</option>
+                            </optgroup>
+
+                            <optgroup label="Alberta">
+                                <option value="Calgary, AB">Calgary, AB</option>
+                                <option value="Edmonton, AB">Edmonton, AB</option>
+                                <option value="Red Deer, AB">Red Deer, AB</option>
+                                <option value="Lethbridge, AB">Lethbridge, AB</option>
+                                <option value="St. Albert, AB">St. Albert, AB</option>
+                            </optgroup>
+
+                            <optgroup label="Manitoba">
+                                <option value="Winnipeg, MB">Winnipeg, MB</option>
+                                <option value="Brandon, MB">Brandon, MB</option>
+                                <option value="Steinbach, MB">Steinbach, MB</option>
+                                <option value="Thompson, MB">Thompson, MB</option>
+                                <option value="Portage la Prairie, MB">Portage la Prairie, MB</option>
+                            </optgroup>
+
+                            <optgroup label="Saskatchewan">
+                                <option value="Saskatoon, SK">Saskatoon, SK</option>
+                                <option value="Regina, SK">Regina, SK</option>
+                                <option value="Prince Albert, SK">Prince Albert, SK</option>
+                                <option value="Moose Jaw, SK">Moose Jaw, SK</option>
+                                <option value="Swift Current, SK">Swift Current, SK</option>
+                            </optgroup>
+
+                            <optgroup label="Nova Scotia">
+                                <option value="Halifax, NS">Halifax, NS</option>
+                                <option value="Sydney, NS">Sydney, NS</option>
+                                <option value="Truro, NS">Truro, NS</option>
+                                <option value="New Glasgow, NS">New Glasgow, NS</option>
+                                <option value="Glace Bay, NS">Glace Bay, NS</option>
+                            </optgroup>
+
+                            <optgroup label="New Brunswick">
+                                <option value="Moncton, NB">Moncton, NB</option>
+                                <option value="Saint John, NB">Saint John, NB</option>
+                                <option value="Fredericton, NB">Fredericton, NB</option>
+                                <option value="Dieppe, NB">Dieppe, NB</option>
+                                <option value="Miramichi, NB">Miramichi, NB</option>
+                            </optgroup>
+
+                            <optgroup label="Newfoundland & Labrador">
+                                <option value="St. John's, NL">St. John's, NL</option>
+                                <option value="Mount Pearl, NL">Mount Pearl, NL</option>
+                                <option value="Corner Brook, NL">Corner Brook, NL</option>
+                                <option value="Conception Bay South, NL">Conception Bay South, NL</option>
+                                <option value="Paradise, NL">Paradise, NL</option>
+                            </optgroup>
+                            
+                            <optgroup label="PEI">
+                                <option value="Charlottetown, PE">Charlottetown, PE</option>
+                                <option value="Summerside, PE">Summerside, PE</option>
+                                <option value="Stratford, PE">Stratford, PE</option>
+                                <option value="Cornwall, PE">Cornwall, PE</option>
+                            </optgroup>
+
+                            <option value="CUSTOM">-- Custom --</option>
+                        </select>
+                        <input type="text" id="input-city-custom" class="form-input mt-2" style="display:none; margin-top:8px;" placeholder="Enter custom city (e.g. New York, NY)">
                      </div>
                      
                       <div class="form-group">
@@ -182,8 +318,15 @@ async function runAgentJob() {
     const apiKey = localStorage.getItem(STORAGE_KEY_API);
 
     // Get Inputs
-    const industryInput = document.getElementById('input-industry').value.trim() || 'Business';
-    const cityInput = document.getElementById('input-city').value.trim();
+    let industryInput = document.getElementById('input-industry').value;
+    if (industryInput === 'CUSTOM') {
+        industryInput = document.getElementById('input-industry-custom').value.trim();
+    }
+    industryInput = industryInput || 'Business';
+    let cityInput = document.getElementById('input-city').value;
+    if (cityInput === 'CUSTOM') {
+        cityInput = document.getElementById('input-city-custom').value.trim();
+    }
     const websiteFilter = document.getElementById('input-website-filter').value;
     const maxLeads = parseInt(document.getElementById('input-max-leads').value) || 10;
 
@@ -210,7 +353,13 @@ async function runAgentJob() {
         // 1. Pick Strategy (Manual or Random)
         let city = cityInput;
         if (!city) {
-            city = settings.cities[Math.floor(Math.random() * settings.cities.length)];
+            // Expanded default list for randomness
+            const defaultCities = [
+                'Toronto, ON', 'Vancouver, BC', 'Montreal, QC', 'Calgary, AB', 'Ottawa, ON',
+                'Edmonton, AB', 'Winnipeg, MB', 'Mississauga, ON', 'Brampton, ON', 'Hamilton, ON',
+                'Quebec City, QC', 'Halifax, NS', 'London, ON', 'Victoria, BC', 'Saskatoon, SK'
+            ];
+            city = defaultCities[Math.floor(Math.random() * defaultCities.length)];
             log(`City not specified. Randomly selected: ${city}`);
         }
 
@@ -322,6 +471,7 @@ async function runAgentJob() {
                     status: 'NEW',
                     source: 'GOOGLE_PLACES_AGENT',
                     discovered_query: queryTerm,
+                    google_page_rank: pageNum,
                     place_id: place.id,
                     created_at: new Date().toISOString()
                 };
@@ -374,3 +524,25 @@ async function runAgentJob() {
         btn.disabled = false;
     }
 }
+
+window.toggleCustomIndustry = (select) => {
+    const customInput = document.getElementById('input-industry-custom');
+    if (select.value === 'CUSTOM') {
+        customInput.style.display = 'block';
+        customInput.focus();
+    } else {
+        customInput.style.display = 'none';
+        customInput.value = '';
+    }
+};
+
+window.toggleCustomCity = (select) => {
+    const customInput = document.getElementById('input-city-custom');
+    if (select.value === 'CUSTOM') {
+        customInput.style.display = 'block';
+        customInput.focus();
+    } else {
+        customInput.style.display = 'none';
+        customInput.value = '';
+    }
+};

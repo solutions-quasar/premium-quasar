@@ -1,6 +1,7 @@
 import { db, auth } from '../firebase-config.js';
 import { collection, query, where, getDocs, getDoc, updateDoc, doc, addDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getTeamDropdownOptions } from './team.js';
+import { LeadFilterService } from '../services/LeadFilterService.js';
 import Fuse from 'https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.mjs';
 
 // Monitor hash changes to handle browser "Back" and "Forward" buttons
@@ -64,6 +65,22 @@ export async function initLeads() {
                 </button>
                 <input type="file" id="csv-file-input" style="display:none;" accept=".csv" onchange="handleCSVImport(this)">
                 <button class="btn" onclick="window.location.hash='#leadhunter'">Go to Hunter</button>
+            </div>
+        </div>
+
+        <!-- Smart Filter Bar -->
+        <div class="smart-filter-bar" style="margin-bottom:1rem;">
+            <select id="smart-filter-industry" onchange="applySmartFilters()">
+                <option value="ALL">All Industries</option>
+            </select>
+            <select id="smart-filter-province" onchange="applySmartFilters()">
+                <option value="ALL">All Provinces</option>
+            </select>
+            <select id="smart-filter-pain" onchange="applySmartFilters()">
+                <option value="ALL">All Pain Points</option>
+            </select>
+            <div class="smart-filter-stats" id="smart-filter-count">
+                Loading filters...
             </div>
         </div>
 
@@ -271,6 +288,11 @@ async function loadLeads(statusFilter) {
 
         renderLeads(window.allLeadsCache);
 
+        // Init Smart Filters
+        if (typeof populateSmartFilters === 'function') {
+            populateSmartFilters();
+        }
+
     } catch (e) {
         console.error(e);
 
@@ -347,186 +369,229 @@ window.openLeadDetail = async (data) => {
     }
 
     overlay.innerHTML = `
-        <div class="detail-overlay">
-            <div class="detail-header">
-                <div>
-                     <div class="text-h">${escapeHtml(lead.business_name)}</div>
-                     <span class="badge status-${lead.status.toLowerCase()}">${escapeHtml(lead.status)}</span>
-                </div>
-                <div>
-                    ${lead.lastAudit ? `
-                        <button class="btn btn-sm btn-info" onclick="openAuditPopup()" style="margin-right:10px; display:inline-flex; align-items:center; gap:5px; border-color:var(--info); font-weight:bold;">
-                            <span class="material-icons" style="font-size:18px;">auto_awesome</span> VIEW AI AUDIT
-                        </button>
-                    ` : ''}
-                    <button class="btn" onclick="window.location.hash='#leads'">Close</button>
-                    ${lead.status === 'NEW' ? `
-                        <div style="display:inline-flex; gap:5px; margin-left:10px;">
-                              <button class="btn btn-sm" style="border-color:var(--success); color:var(--success);" onclick="updateLeadStatus('${lead.id}', 'APPROVED', 'NO_WEBSITE')">No Web</button>
-                             <button class="btn btn-sm" style="border-color:var(--success); color:var(--success);" onclick="updateLeadStatus('${lead.id}', 'APPROVED', 'DATED_DESIGN')">Bad Web</button>
-                             <button class="btn btn-sm" style="border-color:var(--success); color:var(--success);" onclick="updateLeadStatus('${lead.id}', 'APPROVED', 'BAD_RANKING')">Bad SEO</button>
-                             <button class="btn btn-sm" style="border-color:var(--success); color:var(--success);" onclick="updateLeadStatus('${lead.id}', 'APPROVED', 'OTHER')">Other</button>
-                             <button class="btn btn-sm" style="border-color:var(--danger); color:var(--danger);" onclick="updateLeadStatus('${lead.id}', 'REJECTED')">Reject</button>
-                        </div>
-                    ` : ''}
+        <div class="detail-overlay" style="flex-direction: row; padding:0;">
+            
+            <!-- 1. FULL HEIGHT SIDEBAR (Left) -->
+            <div class="detail-sidebar" id="lead-sidebar" style="background: var(--bg-card); border-right: 1px solid var(--border); overflow-y: auto; display: flex; flex-direction: column; z-index: 20; height: 100vh;">
+                
+                <!-- MOVED: Identity Section from Header (Optional overlap or just standard sidebar) -->
+                <!-- Or keeping sidebar content as is, just physically 100% height -->
 
+                <!-- SECTION 1: IDENTITY -->
+                <div style="padding: 0.75rem 1rem; border-bottom: 1px solid var(--border);">
+                    <div class="form-group" style="margin-bottom: 8px;">
+                        <label class="form-label">Business Name</label>
+                        <input type="text" id="edit-business-name" class="form-input" value="${escapeHtml(lead.business_name)}" style="font-weight: 600; border-color: rgba(223, 165, 58, 0.2); padding: 8px 12px; font-size: 1rem;">
+                    </div>
+                    <div style="display: flex; gap: 15px; margin-top: 5px;">
+                        <div style="flex: 1;">
+                            <div class="text-xs text-muted mb-0.5">Source / Query</div>
+                            <div class="text-sm font-bold truncate" title="${escapeHtml(lead.discovered_query || 'N/A')}">
+                                <span class="material-icons" style="font-size: 14px; color: var(--gold); margin-right: 4px;">search</span>
+                                ${escapeHtml(lead.discovered_query || 'N/A')}
+                            </div>
+                        </div>
+                        <div style="flex: 1;">
+                            <div class="text-xs text-muted mb-0.5">Result Type</div>
+                            <div class="text-sm font-bold" style="color: var(--warning);">
+                                <span class="material-icons" style="font-size: 14px; margin-right: 4px;">visibility_off</span>
+                                Page 2+ 
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
-            <div class="detail-body">
-                <!-- LEADS INFO SIDEBAR -->
-                <div class="detail-sidebar" id="lead-sidebar" style="background: var(--bg-card); border-right: 1px solid var(--border); overflow-y: auto; display: flex; flex-direction: column;">
+
+                <!-- SECTION 1.5: PAIN POINTS (EDITABLE) -->
+                <div style="padding: 0.75rem 1rem; border-bottom: 1px solid var(--border);">
+                    <div class="text-xs text-muted uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">Pain Points</div>
+                    <div id="sidebar-pain-selector" style="display:flex; flex-wrap:wrap; gap:5px;">
+                        ${['NO_WEBSITE', 'BAD_DESIGN', 'BAD_SEO', 'SLOW_SPEED', 'OTHER'].map(p => {
+        const isSelected = lead.pain_signals && lead.pain_signals.includes(p) ? 'selected' : '';
+        const label = p.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase()).replace('Seo', 'SEO');
+        return `<div class="pain-chip ${isSelected}" onclick="togglePain(this, '${p}')" data-value="${p}" style="font-size: 0.75rem; padding: 4px 10px;">${label}</div>`;
+    }).join('')}
+                    </div>
+                </div>
+
+                <!-- SECTION 2: CONTACT INTELLIGENCE -->
+                <div style="padding: 0.75rem 1rem; border-bottom: 1px solid var(--border);">
+                    <div class="form-group" style="margin-bottom: 8px;">
+                        <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
+                            <span class="material-icons text-muted" style="font-size:1rem;">location_on</span>
+                            <input type="text" id="edit-address" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.address || '')}" placeholder="Company Address">
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 8px;">
+                        <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
+                            <span class="material-icons text-muted" style="font-size:1rem;">language</span>
+                            <input type="text" id="edit-website" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.website || '')}" placeholder="Official Website">
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
+                            <span class="material-icons text-muted" style="font-size:1rem;">phone</span>
+                            <input type="text" id="edit-phone" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.85rem;" value="${escapeHtml(lead.phone || '')}" placeholder="Phone">
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
+                            <span class="material-icons text-muted" style="font-size:1rem;">email</span>
+                            <input type="text" id="edit-email" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.85rem;" value="${escapeHtml(lead.email || '')}" placeholder="Public Email">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION 3: DECISION MAKER -->
+                <div style="padding: 1rem; border-bottom: 1px solid var(--border); background: rgba(223, 165, 58, 0.02);">
+                    <div class="text-xs text-gold uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">Governance / Decision Maker</div>
                     
-                    <!-- SECTION 1: IDENTITY -->
-                    <div style="padding: 0.75rem 1rem; border-bottom: 1px solid var(--border);">
-                        <div class="form-group" style="margin-bottom: 8px;">
-                            <label class="form-label">Business Name</label>
-                            <input type="text" id="edit-business-name" class="form-input" value="${escapeHtml(lead.business_name)}" style="font-weight: 600; border-color: rgba(223, 165, 58, 0.2); padding: 8px 12px; font-size: 1rem;">
-                        </div>
-                        <div style="display: flex; gap: 15px; margin-top: 5px;">
-                            <div style="flex: 1;">
-                                <div class="text-xs text-muted mb-0.5">Source / Query</div>
-                                <div class="text-sm font-bold truncate" title="${escapeHtml(lead.discovered_query || 'N/A')}">
-                                    <span class="material-icons" style="font-size: 14px; color: var(--gold); margin-right: 4px;">search</span>
-                                    ${escapeHtml(lead.discovered_query || 'N/A')}
-                                </div>
-                            </div>
-                            <div style="flex: 1;">
-                                <div class="text-xs text-muted mb-0.5">Result Type</div>
-                                <div class="text-sm font-bold" style="color: var(--warning);">
-                                    <span class="material-icons" style="font-size: 14px; margin-right: 4px;">visibility_off</span>
-                                    Page 2+ 
-                                </div>
-                            </div>
+                    <div class="form-group" style="margin-bottom: 6px;">
+                        <div style="display:flex; align-items:center; gap:8px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                            <span class="material-icons text-gold" style="font-size:0.9rem; opacity: 0.7;">person</span>
+                            <input type="text" id="edit-dm-name" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.dm_name || '')}" placeholder="Contact Name">
                         </div>
                     </div>
 
-                    <!-- SECTION 2: CONTACT INTELLIGENCE -->
-                    <div style="padding: 0.75rem 1rem; border-bottom: 1px solid var(--border);">
-                        <div class="form-group" style="margin-bottom: 8px;">
-                            <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
-                                <span class="material-icons text-muted" style="font-size:1rem;">location_on</span>
-                                <input type="text" id="edit-address" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.address || '')}" placeholder="Company Address">
-                            </div>
-                        </div>
-
-                        <div class="form-group" style="margin-bottom: 8px;">
-                            <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
-                                <span class="material-icons text-muted" style="font-size:1rem;">language</span>
-                                <input type="text" id="edit-website" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.website || '')}" placeholder="Official Website">
-                            </div>
-                        </div>
-
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                            <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
-                                <span class="material-icons text-muted" style="font-size:1rem;">phone</span>
-                                <input type="text" id="edit-phone" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.85rem;" value="${escapeHtml(lead.phone || '')}" placeholder="Phone">
-                            </div>
-                            <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
-                                <span class="material-icons text-muted" style="font-size:1rem;">email</span>
-                                <input type="text" id="edit-email" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.85rem;" value="${escapeHtml(lead.email || '')}" placeholder="Public Email">
-                            </div>
+                    <div class="form-group" style="margin-bottom: 6px;">
+                        <div style="display:flex; align-items:center; gap:8px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                            <span class="material-icons text-gold" style="font-size:0.9rem; opacity: 0.7;">alternate_email</span>
+                            <input type="text" id="edit-dm-email" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.dm_email || '')}" placeholder="Direct Email">
                         </div>
                     </div>
 
-                    <!-- SECTION 3: DECISION MAKER -->
-                    <div style="padding: 1rem; border-bottom: 1px solid var(--border); background: rgba(223, 165, 58, 0.02);">
-                        <div class="text-xs text-gold uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">Governance / Decision Maker</div>
-                        
-                        <div class="form-group" style="margin-bottom: 6px;">
-                            <div style="display:flex; align-items:center; gap:8px; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                <span class="material-icons text-gold" style="font-size:0.9rem; opacity: 0.7;">person</span>
-                                <input type="text" id="edit-dm-name" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.dm_name || '')}" placeholder="Contact Name">
-                            </div>
-                        </div>
-
-                        <div class="form-group" style="margin-bottom: 6px;">
-                            <div style="display:flex; align-items:center; gap:8px; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                <span class="material-icons text-gold" style="font-size:0.9rem; opacity: 0.7;">alternate_email</span>
-                                <input type="text" id="edit-dm-email" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.dm_email || '')}" placeholder="Direct Email">
-                            </div>
-                        </div>
-
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <div style="display:flex; align-items:center; gap:8px;">
-                                <span class="material-icons text-gold" style="font-size:0.9rem; opacity: 0.7;">contact_phone</span>
-                                <input type="text" id="edit-dm-phone" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.dm_phone || '')}" placeholder="Direct Phone / extension">
-                            </div>
-                        </div>
-
-                        <!-- ASSIGNED AGENT SELECTOR -->
-                         <div style="margin-top: 1rem; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 1rem;">
-                            <div class="text-xs text-muted uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">Assigned Agent</div>
-                            <select id="edit-assigned-agent" class="form-input" style="background: rgba(0,0,0,0.2); border: 1px solid var(--border); font-size: 0.9rem;">
-                                ${await getTeamDropdownOptions(lead.assigned_agent_id)}
-                            </select>
-                        </div>
-
-
-                    </div>
-
-                    <!-- SECTION 4: STRATEGIC NOTES -->
-                    <div style="padding: 1rem; border-bottom: 1px solid var(--border);">
-                         <div class="text-xs text-muted uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">Strategic Internal Notes</div>
-                         <textarea id="edit-notes" class="form-input" rows="3" style="font-size: 0.85rem; background: rgba(0,0,0,0.15); border-style: dashed; padding: 8px;" placeholder="Prospecting notes, points or conversation history...">${escapeHtml(lead.notes || '')}</textarea>
-                    </div>
-
-                    <!-- ACTIONS MATRIX -->
-                    <div style="padding: 1rem; background: var(--bg-dark); position: sticky; bottom: 0; z-index: 10; border-top: 1px solid var(--border);">
-                        <div id="lead-actions-row" style="display:flex; gap:8px;">
-                            <button class="btn btn-sm" onclick="sendLeadToSelf('${lead.id}')" title="Send info to my phone" style="background:rgba(255,255,255,0.05); border:1px solid var(--border); padding: 0 8px;">
-                                <span class="material-icons" style="font-size:18px;">smartphone</span>
-                            </button>
-                            
-                            ${lead.email ?
-            `<button class="btn btn-sm btn-secondary" onclick="openEmailComposer(document.getElementById('edit-email').value, document.getElementById('edit-business-name').value)" style="flex:1; display: flex; align-items:center; justify-content:center; gap: 4px; font-size: 0.75rem;">
-                                    <span class="material-icons" style="font-size:14px;">send</span> COMPOSE
-                                 </button>`
-            : ''}
-                            
-                            <button class="btn btn-sm btn-primary" style="flex:1.5; box-shadow: 0 4px 15px rgba(223, 165, 58, 0.2); font-size: 0.75rem;" onclick="saveLeadDetails('${lead.id}')">SAVE UPDATES</button>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span class="material-icons text-gold" style="font-size:0.9rem; opacity: 0.7;">contact_phone</span>
+                            <input type="text" id="edit-dm-phone" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.dm_phone || '')}" placeholder="Direct Phone / extension">
                         </div>
                     </div>
 
-                    <!-- PERFORMANCE & AUDIT -->
-                    <div style="padding: 1rem; border-top: 1px solid var(--border); background: rgba(49, 204, 236, 0.05);">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                            <div class="text-xs text-info uppercase tracking-wider font-bold" style="letter-spacing: 1px;">SEO & Performance</div>
-                            <div class="text-xs text-muted">Load: <strong id="load-time-display" style="color:var(--info);">-</strong></div>
-                        </div>
-
-                        <div id="seo-report-container">
-                             ${lead.lastAudit ? `
-                                <div style="display:flex; align-items:center; gap:15px; margin-bottom:1rem;">
-                                    <div class="seo-score-circle" style="width:60px; height:60px; font-size:1.2rem; background: conic-gradient(var(--${lead.lastAudit.score > 70 ? 'success' : 'warning'}) 0% ${lead.lastAudit.score}%, rgba(255,255,255,0.1) 0% 100%);">
-                                        <span style="font-weight:bold;">${lead.lastAudit.score}</span>
-                                    </div>
-                                    <div>
-                                         <div class="text-h" style="font-size:1.1rem;">AI Audit Saved</div>
-                                         <div class="text-xs text-muted">Audited: ${lead.lastAudit.timestamp}</div>
-                                    </div>
-                                </div>
-                                <button class="btn btn-primary btn-block btn-sm" onclick="openAuditPopup()">View Report</button>
-                                <div class="text-center" style="margin-top:0.5rem;"><a href="javascript:void(0)" class="text-xs text-muted" onclick="runDeepAudit('${lead.website}', '${lead.id}')">Run New Audit</a></div>
-                             ` : `
-                                 <div style="background: rgba(0,0,0,0.2); border: 1px dashed var(--info); padding: 10px; border-radius: 8px; text-align: center;">
-                                    <span class="material-icons text-info" style="font-size: 1.5rem; margin-bottom: 5px;">analytics</span>
-                                    <p class="text-muted text-xs mb-2">No AI Audit performed yet.</p>
-                                    <button class="btn btn-block btn-sm" style="border-color: var(--info); color: var(--info); font-weight: bold; background: rgba(49, 204, 236, 0.1); font-size: 0.7rem;" onclick="runDeepAudit('${lead.website}', '${lead.id}')">
-                                        <span class="material-icons" style="font-size: 12px; margin-right: 4px;">psychology</span>
-                                        RUN DEEP AI AUDIT
-                                    </button>
-                                 </div>
-                             `}
-                        </div>
+                    <!-- ASSIGNED AGENT SELECTOR -->
+                        <div style="margin-top: 1rem; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 1rem;">
+                        <div class="text-xs text-muted uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">Assigned Agent</div>
+                        <select id="edit-assigned-agent" class="form-input" style="background: rgba(0,0,0,0.2); border: 1px solid var(--border); font-size: 0.9rem;">
+                            ${await getTeamDropdownOptions(lead.assigned_agent_id)}
+                        </select>
                     </div>
+
 
                 </div>
 
-                <!-- RESIZER HANDLE -->
-                <div class="detail-resizer" id="sidebar-resizer"></div>
+                <!-- SECTION 4: STRATEGIC NOTES -->
+                <div style="padding: 1rem; border-bottom: 1px solid var(--border);">
+                        <div class="text-xs text-muted uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">Strategic Internal Notes</div>
+                        <textarea id="edit-notes" class="form-input" rows="3" style="font-size: 0.85rem; background: rgba(0,0,0,0.15); border-style: dashed; padding: 8px;" placeholder="Prospecting notes, points or conversation history...">${escapeHtml(lead.notes || '')}</textarea>
+                </div>
 
-                <!-- PREVIEW MAIN -->
-                <div class="detail-main">
+                <!-- PERFORMANCE & AUDIT -->
+                <div style="padding: 1rem; border-bottom: 1px solid var(--border); background: rgba(49, 204, 236, 0.05);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                        <div class="text-xs text-info uppercase tracking-wider font-bold" style="letter-spacing: 1px;">SEO & Performance</div>
+                        <div class="text-xs text-muted">Load: <strong id="load-time-display" style="color:var(--info);">-</strong></div>
+                    </div>
+
+                    <div id="seo-report-container">
+                            ${lead.lastAudit ? `
+                            <div style="display:flex; align-items:center; gap:15px; margin-bottom:1rem;">
+                                <div class="seo-score-circle" style="width:60px; height:60px; font-size:1.2rem; background: conic-gradient(var(--${lead.lastAudit.score > 70 ? 'success' : 'warning'}) 0% ${lead.lastAudit.score}%, rgba(255,255,255,0.1) 0% 100%);">
+                                    <span style="font-weight:bold;">${lead.lastAudit.score}</span>
+                                </div>
+                                <div>
+                                        <div class="text-h" style="font-size:1.1rem;">AI Audit Saved</div>
+                                        <div class="text-xs text-muted">Audited: ${lead.lastAudit.timestamp}</div>
+                                </div>
+                            </div>
+                            <button class="btn btn-primary btn-block btn-sm" onclick="openAuditPopup()">View Report</button>
+                            <div class="text-center" style="margin-top:0.5rem;"><a href="javascript:void(0)" class="text-xs text-muted" onclick="runDeepAudit('${lead.website}', '${lead.id}')">Run New Audit</a></div>
+                            ` : `
+                                <div style="background: rgba(0,0,0,0.2); border: 1px dashed var(--info); padding: 10px; border-radius: 8px; text-align: center;">
+                                <span class="material-icons text-info" style="font-size: 1.5rem; margin-bottom: 5px;">analytics</span>
+                                <p class="text-muted text-xs mb-2">No AI Audit performed yet.</p>
+                                <button class="btn btn-block btn-sm" style="border-color: var(--info); color: var(--info); font-weight: bold; background: rgba(49, 204, 236, 0.1); font-size: 0.7rem;" onclick="runDeepAudit('${lead.website}', '${lead.id}')">
+                                    <span class="material-icons" style="font-size: 12px; margin-right: 4px;">psychology</span>
+                                    RUN DEEP AI AUDIT
+                                </button>
+                                </div>
+                            `}
+                    </div>
+                </div>
+
+                <!-- ACTIONS MATRIX (STICKY BOTTOM) -->
+                <div style="padding: 1rem; background: var(--bg-dark); position: sticky; bottom: 0; z-index: 10; border-top: 1px solid var(--border);">
+                    <div id="lead-actions-row" style="display:flex; gap:8px;">
+                        <button class="btn btn-sm" onclick="sendLeadToSelf('${lead.id}')" title="Send info to my phone" style="background:rgba(255,255,255,0.05); border:1px solid var(--border); padding: 0 8px;">
+                            <span class="material-icons" style="font-size:18px;">smartphone</span>
+                        </button>
+                        
+                        ${lead.email ?
+            `<button class="btn btn-sm btn-secondary" onclick="openEmailComposer(document.getElementById('edit-email').value, document.getElementById('edit-business-name').value)" style="flex:1; display: flex; align-items:center; justify-content:center; gap: 4px; font-size: 0.75rem;">
+                                <span class="material-icons" style="font-size:14px;">send</span> COMPOSE
+                                </button>`
+            : ''}
+                        
+                        <button class="btn btn-sm btn-primary" style="flex:1.5; box-shadow: 0 4px 15px rgba(223, 165, 58, 0.2); font-size: 0.75rem;" onclick="saveLeadDetails('${lead.id}')">SAVE UPDATES</button>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- 2. RESIZER -->
+            <div class="detail-resizer" id="sidebar-resizer" style="height: 100vh;"></div>
+
+            <!-- 3. RIGHT PANE (Header + Preview) -->
+            <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden; height: 100vh; position: relative;">
+                
+                <!-- HEADER (Now specific to right pane) -->
+                <div class="detail-header" style="height: auto; min-height: 50px; flex-shrink: 0; flex-direction: column; justify-content:center; gap: 8px; padding: 12px 20px;">
+                    <!-- ROW 1: Identity (Simplified) & Close -->
+                    <div style="display:flex; justify-content:space-between; align-items: center;">
+                        <div style="display:flex; align-items:center; gap: 12px; overflow:hidden; flex: 1;">
+                                <div class="text-h truncate" style="font-size:1.15rem; margin:0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(lead.business_name)}">${escapeHtml(lead.business_name)}</div>
+                                
+                                <div style="display:flex; gap:8px; align-items:center; flex-shrink: 0;">
+                                <span class="badge status-${lead.status.toLowerCase()}" style="font-size:0.7rem; padding: 2px 6px;">${escapeHtml(lead.status)}</span>
+                                ${lead.google_page_rank ? `<span class="badge" style="background:rgba(255,255,255,0.05); color:var(--text-muted); border:1px solid var(--border); font-size:0.7rem; padding: 2px 6px;">Page ${lead.google_page_rank}</span>` : ''}
+                                <a href="${googleSearchUrl}" target="_blank" class="text-xs text-gold hover-underline" style="display:flex; align-items:center; gap:3px;">
+                                    <span class="material-icons" style="font-size:13px;">open_in_new</span> Verify Rank
+                                </a>
+                                </div>
+                        </div>
+                        
+                        <button class="btn icon-btn" style="background:transparent; color:var(--text-muted); padding:4px;" onclick="window.location.hash='#leads'">
+                            <span class="material-icons">close</span>
+                        </button>
+                    </div>
+
+                    <!-- ROW 2: Actions (Compact) - Only if needed in header too, or assume sidebar handles "Approve/Reject" if it was there? -->
+                    <!-- The user originally wanted Approve/Reject visibly. Let's keep them here for convenience or remove if redundant. -->
+                    <!-- Keeping them here as "Top/Quick Actions" is good UX. -->
+                    ${lead.status === 'NEW' || lead.lastAudit ? `
+                    <div style="display:flex; justify-content:space-between; align-items:center; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 8px;">
+                            <!-- Left: Audit Action -->
+                            <div>
+                            ${lead.lastAudit ? `
+                                <button class="btn btn-sm btn-info" onclick="openAuditPopup()" style="display:inline-flex; align-items:center; gap:4px; border-color:var(--info); font-weight:bold; padding: 2px 10px; font-size: 0.7rem;">
+                                    <span class="material-icons" style="font-size:14px;">auto_awesome</span> VIEW AI AUDIT
+                                </button>
+                            ` : ''}
+                            </div>
+
+                            <!-- Right: Workflow Actions -->
+                        ${lead.status === 'NEW' ? `
+                            <div style="display:flex; align-items:center; gap:10px;">
+                                    <div style="display:flex; gap:6px;">
+                                    <button class="btn btn-sm btn-success" onclick="approveWithSelectedPain('${lead.id}')" style="padding: 2px 12px; font-size: 0.75rem; display:flex; align-items:center;">
+                                        <span class="material-icons" style="font-size:14px; margin-right:3px;">check</span> APPROVE
+                                    </button>
+                                    <button class="btn btn-sm" style="border-color:var(--danger); color:var(--danger); padding: 2px 10px; font-size: 0.75rem;" onclick="updateLeadStatus('${lead.id}', 'REJECTED')">Reject</button>
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                    ` : ''}
+                </div>
+
+                <div class="detail-main" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
                     
                     <!-- NEW: PREVIEW HEADER -->
                     <div style="padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--bg-dark); display: flex; align-items: center; justify-content: space-between;">
@@ -543,9 +608,9 @@ window.openLeadDetail = async (data) => {
                         <div class="device-btn" onclick="setPreviewMode('desktop', this)"><span class="material-icons">laptop</span> Desktop</div>
                         
                         <div class="dev-slider-group">
-                             <span class="text-xs text-muted">Width:</span>
-                             <input type="range" class="dev-slider" min="320" max="1600" value="375" oninput="setCustomWidth(this.value)">
-                             <span class="text-xs text-gold" id="width-display">375px</span>
+                                <span class="text-xs text-muted">Width:</span>
+                                <input type="range" class="dev-slider" min="320" max="1600" value="375" oninput="setCustomWidth(this.value)">
+                                <span class="text-xs text-gold" id="width-display">375px</span>
                         </div>
                         
                         <div style="flex:1;"></div>
@@ -577,7 +642,7 @@ window.openLeadDetail = async (data) => {
                                     <a href="${siteUrl}" target="_blank" class="btn btn-primary">Open in New Tab</a>
                                 </div>
                             </div>
-                         </div>`
+                            </div>`
             :
             `<div style="display:flex; align-items:center; justify-content:center; height:100%; color: var(--text-muted);">
                             No Website URL to Preview
@@ -1195,6 +1260,29 @@ window.downloadAuditPDF = async () => {
         const circumference = 2 * Math.PI * 45; // r=45
         const dashOffset = circumference - (circumference * report.score / 100);
 
+        // DYNAMIC STATUS: Technical SEO
+        const issues = report.issues || [];
+        const criticalCount = issues.filter(i => i.type === 'critical').length;
+        const warningCount = issues.filter(i => i.type === 'warning').length;
+
+        let techSeoVal = 'OPTIMIZED';
+        let techSeoColor = COLORS.success;
+
+        if (criticalCount > 0) {
+            techSeoVal = 'CRITICAL';
+            techSeoColor = COLORS.danger;
+        } else if (warningCount > 1 || report.score < 70) {
+            techSeoVal = 'NEEDS WORK';
+            techSeoColor = COLORS.warning;
+        }
+
+        // DYNAMIC STATUS: Structured Data
+        const hasSchema = (report.seo_technical && report.seo_technical.schema) ||
+            issues.some(i => i.type === 'success' && (i.title.includes('Schema') || i.title.includes('Structured Data')));
+
+        const structVal = hasSchema ? 'ACTIVE' : 'MISSING';
+        const structColor = hasSchema ? COLORS.success : COLORS.danger;
+
         // PAGE 1: HERO with SVG Score Ring
         const page1 = `
             <!-- Header with Score Ring -->
@@ -1257,11 +1345,11 @@ window.downloadAuditPDF = async () => {
             <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
                 <div style="padding: 25px; background: rgba(255,255,255,0.02); border: 1px solid ${COLORS.border}; border-radius: 15px; text-align: center;">
                     <div style="font-size: 0.65rem; opacity: 0.5; margin-bottom: 8px; letter-spacing: 1px; text-transform: uppercase;">Technical SEO</div>
-                    <div style="font-size: 1.5rem; font-weight: bold; color: ${COLORS.success};">OPTIMIZED</div>
+                    <div style="font-size: 1.5rem; font-weight: bold; color: ${techSeoColor};">${techSeoVal}</div>
                 </div>
                 <div style="padding: 25px; background: rgba(255,255,255,0.02); border: 1px solid ${COLORS.border}; border-radius: 15px; text-align: center;">
                     <div style="font-size: 0.65rem; opacity: 0.5; margin-bottom: 8px; letter-spacing: 1px; text-transform: uppercase;">Structured Data</div>
-                    <div style="font-size: 1.5rem; font-weight: bold; color: ${COLORS.danger};">INACTIVE</div>
+                    <div style="font-size: 1.5rem; font-weight: bold; color: ${structColor};">${structVal}</div>
                 </div>
                 <div style="padding: 25px; background: rgba(255,255,255,0.02); border: 1px solid ${COLORS.border}; border-radius: 15px; text-align: center;">
                     <div style="font-size: 0.65rem; opacity: 0.5; margin-bottom: 8px; letter-spacing: 1px; text-transform: uppercase;">Mobile Score</div>
@@ -1816,6 +1904,7 @@ window.saveLeadDetails = async (leadId) => {
             dm_email,
             dm_phone,
             assigned_agent_id, // Add to payload
+            pain_signals: Array.from(document.querySelectorAll('#sidebar-pain-selector .pain-chip.selected')).map(el => el.dataset.value),
             updated_at: new Date().toISOString()
         };
 
@@ -2014,20 +2103,117 @@ window.saveNewLead = async () => {
 
         const docRef = await addDoc(collection(db, "leads"), leadData);
 
-        // Close modal
-        document.getElementById('modal-container').innerHTML = '';
+        // Add to cache & update UI if in view
+        // Ideally we reload, but for speed:
+        closeNewLeadModal();
+        loadLeads('NEW');
 
-        // Refresh List (and maybe show toast)
-        // Check if we are in 'NEW' or 'ALL' view to reload
-        const activeFilter = document.querySelector('button[data-filter].active-filter');
-        if (activeFilter) {
-            loadLeads(activeFilter.dataset.filter); // Reload current view
+        // Show success
+        // alert('Lead created!'); 
+
+    } catch (e) {
+        console.error("Error adding lead: ", e);
+        alert("Error saving lead: " + e.message);
+    }
+}
+
+// --- SMART FILTER LOGIC ---
+
+window.populateSmartFilters = () => {
+    // Only populate if we have leads
+    if (!window.allLeadsCache || window.allLeadsCache.length === 0) return;
+
+    const options = LeadFilterService.getFilterOptions(window.allLeadsCache);
+
+    // Helper to populate select
+    const fillSelect = (id, items, labelFn = x => x) => {
+        const select = document.getElementById(id);
+        if (!select) return;
+        const currentVal = select.value;
+
+        // Keep "All" option
+        select.innerHTML = `<option value="ALL">${select.options[0].text}</option>`; // Reset to just ALL
+
+        items.forEach(item => {
+            const opt = document.createElement('option');
+            opt.value = typeof item === 'object' ? item.key : item;
+            opt.innerText = typeof item === 'object' ? item.label : item;
+            select.appendChild(opt);
+        });
+
+        // Restore selection if valid, else ALL
+        if (items.some(i => (typeof i === 'object' ? i.key : i) === currentVal)) {
+            select.value = currentVal;
         } else {
-            loadLeads('NEW'); // Default to NEW
+            select.value = 'ALL';
+        }
+    };
+
+    fillSelect('smart-filter-industry', options.industries);
+    fillSelect('smart-filter-province', options.provinces);
+    fillSelect('smart-filter-pain', options.painPoints);
+
+    // Update stats count initially
+    updateFilterStats(window.allLeadsCache.length);
+};
+
+window.applySmartFilters = () => {
+    const industry = document.getElementById('smart-filter-industry').value;
+    const province = document.getElementById('smart-filter-province').value;
+    const painPoint = document.getElementById('smart-filter-pain').value;
+
+    const filtered = LeadFilterService.filterLeads(window.allLeadsCache, {
+        industry,
+        province,
+        painPoint
+    });
+
+    renderLeads(filtered);
+    updateFilterStats(filtered.length);
+};
+
+function updateFilterStats(count) {
+    const statEl = document.getElementById('smart-filter-count');
+    if (statEl) statEl.innerText = `${count} leads match`;
+}
+
+window.togglePain = (el, value) => {
+    el.classList.toggle('selected');
+};
+
+window.approveWithSelectedPain = async (id) => {
+    const selector = document.getElementById(`pain-selector-${id}`);
+    if (!selector) return;
+
+    const selected = Array.from(selector.querySelectorAll('.pain-chip.selected')).map(el => el.dataset.value);
+
+    // Default to OTHER if nothing selected, or prompt? Let's allow empty effectively means "General"
+    let primaryCategory = 'MANUAL_REVIEW';
+    if (selected.length > 0) primaryCategory = selected[0];
+    if (selected.includes('NO_WEBSITE')) primaryCategory = 'NO_WEBSITE'; // Priority
+
+    try {
+        const ref = doc(db, "leads", id);
+        await updateDoc(ref, {
+            status: 'APPROVED',
+            lead_quality_category: primaryCategory,
+            pain_signals: selected,
+            updated_at: new Date().toISOString()
+        });
+
+        // Close overlay via URL reset
+        window.location.hash = '#leads';
+
+        // Refresh list
+        const activeBtn = document.querySelector('button[data-filter].active-filter');
+        if (activeBtn && activeBtn.dataset.filter === 'NEW') {
+            loadLeads('NEW');
+        } else {
+            if (activeBtn) loadLeads(activeBtn.dataset.filter);
         }
 
     } catch (e) {
-        console.error("Error creating lead:", e);
-        alert('Failed to create lead.');
+        console.error(e);
+        alert('Error approving lead: ' + e.message);
     }
 };
