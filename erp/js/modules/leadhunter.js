@@ -1,5 +1,6 @@
 import { db } from '../firebase-config.js';
 import { collection, addDoc, query, where, getDocs, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { LeadFilterService } from '../services/LeadFilterService.js';
 
 // -- CONFIG --
 // Since we don't have a secure backend server, we will ask the user to input the key 
@@ -475,6 +476,9 @@ async function runAgentJob() {
                     place_id: place.id,
                     created_at: new Date().toISOString()
                 };
+
+                // Extract and save State/Province
+                leadData.state = LeadFilterService.extractRegion(leadData);
 
                 await addDoc(collection(db, 'leads'), leadData);
                 leadsAdded++;

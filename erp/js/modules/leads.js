@@ -73,8 +73,8 @@ export async function initLeads() {
             <select id="smart-filter-industry" onchange="applySmartFilters()">
                 <option value="ALL">All Industries</option>
             </select>
-            <select id="smart-filter-province" onchange="applySmartFilters()">
-                <option value="ALL">All Provinces</option>
+            <select id="smart-filter-region" onchange="applySmartFilters()">
+                <option value="ALL">All Regions</option>
             </select>
             <select id="smart-filter-pain" onchange="applySmartFilters()">
                 <option value="ALL">All Pain Points</option>
@@ -426,6 +426,17 @@ window.openLeadDetail = async (data) => {
                         <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
                             <span class="material-icons text-muted" style="font-size:1rem;">language</span>
                             <input type="text" id="edit-website" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.website || '')}" placeholder="Official Website">
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                        <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
+                            <span class="material-icons text-muted" style="font-size:1rem;">location_city</span>
+                            <input type="text" id="edit-city" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.85rem;" value="${escapeHtml(lead.city || '')}" placeholder="City">
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
+                            <span class="material-icons text-muted" style="font-size:1rem;">map</span>
+                            <input type="text" id="edit-state" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.85rem;" value="${escapeHtml(lead.state || '')}" placeholder="State/Prov">
                         </div>
                     </div>
 
@@ -1877,6 +1888,8 @@ window.saveLeadDetails = async (leadId) => {
         const business_name = getVal('edit-business-name');
         const notes = getVal('edit-notes');
         const address = getVal('edit-address');
+        const city = getVal('edit-city');
+        const state = getVal('edit-state');
         const website = getVal('edit-website');
         const phone = getVal('edit-phone');
         const email = getVal('edit-email');
@@ -1897,6 +1910,8 @@ window.saveLeadDetails = async (leadId) => {
             business_name,
             notes,
             address,
+            city,
+            state,
             website,
             phone,
             email,
@@ -1980,6 +1995,10 @@ window.openNewLeadModal = () => {
                         <div class="form-group">
                             <label class="form-label" for="new-lead-city">City</label>
                             <input type="text" id="new-lead-city" class="form-input" placeholder="e.g. Toronto">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="new-lead-state">State/Prov</label>
+                            <input type="text" id="new-lead-state" class="form-input" placeholder="e.g. ON or AZ">
                         </div>
                     </div>
                     <div class="form-group">
@@ -2080,6 +2099,7 @@ window.saveNewLead = async () => {
     const name = document.getElementById('new-lead-name').value.trim();
     const category = document.getElementById('new-lead-category').value.trim();
     const city = document.getElementById('new-lead-city').value.trim();
+    const state = document.getElementById('new-lead-state').value.trim();
     const website = document.getElementById('new-lead-website').value.trim();
     const notes = document.getElementById('new-lead-notes').value.trim();
 
@@ -2093,6 +2113,7 @@ window.saveNewLead = async () => {
             business_name: name,
             category: category || 'Business',
             city: city,
+            state: state,
             website: website,
             notes: notes,
             status: 'NEW',
@@ -2120,51 +2141,67 @@ window.saveNewLead = async () => {
 // --- SMART FILTER LOGIC ---
 
 window.populateSmartFilters = () => {
-    // Only populate if we have leads
     if (!window.allLeadsCache || window.allLeadsCache.length === 0) return;
 
     const options = LeadFilterService.getFilterOptions(window.allLeadsCache);
 
-    // Helper to populate select
-    const fillSelect = (id, items, labelFn = x => x) => {
+    // 1. Fill Industries & Pain Points (Standard)
+    const fillStandard = (id, items) => {
         const select = document.getElementById(id);
         if (!select) return;
         const currentVal = select.value;
-
-        // Keep "All" option
-        select.innerHTML = `<option value="ALL">${select.options[0].text}</option>`; // Reset to just ALL
-
+        select.innerHTML = `<option value="ALL">${select.options[0].text}</option>`;
         items.forEach(item => {
             const opt = document.createElement('option');
             opt.value = typeof item === 'object' ? item.key : item;
             opt.innerText = typeof item === 'object' ? item.label : item;
             select.appendChild(opt);
         });
-
-        // Restore selection if valid, else ALL
-        if (items.some(i => (typeof i === 'object' ? i.key : i) === currentVal)) {
-            select.value = currentVal;
-        } else {
-            select.value = 'ALL';
-        }
+        select.value = items.some(i => (typeof i === 'object' ? i.key : i) === currentVal) ? currentVal : 'ALL';
     };
 
-    fillSelect('smart-filter-industry', options.industries);
-    fillSelect('smart-filter-province', options.provinces);
-    fillSelect('smart-filter-pain', options.painPoints);
+    fillStandard('smart-filter-industry', options.industries);
+    fillStandard('smart-filter-pain', options.painPoints);
 
-    // Update stats count initially
+    // 2. Fill Regions (Categorized with Optgroups)
+    const regionSelect = document.getElementById('smart-filter-region');
+    if (regionSelect) {
+        const currentRegion = regionSelect.value;
+        regionSelect.innerHTML = '<option value="ALL">All Regions</option>';
+
+        const addGroup = (label, items) => {
+            if (items.length === 0) return;
+            const group = document.createElement('optgroup');
+            group.label = label;
+            items.forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item.key;
+                opt.innerText = item.label + (item.hasLeads ? ' •' : '');
+                if (!item.hasLeads) opt.style.opacity = '0.6'; // Dim if no leads found, but keep selectable
+                group.appendChild(opt);
+            });
+            regionSelect.appendChild(group);
+        };
+
+        addGroup('Canada', options.regions.canada);
+        addGroup('USA', options.regions.usa);
+
+        // Restore selection
+        regionSelect.value = currentRegion;
+        if (regionSelect.selectedIndex === -1) regionSelect.value = 'ALL';
+    }
+
     updateFilterStats(window.allLeadsCache.length);
 };
 
 window.applySmartFilters = () => {
     const industry = document.getElementById('smart-filter-industry').value;
-    const province = document.getElementById('smart-filter-province').value;
+    const region = document.getElementById('smart-filter-region').value;
     const painPoint = document.getElementById('smart-filter-pain').value;
 
     const filtered = LeadFilterService.filterLeads(window.allLeadsCache, {
         industry,
-        province,
+        region,
         painPoint
     });
 
@@ -2182,7 +2219,7 @@ window.togglePain = (el, value) => {
 };
 
 window.approveWithSelectedPain = async (id) => {
-    const selector = document.getElementById(`pain-selector-${id}`);
+    const selector = document.getElementById('sidebar-pain-selector') || document.getElementById(`pain-selector-${id}`);
     if (!selector) return;
 
     const selected = Array.from(selector.querySelectorAll('.pain-chip.selected')).map(el => el.dataset.value);
@@ -2193,13 +2230,54 @@ window.approveWithSelectedPain = async (id) => {
     if (selected.includes('NO_WEBSITE')) primaryCategory = 'NO_WEBSITE'; // Priority
 
     try {
-        const ref = doc(db, "leads", id);
-        await updateDoc(ref, {
+        const getVal = (id) => (document.getElementById(id) ? document.getElementById(id).value.trim() : null);
+
+        const business_name = getVal('edit-business-name');
+        const notes = getVal('edit-notes');
+        const address = getVal('edit-address');
+        const city = getVal('edit-city');
+        const state = getVal('edit-state');
+        const website = getVal('edit-website');
+        const phone = getVal('edit-phone');
+        const email = getVal('edit-email');
+        const dm_name = getVal('edit-dm-name');
+        const dm_email = getVal('edit-dm-email');
+        const dm_phone = getVal('edit-dm-phone');
+        const assigned_agent_id = getVal('edit-assigned-agent');
+
+        const updateData = {
             status: 'APPROVED',
             lead_quality_category: primaryCategory,
             pain_signals: selected,
             updated_at: new Date().toISOString()
-        });
+        };
+
+        // Only include fields if they are present in the UI (to avoid overwriting if element doesn't exist)
+        if (business_name !== null) updateData.business_name = business_name;
+        if (notes !== null) updateData.notes = notes;
+        if (address !== null) updateData.address = address;
+        if (city !== null) updateData.city = city;
+        if (state !== null) updateData.state = state;
+        if (website !== null) updateData.website = website;
+        if (phone !== null) updateData.phone = phone;
+        if (email !== null) updateData.email = email;
+        if (dm_name !== null) updateData.dm_name = dm_name;
+        if (dm_email !== null) updateData.dm_email = dm_email;
+        if (dm_phone !== null) updateData.dm_phone = dm_phone;
+        if (assigned_agent_id !== null) updateData.assigned_agent_id = assigned_agent_id;
+
+        const ref = doc(db, "leads", id);
+        await updateDoc(ref, updateData);
+
+        // Update local cache if exists
+        if (window.allLeadsCache) {
+            const cached = window.allLeadsCache.find(l => l.id === id);
+            if (cached) Object.assign(cached, updateData);
+        }
+
+        if (window.showToast) {
+            window.showToast("Lead Approved & Saved!", "success");
+        }
 
         // Close overlay via URL reset
         window.location.hash = '#leads';

@@ -12,6 +12,7 @@ import { initColdCall } from './modules/coldcall.js';
 import { initFollowup } from './modules/followup.js';
 import { initAccount } from './modules/account.js';
 import { initTeam } from './modules/team.js';
+import { initAiAgents } from './modules/ai_agents.js';
 
 function initAuth() {
     const loginView = document.getElementById('login-view');
@@ -346,7 +347,8 @@ const routes = {
     '#coldcall': initColdCall,
     '#followup': initFollowup,
     '#account': initAccount,
-    '#team': initTeam
+    '#team': initTeam,
+    '#ai-agents': initAiAgents
 };
 
 // State
