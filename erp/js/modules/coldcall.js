@@ -11,6 +11,99 @@ let currentSettings = {
     targetRevenue: 1000
 };
 
+const categoryLabels = {
+    'GENERAL': 'General Pitch',
+    'NO_WEBSITE': 'No Website Fix',
+    'DATED_DESIGN': 'Modernization',
+    'BAD_RANKING': 'SEO / Visibility',
+    'OTHER': 'Custom'
+};
+
+const timezoneMap = {
+    // US States
+    'AL': 'America/Chicago', 'AK': 'America/Anchorage', 'AZ': 'America/Phoenix', 'AR': 'America/Chicago',
+    'CA': 'America/Los_Angeles', 'CO': 'America/Denver', 'CT': 'America/New_York', 'DE': 'America/New_York',
+    'FL': 'America/New_York', 'GA': 'America/New_York', 'HI': 'Pacific/Honolulu', 'ID': 'America/Boise',
+    'IL': 'America/Chicago', 'IN': 'America/Indiana/Indianapolis', 'IA': 'America/Chicago', 'KS': 'America/Chicago',
+    'KY': 'America/New_York', 'LA': 'America/Chicago', 'ME': 'America/New_York', 'MD': 'America/New_York',
+    'MA': 'America/New_York', 'MI': 'America/New_York', 'MN': 'America/Chicago', 'MS': 'America/Chicago',
+    'MO': 'America/Chicago', 'MT': 'America/Denver', 'NE': 'America/Chicago', 'NV': 'America/Los_Angeles',
+    'NH': 'America/New_York', 'NJ': 'America/New_York', 'NM': 'America/Denver', 'NY': 'America/New_York',
+    'NC': 'America/New_York', 'ND': 'America/Chicago', 'OH': 'America/New_York', 'OK': 'America/Chicago',
+    'OR': 'America/Los_Angeles', 'PA': 'America/New_York', 'RI': 'America/New_York', 'SC': 'America/New_York',
+    'SD': 'America/Chicago', 'TN': 'America/Chicago', 'TX': 'America/Chicago', 'UT': 'America/Denver',
+    'VT': 'America/New_York', 'VA': 'America/New_York', 'WA': 'America/Los_Angeles', 'WV': 'America/New_York',
+    'WI': 'America/Chicago', 'WY': 'America/Denver',
+    // Canadian Provinces
+    'AB': 'America/Edmonton', 'BC': 'America/Vancouver', 'MB': 'America/Winnipeg', 'NB': 'America/Halifax',
+    'NL': 'America/St_Johns', 'NS': 'America/Halifax', 'ON': 'America/Toronto', 'PE': 'America/Halifax',
+    'QC': 'America/Toronto', 'SK': 'America/Regina', 'YT': 'America/Whitehorse', 'NT': 'America/Yellowknife',
+    'NU': 'America/Iqaluit'
+};
+
+const fullStateNames = {
+    'alabama': 'AL', 'alaska': 'AK', 'arizona': 'AZ', 'arkansas': 'AR', 'california': 'CA', 'colorado': 'CO',
+    'connecticut': 'CT', 'delaware': 'DE', 'florida': 'FL', 'georgia': 'GA', 'hawaii': 'HI', 'idaho': 'ID',
+    'illinois': 'IL', 'indiana': 'IN', 'iowa': 'IA', 'kansas': 'KS', 'kentucky': 'KY', 'louisiana': 'LA',
+    'maine': 'ME', 'maryland': 'MD', 'massachusetts': 'MA', 'michigan': 'MI', 'minnesota': 'MN', 'mississippi': 'MS',
+    'missouri': 'MO', 'montana': 'MT', 'nebraska': 'NE', 'nevada': 'NV', 'new hampshire': 'NH', 'new jersey': 'NJ',
+    'new mexico': 'NM', 'new york': 'NY', 'north carolina': 'NC', 'north dakota': 'ND', 'ohio': 'OH', 'oklahoma': 'OK',
+    'oregon': 'OR', 'pennsylvania': 'PA', 'rhode island': 'RI', 'south carolina': 'SC', 'south dakota': 'SD',
+    'tennessee': 'TN', 'texas': 'TX', 'utah': 'UT', 'vermont': 'VT', 'virginia': 'VA', 'washington': 'WA',
+    'west virginia': 'WV', 'wisconsin': 'WI', 'wyoming': 'WY'
+};
+
+function getLeadTimezone(lead) {
+    if (lead.timezone) return lead.timezone;
+
+    // Try state field first
+    if (lead.state) {
+        const state = lead.state.trim().toUpperCase();
+        if (timezoneMap[state]) return timezoneMap[state];
+        const fullStateMatch = fullStateNames[lead.state.trim().toLowerCase()];
+        if (fullStateMatch) return timezoneMap[fullStateMatch];
+    }
+
+    // Try city field (often contains state or is a well-known city)
+    if (lead.city) {
+        const parts = lead.city.split(',').map(p => p.trim().toUpperCase());
+        for (const p of parts) {
+            if (timezoneMap[p]) return timezoneMap[p];
+        }
+
+        const cityLower = lead.city.toLowerCase();
+        for (const [fullName, code] of Object.entries(fullStateNames)) {
+            if (cityLower.includes(fullName)) return timezoneMap[code];
+        }
+
+        // Hardcoded common cities fallback
+        if (cityLower.includes('salt lake city')) return 'America/Denver';
+        if (cityLower.includes('calgary')) return 'America/Edmonton';
+        if (cityLower.includes('phoenix')) return 'America/Phoenix';
+        if (cityLower.includes('toronto')) return 'America/Toronto';
+        if (cityLower.includes('vancouver')) return 'America/Vancouver';
+        if (cityLower.includes('los angeles')) return 'America/Los_Angeles';
+        if (cityLower.includes('new york')) return 'America/New_York';
+    }
+
+    return null;
+}
+
+function formatLeadTime(timezone) {
+    if (!timezone) return '--:--';
+    try {
+        return new Intl.DateTimeFormat('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+            timeZone: timezone,
+            timeZoneName: 'short'
+        }).format(new Date());
+    } catch (e) {
+        return '--:--';
+    }
+}
+
 // --- INITIALIZATION ---
 export async function initColdCall() {
     console.log('Initializing Cold Call Module...');
@@ -160,12 +253,21 @@ async function loadApprovedLeads(categoryFilter) {
         return;
     }
 
-    list.innerHTML = leads.map(l => `
-        <div class="cc-list-item" onclick="selectColdCallLead('${l.id}')">
-            <div style="font-weight:bold;">${l.business_name}</div>
-            <div class="text-xs text-muted">${l.city} • ${l.lead_quality_category || 'Other'}</div>
-        </div>
-    `).join('');
+    list.innerHTML = leads.map(l => {
+        const tz = getLeadTimezone(l);
+        const localTime = formatLeadTime(tz);
+        return `
+            <div class="cc-list-item" onclick="selectColdCallLead('${l.id}')">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div style="font-weight:bold;">${l.business_name}</div>
+                    <div class="text-muted" style="font-size: 0.7rem; font-weight: normal;">
+                        ${localTime.split(' ').slice(0, 2).join(' ')}
+                    </div>
+                </div>
+                <div class="text-xs text-muted">${l.city} • ${l.lead_quality_category || 'Other'}</div>
+            </div>
+        `;
+    }).join('');
 
     // Auto-select first lead
     if (leads.length > 0) {
@@ -205,6 +307,9 @@ window.selectColdCallLead = async (id) => {
         const data = snap.data();
         data.id = id;
 
+        const tz = getLeadTimezone(data);
+        const localTime = formatLeadTime(tz);
+
         // Fetch All Scripts for Dropdown
         let allScripts = [];
         try {
@@ -214,7 +319,6 @@ window.selectColdCallLead = async (id) => {
             });
         } catch (e) { console.error("Error loading scripts", e); }
 
-        // Find Best Script Match (Default)
         // Find Best Script Match (Default)
         const category = data.lead_quality_category || 'OTHER';
         let activeScript = null;
@@ -230,11 +334,42 @@ window.selectColdCallLead = async (id) => {
         // Store scripts globally for local switching
         window.availableScripts = allScripts;
 
-        // Generate Script Options
-        let scriptOptions = '';
+        // Organize and Sort Scripts
+        allScripts.sort((a, b) => {
+            const catA = categoryLabels[a.category] || a.category;
+            const catB = categoryLabels[b.category] || b.category;
+            if (catA !== catB) return catA.localeCompare(catB);
+            return a.title.localeCompare(b.title);
+        });
+
+        // Generate Script Options with Grouping
+        let scriptOptions = '<option value="">-- Choose a Script --</option>';
+        let lastCategory = null;
         allScripts.forEach(s => {
+            const catLabel = categoryLabels[s.category] || s.category;
+            if (catLabel !== lastCategory) {
+                if (lastCategory !== null) scriptOptions += '</optgroup>';
+                scriptOptions += `<optgroup label="${catLabel}">`;
+                lastCategory = catLabel;
+            }
             const isSelected = activeScript && s.id === activeScript.id ? 'selected' : '';
-            scriptOptions += `<option value="${s.id}" ${isSelected}>${s.title} (${s.category})</option>`;
+            scriptOptions += `<option value="${s.id}" ${isSelected}>${s.title}</option>`;
+        });
+        if (lastCategory !== null) scriptOptions += '</optgroup>';
+
+        // Generate Sidebar Script List
+        let sidebarScriptsHtml = '';
+        allScripts.forEach(s => {
+            const isActive = activeScript && s.id === activeScript.id;
+            sidebarScriptsHtml += `
+                <div class="sidebar-script-item ${isActive ? 'active' : ''}" 
+                     data-script-id="${s.id}"
+                     onclick="updateScriptView('${s.id}')"
+                     style="padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; margin-bottom: 4px; border: 1px solid ${isActive ? 'var(--gold)' : 'transparent'}; background: ${isActive ? 'rgba(223, 165, 58, 0.1)' : 'rgba(255,255,255,0.03)'}; transition: all 0.2s;">
+                    <div style="font-weight: ${isActive ? 'bold' : 'normal'}; color: ${isActive ? 'var(--gold)' : 'var(--text-main)'};">${s.title}</div>
+                    <div style="font-size: 0.65rem; color: var(--text-muted);">${categoryLabels[s.category] || s.category}</div>
+                </div>
+            `;
         });
 
 
@@ -256,6 +391,10 @@ window.selectColdCallLead = async (id) => {
                                     <span class="material-icons text-muted hover-icon" style="font-size:1.1rem; cursor:pointer;" 
                                           onclick="enableInlineEdit('${id}', 'business_name', '${data.business_name.replace(/'/g, "\\'")}')" 
                                           title="Edit Name">edit</span>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:6px; margin-bottom:10px;">
+                                    <span class="material-icons text-muted" style="font-size:0.9rem;">schedule</span>
+                                    <span style="font-size:0.75rem; color:var(--text-muted);">Local Time: ${localTime}</span>
                                 </div>
                                 <!-- Pain Points -->
                                 <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:10px;">
@@ -379,7 +518,17 @@ window.selectColdCallLead = async (id) => {
                     <div class="text-h text-sm uppercase text-muted mb-2">Log Outcome</div>
                     <button class="btn btn-block mb-2" style="border-color:var(--success); color:var(--success);" onclick="logOutcome('INTERESTED')">Interested</button>
                     <button class="btn btn-block mb-2" style="border-color:var(--warning); color:var(--warning);" onclick="logOutcome('CALLBACK')">Call Back Later</button>
-                    <button class="btn btn-block mb-2" style="border-color:var(--danger); color:var(--danger);" onclick="logOutcome('NOT_INTERESTED')">Not Interested</button>
+                    <button class="btn btn-block mb-4" style="border-color:var(--danger); color:var(--danger);" onclick="logOutcome('NOT_INTERESTED')">Not Interested</button>
+
+                    <!-- NEW: SCRIPT LIBRARY -->
+                    <div class="divider" style="margin:1rem 0; border-top:1px solid var(--border);"></div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                        <div class="text-h text-sm uppercase text-muted" style="margin:0;">Script Library</div>
+                        <span class="material-icons text-muted" style="font-size:1.1rem; cursor:pointer;" onclick="openScriptsManager()" title="Manage Scripts">settings</span>
+                    </div>
+                    <div id="quick-script-library" style="max-height: 250px; overflow-y: auto; padding-right: 5px;">
+                        ${sidebarScriptsHtml}
+                    </div>
 
                 </div>
             </div>
@@ -913,6 +1062,27 @@ window.updateScriptView = async (scriptId) => {
     if (script) {
         document.getElementById('script-display-title').innerText = `SCRIPT: ${script.title}`;
         document.getElementById('script-display-content').innerText = script.content;
+
+        // Update Dropdown value if called from sidebar
+        const select = document.querySelector('#cc-workspace select');
+        if (select) select.value = scriptId;
+
+        // Update Sidebar highlights
+        document.querySelectorAll('.sidebar-script-item').forEach(el => {
+            el.classList.remove('active');
+            el.style.border = '1px solid transparent';
+            el.style.background = 'rgba(255,255,255,0.03)';
+            el.style.fontWeight = 'normal';
+        });
+        // Find and highlight using data attribute
+        const activeItem = document.querySelector(`.sidebar-script-item[data-script-id="${scriptId}"]`);
+        if (activeItem) {
+            activeItem.classList.add('active');
+            activeItem.style.border = '1px solid var(--gold)';
+            activeItem.style.background = 'rgba(223, 165, 58, 0.1)';
+            activeItem.style.fontWeight = 'bold';
+            activeItem.querySelector('div').style.color = 'var(--gold)';
+        }
     }
 
     // Save to Firestore
