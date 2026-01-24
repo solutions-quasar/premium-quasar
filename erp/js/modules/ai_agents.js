@@ -466,10 +466,35 @@ window.openAgentModal = (agentJson = null) => {
         let cfg = {
             title: 'AI Assistant',
             color: '#dfa53a',
-            welcome: 'Hello! How can I help you today?'
+            welcome: 'Hello! How can I help you today?',
+            vapiId: ''
         };
 
+        // Try to pre-fill vapi ID if available in current scope
+        const agentNameInput = document.getElementById('ag-name');
+        if (!agentNameInput) {
+            // We are not in edit mode, fetch might be needed but for now let's leave blank
+        } else {
+            // If we can find the agent data attached to the edit form...
+            // Simplified: Just let user paste it or use what's in local variable if available
+        }
+
+        // Better: Fetch the agent document to get the Vapi ID automatically
+        getDoc(doc(db, "ai_agents", id)).then(snap => {
+            if (snap.exists()) {
+                const d = snap.data();
+                if (d.vapiAssistantId) {
+                    cfg.vapiId = d.vapiAssistantId;
+                    if (document.getElementById('emb-vapi')) {
+                        document.getElementById('emb-vapi').value = cfg.vapiId;
+                        updateCode();
+                    }
+                }
+            }
+        });
+
         const generateSnippet = () => {
+            const vapiAttr = cfg.vapiId ? `\n    data-vapi-id="${cfg.vapiId}"` : '';
             return `<!-- Quasar Chat Widget -->
 <script 
     src="${currentApiBase}/chat-widget.js" 
@@ -477,7 +502,7 @@ window.openAgentModal = (agentJson = null) => {
     data-api-base="${currentApiBase}"
     data-title="${cfg.title}"
     data-primary-color="${cfg.color}"
-    data-welcome-msg="${cfg.welcome}"
+    data-welcome-msg="${cfg.welcome}"${vapiAttr}
 ></script>`.trim();
         };
 
@@ -511,6 +536,12 @@ window.openAgentModal = (agentJson = null) => {
                             </div>
                         </div>
 
+                        <div class="form-group" style="margin-bottom:15px;">
+                            <label class="form-label">Vapi Voice ID (Optional)</label>
+                            <input type="text" id="emb-vapi" class="form-input" placeholder="Paste Vapi Assistant ID for Voice Support" value="${cfg.vapiId}">
+                            <div class="text-xs text-muted">Leave empty to disable voice chat.</div>
+                        </div>
+
                         <div class="form-group">
                             <label class="form-label">Welcome Message</label>
                             <input type="text" id="emb-welcome" class="form-input" value="${cfg.welcome}">
@@ -520,7 +551,7 @@ window.openAgentModal = (agentJson = null) => {
                     <div class="form-group">
                         <label class="form-label">Copy Code</label>
                         <p class="text-xs text-muted mb-2">Paste this before the closing &lt;/body&gt; tag.</p>
-                        <textarea id="emb-code" class="form-input" rows="8" readonly style="font-family:monospace; font-size:0.8rem; background:#111; color:#0f0;">${generateSnippet()}</textarea>
+                        <textarea id="emb-code" class="form-input" rows="10" readonly style="font-family:monospace; font-size:0.8rem; background:#111; color:#0f0;">${generateSnippet()}</textarea>
                     </div>
 
                     <button class="btn btn-primary btn-block mt-3" onclick="navigator.clipboard.writeText(document.getElementById('emb-code').value); this.innerText='Copied!'">
@@ -536,10 +567,9 @@ window.openAgentModal = (agentJson = null) => {
         // Bind Events
         const updateCode = () => {
             cfg.title = document.getElementById('emb-title').value;
-            cfg.color = document.getElementById('emb-color').value; // or color-text
-            // Sync inputs
+            cfg.color = document.getElementById('emb-color').value;
             document.getElementById('emb-color-text').value = cfg.color;
-
+            cfg.vapiId = document.getElementById('emb-vapi').value;
             cfg.welcome = document.getElementById('emb-welcome').value;
             document.getElementById('emb-code').value = generateSnippet();
         };
@@ -553,6 +583,7 @@ window.openAgentModal = (agentJson = null) => {
         document.getElementById('emb-title').oninput = updateCode;
         document.getElementById('emb-color').oninput = updateCode;
         document.getElementById('emb-color-text').oninput = updateColorText;
+        document.getElementById('emb-vapi').oninput = updateCode;
         document.getElementById('emb-welcome').oninput = updateCode;
 
         overlay.onclick = (e) => {
