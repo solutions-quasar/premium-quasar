@@ -237,6 +237,37 @@ app.get('/api/public/vapi/key', (req, res) => {
     res.json({ success: true, publicKey: key });
 });
 
+// 1.2 Get Public Widget Configuration (Gateway)
+app.get('/api/public/widget-config/:agentId', async (req, res) => {
+    try {
+        const { agentId } = req.params;
+        const docSnap = await db.collection('ai_agents').doc(agentId).get();
+
+        if (!docSnap.exists) {
+            return res.status(404).json({ success: false, error: 'Agent not found' });
+        }
+
+        const data = docSnap.data();
+
+        // Return only safe, public configuration
+        res.json({
+            success: true,
+            config: {
+                title: data.name || 'AI Assistant', // Use Agent Name as default title or add specific field later
+                color: data.color || '#dfa53a', // We need to make sure we save these to the DB now
+                welcome: data.welcomeMessage || 'Hello! How can I help you today?',
+                vapiId: data.vapiAssistantId || null,
+                toggleIcon: data.toggleIcon || 'chat',
+                voiceHint: data.voiceHint !== false // Default to true
+            }
+        });
+
+    } catch (e) {
+        console.error("Config Fetch Error:", e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 
 // 2. Create Agent (Proxy to Vapi API)
 app.post('/api/vapi/create-agent', verifyToken, async (req, res) => {
