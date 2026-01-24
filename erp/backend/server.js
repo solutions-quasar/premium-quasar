@@ -9,11 +9,13 @@ const OpenAI = require('openai');
 
 
 dotenv.config();
+const PROD_URL = 'https://quasar-erp-b26d5.web.app';
+const SERVER_URL = process.env.SERVER_URL || PROD_URL;
+
 console.log("------------------------------------------");
 console.log("DEBUG ENV VARS:");
 console.log("Email User:", process.env.EMAIL_USER);
-console.log("Email Pass (Length):", process.env.EMAIL_PASS ? process.env.EMAIL_PASS.length : "MISSING");
-console.log("Server URL:", process.env.SERVER_URL || "NOT SET (using example.com)");
+console.log("Server URL:", SERVER_URL);
 console.log("------------------------------------------");
 
 const app = express();
@@ -221,12 +223,20 @@ const axios = require('axios');
 
 // --- VAPI INTEGRATION ---
 
-// 1. Get Public Key (for Frontend SDK)
+// 1. Get Public Key (Protected - Internal Use)
 app.get('/api/vapi/public-key', verifyToken, (req, res) => {
     const key = process.env.VAPI_PUBLIC_KEY;
     if (!key) return res.status(500).json({ success: false, error: 'VAPI_PUBLIC_KEY not configured on server.' });
     res.json({ success: true, publicKey: key });
 });
+
+// 1.1 Get Public Key (Public - Widget Use)
+app.get('/api/public/vapi/key', (req, res) => {
+    const key = process.env.VAPI_PUBLIC_KEY;
+    if (!key) return res.status(500).json({ success: false, error: 'VAPI_PUBLIC_KEY not configured on server.' });
+    res.json({ success: true, publicKey: key });
+});
+
 
 // 2. Create Agent (Proxy to Vapi API)
 app.post('/api/vapi/create-agent', verifyToken, async (req, res) => {
@@ -294,8 +304,7 @@ app.patch('/api/vapi/update-agent/:id', verifyToken, async (req, res) => {
         }
 
         // Determine Base URL
-        const baseUrl = process.env.SERVER_URL || 'https://example.com';
-        const callbackUrl = `${baseUrl}/api/vapi/callback?projectId=${projectId}`;
+        const callbackUrl = `${SERVER_URL}/api/vapi/callback?projectId=${projectId}`;
 
         // Construct Update Payload
         const updatePayload = {
@@ -385,12 +394,40 @@ app.post('/api/vapi/callback', async (req, res) => {
                 console.log(`[Vapi] Tool Call: ${fnName}`, args);
 
                 let result;
-                if (handlers[fnName]) {
-                    result = await handlers[fnName](args, projectId);
-                } else {
-                    // Try dynamic handler (handles create_*, search_*)
-                    result = await dynamicHandler(fnName, args, projectId);
+
+                // --- SECURITY CHECK (UI RESTRICTIONS) ---
+                // We need to fetch the Agent config to see if this tool is enabled.
+                // Vapi sends 'assistantId' in the call.assistantId field but sometimes at payload root.
+                // We'll search for the agent using the Vapi ID if available, or assume the user wants strictness.
+
+                // Ideally, Vapi webhook should include the assistantId.
+                const vapiAssistantId = payload.assistant ? payload.assistant.id : (payload.call ? payload.call.assistantId : null);
+                let isAllowed = true;
+
+                if (vapiAssistantId) {
+                    // Find Agent by Vapi ID to check permissions
+                    const agentQuery = await db.collection('ai_agents').where('vapiAssistantId', '==', vapiAssistantId).limit(1).get();
+                    if (!agentQuery.empty) {
+                        const agentData = agentQuery.docs[0].data();
+                        // If tools config exists, check if this specific tool is enabled
+                        if (agentData.tools && agentData.tools[fnName] === false) {
+                            isAllowed = false;
+                            console.warn(`[Security] Blocked disabled tool: ${fnName}`);
+                        }
+                    }
                 }
+
+                if (!isAllowed) {
+                    result = { error: "Access to this tool is disabled by the administrator." };
+                } else {
+                    if (handlers[fnName]) {
+                        result = await handlers[fnName](args, projectId);
+                    } else {
+                        // Try dynamic handler (handles create_*, search_*)
+                        result = await dynamicHandler(fnName, args, projectId);
+                    }
+                }
+                // ----------------------------------------
 
                 results.push({
                     toolCallId: call.id,
@@ -546,12 +583,18 @@ app.post('/api/chat', verifyToken, async (req, res) => {
                     let result = { error: "Tool not found" };
 
                     try {
-                        if (handlers[fnName]) {
-                            result = await handlers[fnName](fnArgs, projectId);
+                        // --- SECURITY CHECK (CHATBOT) ---
+                        if (agentData.tools && agentData.tools[fnName] === false) {
+                            result = { error: "Access to this tool is disabled by the administrator." };
                         } else {
-                            // Unified Dynamic Handler
-                            result = await dynamicHandler(fnName, fnArgs, projectId);
+                            if (handlers[fnName]) {
+                                result = await handlers[fnName](fnArgs, projectId);
+                            } else {
+                                // Unified Dynamic Handler
+                                result = await dynamicHandler(fnName, fnArgs, projectId);
+                            }
                         }
+                        // --------------------------------
                     } catch (err) {
                         result = { error: err.message };
                     }
@@ -658,6 +701,10 @@ app.post('/api/public/chat/:agentId', async (req, res) => {
 });
 
 
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-});
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log(`Server running on http://localhost:${PORT}`);
+    });
+}
+
+module.exports = app;

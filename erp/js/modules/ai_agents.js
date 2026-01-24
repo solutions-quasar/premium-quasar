@@ -1,6 +1,11 @@
 import { db } from '../firebase-config.js';
 import { collection, query, where, getDocs, addDoc, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+// --- CONFIG ---
+const API_BASE = window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1')
+    ? 'http://localhost:5000'
+    : '';
+
 // --- STATE ---
 let activeProjectId = null;
 let currentProject = null;
@@ -102,7 +107,7 @@ window.selectProject = async (id, json) => {
     let connStatus = '<span class="status-badge" style="background:#555; color:white;">Checking...</span>';
 
     try {
-        const res = await fetch(`http://localhost:5000/api/projects/${id}/verify`, {
+        const res = await fetch(`${API_BASE}/api/projects/${id}/verify`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await res.json();
@@ -323,7 +328,7 @@ window.openProjectSettings = async () => {
                 const jsonContent = JSON.parse(evt.target.result);
                 const token = await getAuthToken();
 
-                const res = await fetch(`http://localhost:5000/api/projects/${activeProjectId}/credentials`, {
+                const res = await fetch(`${API_BASE}/api/projects/${activeProjectId}/credentials`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                     body: JSON.stringify({ key: jsonContent })
@@ -402,7 +407,7 @@ window.openAgentModal = (agentJson = null) => {
 
         try {
             const token = await getAuthToken();
-            const res = await fetch('http://localhost:5000/api/chat', {
+            const res = await fetch(`${API_BASE}/api/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
@@ -454,34 +459,105 @@ window.openAgentModal = (agentJson = null) => {
     };
 
     window.agent_showEmbedCode = (id) => {
-        const snippet = `
-<!-- Quasar Chat Widget -->
+        const prodUrl = 'https://quasar-erp-b26d5.web.app';
+        const currentApiBase = API_BASE || prodUrl;
+
+        // Default Defaults
+        let cfg = {
+            title: 'AI Assistant',
+            color: '#dfa53a',
+            welcome: 'Hello! How can I help you today?'
+        };
+
+        const generateSnippet = () => {
+            return `<!-- Quasar Chat Widget -->
 <script 
-    src="http://localhost:5000/chat-widget.js" 
+    src="${currentApiBase}/chat-widget.js" 
     data-agent-id="${id}"
-    data-api-base="http://localhost:5000"
-></script>
-        `.trim();
+    data-api-base="${currentApiBase}"
+    data-title="${cfg.title}"
+    data-primary-color="${cfg.color}"
+    data-welcome-msg="${cfg.welcome}"
+></script>`.trim();
+        };
 
         const host = document.getElementById('ai-modal-host');
         const overlay = document.createElement('div');
         overlay.className = 'crm-modal-overlay';
         overlay.style.zIndex = '999999';
+
         overlay.innerHTML = `
-            <div class="crm-modal-content" style="max-width:500px;" onclick="event.stopPropagation()">
+            <div class="crm-modal-content" style="max-width:600px;" onclick="event.stopPropagation()">
                 <div class="crm-modal-header">
-                    <div class="text-h">Embed Code</div>
+                    <div class="text-h">Embed Widget</div>
                     <button class="icon-btn" onclick="this.closest('.crm-modal-overlay').remove()"><span class="material-icons">close</span></button>
                 </div>
                 <div class="crm-modal-body">
-                    <p class="text-sm text-muted mb-3">Copy this code and paste it before the closing &lt;/body&gt; tag of your website.</p>
-                    <textarea class="form-input" rows="6" readonly style="font-family:monospace; font-size:0.8rem; background:var(--bg-dark);">${snippet}</textarea>
-                    <button class="btn btn-primary btn-block mt-3" onclick="navigator.clipboard.writeText(this.previousElementSibling.value); this.innerText='Copied!'">Copy to Clipboard</button>
+                    
+                    <div style="background:var(--bg-dark); padding:1.5rem; border-radius:8px; margin-bottom:1.5rem; border:1px solid var(--border);">
+                        <div class="text-sm font-bold mb-3 text-gold">Customization</div>
+                        
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:10px;">
+                            <div class="form-group">
+                                <label class="form-label">Widget Title</label>
+                                <input type="text" id="emb-title" class="form-input" value="${cfg.title}">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Primary Color</label>
+                                <div style="display:flex; gap:10px;">
+                                    <input type="color" id="emb-color" class="form-input" style="padding:2px; width:50px;" value="${cfg.color}">
+                                    <input type="text" id="emb-color-text" class="form-input" value="${cfg.color}">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Welcome Message</label>
+                            <input type="text" id="emb-welcome" class="form-input" value="${cfg.welcome}">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Copy Code</label>
+                        <p class="text-xs text-muted mb-2">Paste this before the closing &lt;/body&gt; tag.</p>
+                        <textarea id="emb-code" class="form-input" rows="8" readonly style="font-family:monospace; font-size:0.8rem; background:#111; color:#0f0;">${generateSnippet()}</textarea>
+                    </div>
+
+                    <button class="btn btn-primary btn-block mt-3" onclick="navigator.clipboard.writeText(document.getElementById('emb-code').value); this.innerText='Copied!'">
+                        <span class="material-icons" style="font-size:1rem; vertical-align:text-bottom; margin-right:5px;">content_copy</span>
+                        Copy to Clipboard
+                    </button>
                 </div>
             </div>
         `;
-        overlay.onclick = () => overlay.remove();
+
         document.body.appendChild(overlay);
+
+        // Bind Events
+        const updateCode = () => {
+            cfg.title = document.getElementById('emb-title').value;
+            cfg.color = document.getElementById('emb-color').value; // or color-text
+            // Sync inputs
+            document.getElementById('emb-color-text').value = cfg.color;
+
+            cfg.welcome = document.getElementById('emb-welcome').value;
+            document.getElementById('emb-code').value = generateSnippet();
+        };
+
+        const updateColorText = () => {
+            cfg.color = document.getElementById('emb-color-text').value;
+            document.getElementById('emb-color').value = cfg.color;
+            updateCode();
+        };
+
+        document.getElementById('emb-title').oninput = updateCode;
+        document.getElementById('emb-color').oninput = updateCode;
+        document.getElementById('emb-color-text').oninput = updateColorText;
+        document.getElementById('emb-welcome').oninput = updateCode;
+
+        overlay.onclick = (e) => {
+            if (e.target === overlay) overlay.remove();
+        };
     };
 
     // --- TOOL LOADING ---
@@ -493,7 +569,7 @@ window.openAgentModal = (agentJson = null) => {
         try {
             const token = await getAuthToken();
             // 1. Discover Real Tools from Backend
-            const res = await fetch(`http://localhost:5000/api/projects/${activeProjectId}/discover`, {
+            const res = await fetch(`${API_BASE}/api/projects/${activeProjectId}/discover`, {
                 headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                 method: 'POST'
             });
@@ -536,7 +612,7 @@ window.openAgentModal = (agentJson = null) => {
     const renderModal = () => {
         host.innerHTML = `
             <div class="crm-modal-overlay" onclick="document.getElementById('ai-modal-host').innerHTML=''">
-                <div class="crm-modal-content" style="max-width: 600px;" onclick="event.stopPropagation()">
+                <div class="crm-modal-content" style="width: 95vw; height: 95vh; max-width: none; max-height: none; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
                     
                     <div class="crm-modal-header" style="border-bottom:none; padding-bottom:0;">
                         <div class="text-h">${isEdit ? 'Edit Agent' : 'New Agent'}</div>
@@ -698,7 +774,7 @@ window.openAgentModal = (agentJson = null) => {
             if (!isEdit) {
                 // CREATE
                 const token = await getAuthToken();
-                const res = await fetch('http://localhost:5000/api/vapi/create-agent', {
+                const res = await fetch(`${API_BASE}/api/vapi/create-agent`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                     body: JSON.stringify({ name, type, prompt: finalSystemPrompt })
@@ -717,7 +793,7 @@ window.openAgentModal = (agentJson = null) => {
             if (isEdit) {
                 // UPDATE including Tools and Project ID for Isolation
                 const token = await getAuthToken();
-                await fetch(`http://localhost:5000/api/vapi/update-agent/${agent.vapiAssistantId}`, {
+                await fetch(`${API_BASE}/api/vapi/update-agent/${agent.vapiAssistantId}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                     body: JSON.stringify({
@@ -753,7 +829,7 @@ window.openAgentModal = (agentJson = null) => {
 
 function renderToolRow(key, title, desc, checked) {
     return `
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
          <label class="form-label-checkbox" style="margin-bottom:0; flex:1;">
             <input type="checkbox" class="custom-checkbox" ${checked ? 'checked' : ''} onchange="window.agent_toggleTool('${key}')"> 
             <span style="color:var(--text); font-weight:600;">${title}</span>
@@ -762,7 +838,7 @@ function renderToolRow(key, title, desc, checked) {
         <button type="button" class="btn btn-sm" style="border:1px solid var(--border); margin-left:10px;" onclick="window.agent_testTool('${key}')">
             Test ⚡
         </button>
-    </div>
+    </div >
     `;
 }
 
@@ -774,22 +850,22 @@ window.openToolTestModal = (toolName) => {
     if (toolName === 'bookAppointment') defaultArgs = '{\n  "name": "John Tester",\n  "date": "2026-02-01",\n  "time": "14:00"\n}';
 
     const modalHtml = `
-        <div class="crm-modal-overlay" id="tool-test-overlay">
-            <div class="crm-modal-content" style="max-width: 500px;" onclick="event.stopPropagation()">
-                <div class="crm-modal-header">
-                    <div class="text-h">Test Tool: ${toolName}</div>
-                    <button class="icon-btn" onclick="document.getElementById('tool-test-overlay').remove()"><span class="material-icons">close</span></button>
+    <div class="crm-modal-overlay" id="tool-test-overlay">
+        <div class="crm-modal-content" style="max-width: 500px;" onclick="event.stopPropagation()">
+            <div class="crm-modal-header">
+                <div class="text-h">Test Tool: ${toolName}</div>
+                <button class="icon-btn" onclick="document.getElementById('tool-test-overlay').remove()"><span class="material-icons">close</span></button>
+            </div>
+            <div class="crm-modal-body">
+                <div class="form-group">
+                    <label class="form-label">Arguments (JSON)</label>
+                    <textarea id="test-args" class="form-input" rows="5" style="font-family:monospace;">${defaultArgs}</textarea>
                 </div>
-                <div class="crm-modal-body">
-                    <div class="form-group">
-                        <label class="form-label">Arguments (JSON)</label>
-                        <textarea id="test-args" class="form-input" rows="5" style="font-family:monospace;">${defaultArgs}</textarea>
-                    </div>
-                    <div id="test-output" style="background:#111; color:#0f0; padding:10px; border-radius:4px; font-family:monospace; font-size:0.8rem; display:none; white-space:pre-wrap;"></div>
-                    <button class="btn btn-primary btn-block mt-3" onclick="runToolTest('${toolName}')">Run Test</button>
-                </div>
+                <div id="test-output" style="background:#111; color:#0f0; padding:10px; border-radius:4px; font-family:monospace; font-size:0.8rem; display:none; white-space:pre-wrap;"></div>
+                <button class="btn btn-primary btn-block mt-3" onclick="runToolTest('${toolName}')">Run Test</button>
             </div>
         </div>
+        </div >
     `;
 
     // Append to body/host
@@ -810,7 +886,7 @@ window.runToolTest = async (toolName) => {
 
     try {
         const token = await getAuthToken();
-        const res = await fetch('http://localhost:5000/api/tools/test', {
+        const res = await fetch(`${API_BASE}/api/tools/test`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify({
@@ -849,7 +925,7 @@ window.testAgentLive = async (assistantId) => {
     try {
         console.log("Fetching Public Key...");
         const token = await getAuthToken();
-        const res = await fetch('http://localhost:5000/api/vapi/public-key', {
+        const res = await fetch(`${API_BASE}/api/vapi/public-key`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         const json = await res.json();
@@ -870,6 +946,7 @@ window.testAgentLive = async (assistantId) => {
     }
 };
 
+// --- DELETE AGENT ---
 window.deleteAgent = async (id) => {
     if (!confirm('Are you sure you want to delete this agent?')) return;
     try {
@@ -882,7 +959,7 @@ window.deleteAgent = async (id) => {
                 // 2. Delete from Vapi
                 const token = await getAuthToken();
                 try {
-                    await fetch(`http://localhost:5000/api/vapi/delete-agent/${data.vapiAssistantId}`, {
+                    await fetch(`${API_BASE}/api/vapi/delete-agent/${data.vapiAssistantId}`, {
                         method: 'DELETE',
                         headers: { 'Authorization': `Bearer ${token}` }
                     });
@@ -901,6 +978,9 @@ window.deleteAgent = async (id) => {
         window.showToast(e.message, 'error');
     }
 };
+
+// --- EMBED CODE MODAL ---
+
 
 let vapiInstance = null;
 
