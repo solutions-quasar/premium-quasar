@@ -676,11 +676,16 @@ app.post('/api/public/chat/:agentId', async (req, res) => {
                     let result = { error: "Tool not found" };
 
                     try {
-                        if (handlers[fnName]) {
-                            result = await handlers[fnName](fnArgs, projectId);
+                        // --- SECURITY CHECK (PUBLIC CHATBOT) ---
+                        if (agentData.tools && agentData.tools[fnName] === false) {
+                            result = { error: "Access to this tool is disabled by the administrator." };
                         } else {
-                            // Unified Dynamic Handler
-                            result = await dynamicHandler(fnName, fnArgs, projectId);
+                            if (handlers[fnName]) {
+                                result = await handlers[fnName](fnArgs, projectId);
+                            } else {
+                                // Unified Dynamic Handler
+                                result = await dynamicHandler(fnName, fnArgs, projectId);
+                            }
                         }
                     } catch (err) { result = { error: err.message }; }
 
