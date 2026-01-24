@@ -460,7 +460,9 @@ window.openAgentModal = (agentJson = null) => {
 
     window.agent_showEmbedCode = (id) => {
         const prodUrl = 'https://quasar-erp-b26d5.web.app';
-        const currentApiBase = API_BASE || prodUrl;
+        // Force Production URL for the snippet so users get the working public link
+        // Use API_BASE only if we really want to generate a localhost snippet (optional)
+        const currentApiBase = prodUrl;
 
         let cfg = {
             title: 'AI Assistant',
