@@ -44,17 +44,17 @@
 
     <!-- Dynamic Widget Loader -->
     <script>
-        (function() {
+        (function () {
             const params = new URLSearchParams(window.location.search);
             const agentId = params.get('agentId') || 'Bt3wDVnLiapt9u6vB2ho'; // Default ID
-            const apiBase = 'http://localhost:5000'; // Local Dev
-            
+            const apiBase = 'https://quasar-erp-b26d5.web.app'; // Production URL
+
             // Construct Script
             const script = document.createElement('script');
             script.src = `${apiBase}/chat-widget.js`;
             script.setAttribute('data-agent-id', agentId);
             script.setAttribute('data-api-base', apiBase);
-            
+
             document.body.appendChild(script);
 
             // UI Feedback
