@@ -2,6 +2,10 @@ import { db, auth } from './firebase-config.js';
 import { collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence, browserSessionPersistence, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
+const API_BASE = window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1')
+    ? 'http://localhost:5000'
+    : '';
+
 import { initDashboard } from './modules/dashboard.js';
 import { initCRM, addClient } from './modules/crm.js';
 import { initCalendar } from './modules/calendar.js';
@@ -12,7 +16,7 @@ import { initColdCall } from './modules/coldcall.js';
 import { initFollowup } from './modules/followup.js';
 import { initAccount } from './modules/account.js';
 import { initTeam } from './modules/team.js';
-import { initAiAgents } from './modules/ai_agents.js';
+import { initAiAgents } from './modules/ai_agents.js?v=999';
 
 function initAuth() {
     const loginView = document.getElementById('login-view');
@@ -200,7 +204,7 @@ window.handlePasswordReset = async () => {
 
     try {
         // Use Backend for Custom HTML Email (Premium Look)
-        const response = await fetch('http://localhost:5000/api/forgot-password', {
+        const response = await fetch(`${API_BASE}/api/forgot-password`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email })

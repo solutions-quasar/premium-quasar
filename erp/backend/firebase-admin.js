@@ -12,11 +12,16 @@ try {
 
 if (!admin.apps.length) {
     try {
-        admin.initializeApp({
-            credential: admin.credential.cert(serviceAccount),
-            // storageBucket: 'quasar-erp-b26d5.firebasestorage.app' // Optional if needed
-        });
-        console.log("Firebase Admin Initialized via Client Module");
+        if (serviceAccount || process.env.FIREBASE_CONFIG) {
+            admin.initializeApp({
+                credential: serviceAccount ? admin.credential.cert(serviceAccount) : admin.credential.applicationDefault()
+            });
+            console.log("Firebase Admin Initialized (Full Config)");
+        } else {
+            // Minimal init for Cloud Functions
+            admin.initializeApp();
+            console.log("Firebase Admin Initialized (Default)");
+        }
     } catch (error) {
         console.error("Firebase Init Error:", error.message);
     }

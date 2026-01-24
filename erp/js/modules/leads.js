@@ -4,6 +4,10 @@ import { getTeamDropdownOptions } from './team.js';
 import { LeadFilterService } from '../services/LeadFilterService.js';
 import Fuse from 'https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.mjs';
 
+const API_BASE = window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1')
+    ? 'http://localhost:5000'
+    : '';
+
 // Monitor hash changes to handle browser "Back" and "Forward" buttons
 window.addEventListener('hashchange', () => {
     const hash = window.location.hash;
@@ -1857,7 +1861,7 @@ window.sendLeadEmail = async (toEmail) => {
 
         const token = await user.getIdToken();
 
-        const response = await fetch('http://localhost:5000/api/send-email', {
+        const response = await fetch(`${API_BASE}/api/send-email`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -2075,7 +2079,7 @@ window.sendLeadToSelf = async (leadId) => {
 
     try {
         const token = await user.getIdToken();
-        const response = await fetch('http://localhost:5000/api/send-email', {
+        const response = await fetch(`${API_BASE}/api/send-email`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

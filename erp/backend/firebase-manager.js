@@ -1,16 +1,8 @@
 const admin = require('firebase-admin');
-const fs = require('fs');
-const path = require('path');
+const { db: systemDb } = require('./firebase-admin'); // The main ERP database
 
 // Cache for initialized apps: { projectId: admin.app.App }
 const apps = {};
-
-const CREDENTIALS_DIR = path.join(__dirname, 'credentials');
-
-// Ensure dir exists
-if (!fs.existsSync(CREDENTIALS_DIR)) {
-    fs.mkdirSync(CREDENTIALS_DIR, { recursive: true });
-}
 
 /**
  * loads or gets a firebase admin app for a specific project
@@ -20,30 +12,36 @@ if (!fs.existsSync(CREDENTIALS_DIR)) {
 async function getApp(projectId) {
     if (!projectId) throw new Error("ProjectId is required for isolation.");
 
-    // Return cached app if exists
+    // 1. Return cached app if exists
     if (apps[projectId]) return apps[projectId];
 
-    // Check if named app already exists in admin SDK (recover from restart/warm)
+    // 2. Check if named app already exists in admin SDK
     const existing = admin.apps.find(a => a && a.name === projectId);
     if (existing) {
         apps[projectId] = existing;
         return existing;
     }
 
-    // Load Credential File
-    const keyPath = path.join(CREDENTIALS_DIR, `${projectId}.json`);
-    if (!fs.existsSync(keyPath)) {
-        throw new Error(`No credentials found for Project ID: ${projectId}. Please upload serviceAccountKey.json.`);
-    }
-
+    // 3. Load Credential from SYSTEM DB (Firestore)
+    // We look in 'ai_projects' collection for the 'serviceAccountKey' field
     try {
-        const serviceAccount = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
+        const projectDoc = await systemDb.collection('ai_projects').doc(projectId).get();
+        if (!projectDoc.exists) {
+            throw new Error(`Project ${projectId} not found in ERP database.`);
+        }
+
+        const projectData = projectDoc.data();
+        const serviceAccount = projectData.serviceAccountKey;
+
+        if (!serviceAccount) {
+            throw new Error(`No credentials found for Project: ${projectId}. Please set them in Project Settings.`);
+        }
 
         // Initialize named app
         console.log(`[FirebaseManager] Initializing App: ${projectId}`);
         const app = admin.initializeApp({
             credential: admin.credential.cert(serviceAccount)
-        }, projectId); // Pass projectId as appName
+        }, projectId);
 
         apps[projectId] = app;
         return app;
@@ -60,7 +58,6 @@ async function verifyConnection(projectId) {
     try {
         const app = await getApp(projectId);
         const db = app.firestore();
-        // Try a lightweight read
         await db.listCollections();
         return true;
     } catch (e) {
@@ -70,23 +67,25 @@ async function verifyConnection(projectId) {
 }
 
 /**
- * Save generic json credential
+ * Save generic json credential to SYSTEM DB
  */
-function saveCredential(projectId, jsonContent) {
-    const keyPath = path.join(CREDENTIALS_DIR, `${projectId}.json`);
-    fs.writeFileSync(keyPath, JSON.stringify(jsonContent, null, 2));
+async function saveCredential(projectId, jsonContent) {
+    console.log(`[FirebaseManager] Saving credential for Project ${projectId} to Firestore`);
 
-    // Invalidate cache if exists to force reload
+    // Save to Firestore instead of Local FS
+    await systemDb.collection('ai_projects').doc(projectId).update({
+        serviceAccountKey: jsonContent,
+        updatedAt: new Date().toISOString(),
+        verified: true // Assuming it will be verified immediately after
+    });
+
+    // Invalidate cache
     if (apps[projectId]) {
-        // Apps cannot be easily deleted, but we can verify later. 
-        // Admin SDK doesn't support easy deleteApp without cleanup.
-        // For now, assume restart or we handle it.
-        // Actually, let's try to delete it to be safe.
         try {
-            apps[projectId].delete().catch(e => console.warn(e));
+            await apps[projectId].delete();
         } catch (e) { }
         delete apps[projectId];
     }
 }
 
-module.exports = { getApp, verifyConnection, saveCredential, CREDENTIALS_DIR };
+module.exports = { getApp, verifyConnection, saveCredential };
