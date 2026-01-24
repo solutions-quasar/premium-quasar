@@ -42,9 +42,32 @@
         <p><strong>Note:</strong> Make sure your backend (port 5000) is running!</p>
     </div>
 
-    <!-- GET YOUR REAL AGENT ID FROM THE ERP AND REPLACE THIS -->
-    <script src="http://localhost:5000/chat-widget.js" data-agent-id="Bt3wDVnLiapt9u6vB2ho"
-        data-api-base="http://localhost:5000"></script>
+    <!-- Dynamic Widget Loader -->
+    <script>
+        (function() {
+            const params = new URLSearchParams(window.location.search);
+            const agentId = params.get('agentId') || 'Bt3wDVnLiapt9u6vB2ho'; // Default ID
+            const apiBase = 'http://localhost:5000'; // Local Dev
+            
+            // Construct Script
+            const script = document.createElement('script');
+            script.src = `${apiBase}/chat-widget.js`;
+            script.setAttribute('data-agent-id', agentId);
+            script.setAttribute('data-api-base', apiBase);
+            
+            document.body.appendChild(script);
+
+            // UI Feedback
+            const card = document.querySelector('.card');
+            card.innerHTML += `
+                <div style="margin-top:20px; padding:10px; background:#eef; border-radius:8px; font-size:12px; text-align:left;">
+                    <strong>Active Config:</strong><br>
+                    Agent ID: ${agentId}<br>
+                    API Base: ${apiBase}
+                </div>
+            `;
+        })();
+    </script>
 
 </body>
 

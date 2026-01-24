@@ -1,5 +1,5 @@
 import { db } from '../firebase-config.js';
-import { collection, query, where, getDocs, addDoc, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { collection, query, where, getDocs, getDoc, addDoc, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 // --- CONFIG ---
 const API_BASE = window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1')
@@ -462,47 +462,45 @@ window.openAgentModal = (agentJson = null) => {
         const prodUrl = 'https://quasar-erp-b26d5.web.app';
         const currentApiBase = API_BASE || prodUrl;
 
-        // Default Defaults
         let cfg = {
             title: 'AI Assistant',
             color: '#dfa53a',
             welcome: 'Hello! How can I help you today?',
-            vapiId: ''
+            vapiId: '',
+            toggleIcon: 'chat',
+            voiceHint: true
         };
 
-        // Try to pre-fill vapi ID if available in current scope
-        const agentNameInput = document.getElementById('ag-name');
-        if (!agentNameInput) {
-            // We are not in edit mode, fetch might be needed but for now let's leave blank
-        } else {
-            // If we can find the agent data attached to the edit form...
-            // Simplified: Just let user paste it or use what's in local variable if available
-        }
-
-        // Better: Fetch the agent document to get the Vapi ID automatically
+        // Fetch config from DB
         getDoc(doc(db, "ai_agents", id)).then(snap => {
             if (snap.exists()) {
                 const d = snap.data();
-                if (d.vapiAssistantId) {
-                    cfg.vapiId = d.vapiAssistantId;
-                    if (document.getElementById('emb-vapi')) {
-                        document.getElementById('emb-vapi').value = cfg.vapiId;
-                        updateCode();
-                    }
+                if (d.name) cfg.title = d.name;
+                if (d.color) cfg.color = d.color;
+                if (d.welcomeMessage) cfg.welcome = d.welcomeMessage;
+                if (d.vapiAssistantId) cfg.vapiId = d.vapiAssistantId;
+                if (d.toggleIcon) cfg.toggleIcon = d.toggleIcon;
+
+                // Update UI if open
+                if (document.getElementById('emb-title')) {
+                    document.getElementById('emb-title').value = cfg.title;
+                    document.getElementById('emb-color').value = cfg.color;
+                    document.getElementById('emb-color-text').value = cfg.color;
+                    document.getElementById('emb-welcome').value = cfg.welcome;
+                    document.getElementById('emb-vapi').value = cfg.vapiId;
+
+                    const radio = document.querySelector(`input[name="emb-icon"][value="${cfg.toggleIcon}"]`);
+                    if (radio) radio.checked = true;
                 }
             }
         });
 
         const generateSnippet = () => {
-            const vapiAttr = cfg.vapiId ? `\n    data-vapi-id="${cfg.vapiId}"` : '';
             return `<!-- Quasar Chat Widget -->
 <script 
     src="${currentApiBase}/chat-widget.js" 
     data-agent-id="${id}"
     data-api-base="${currentApiBase}"
-    data-title="${cfg.title}"
-    data-primary-color="${cfg.color}"
-    data-welcome-msg="${cfg.welcome}"${vapiAttr}
 ></script>`.trim();
         };
 
@@ -512,21 +510,24 @@ window.openAgentModal = (agentJson = null) => {
         overlay.style.zIndex = '999999';
 
         overlay.innerHTML = `
-            <div class="crm-modal-content" style="max-width:600px;" onclick="event.stopPropagation()">
+            <div class="crm-modal-content" style="max-width:700px;" onclick="event.stopPropagation()">
                 <div class="crm-modal-header">
-                    <div class="text-h">Embed Widget</div>
+                    <div class="text-h">Embed & Customize Widget</div>
                     <button class="icon-btn" onclick="this.closest('.crm-modal-overlay').remove()"><span class="material-icons">close</span></button>
                 </div>
                 <div class="crm-modal-body">
                     
-                    <div style="background:var(--bg-dark); padding:1.5rem; border-radius:8px; margin-bottom:1.5rem; border:1px solid var(--border);">
-                        <div class="text-sm font-bold mb-3 text-gold">Customization</div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
                         
-                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:10px;">
+                        <!-- Left: Customization -->
+                        <div>
+                            <div class="text-sm font-bold mb-3 text-gold">Appearance</div>
+                            
                             <div class="form-group">
                                 <label class="form-label">Widget Title</label>
                                 <input type="text" id="emb-title" class="form-input" value="${cfg.title}">
                             </div>
+
                             <div class="form-group">
                                 <label class="form-label">Primary Color</label>
                                 <div style="display:flex; gap:10px;">
@@ -534,24 +535,61 @@ window.openAgentModal = (agentJson = null) => {
                                     <input type="text" id="emb-color-text" class="form-input" value="${cfg.color}">
                                 </div>
                             </div>
+
+                            <div class="form-group">
+                                <label class="form-label">Toggle Icon</label>
+                                <div style="display:flex; gap:10px; margin-top:5px; flex-wrap:wrap;">
+                                    <label style="cursor:pointer; display:flex; align-items:center; gap:4px; font-size:0.9rem;">
+                                        <input type="radio" name="emb-icon" value="chat" checked> Chat
+                                    </label>
+                                    <label style="cursor:pointer; display:flex; align-items:center; gap:4px; font-size:0.9rem;">
+                                        <input type="radio" name="emb-icon" value="robot"> Robot
+                                    </label>
+                                    <label style="cursor:pointer; display:flex; align-items:center; gap:4px; font-size:0.9rem;">
+                                        <input type="radio" name="emb-icon" value="sparkles"> Sparkles
+                                    </label>
+                                    <label style="cursor:pointer; display:flex; align-items:center; gap:4px; font-size:0.9rem;">
+                                        <input type="radio" name="emb-icon" value="question"> ?
+                                    </label>
+                                </div>
+                            </div>
                         </div>
 
-                        <div class="form-group" style="margin-bottom:15px;">
-                            <label class="form-label">Vapi Voice ID (Optional)</label>
-                            <input type="text" id="emb-vapi" class="form-input" placeholder="Paste Vapi Assistant ID for Voice Support" value="${cfg.vapiId}">
-                            <div class="text-xs text-muted">Leave empty to disable voice chat.</div>
-                        </div>
+                        <!-- Right: Content & Voice -->
+                        <div>
+                            <div class="text-sm font-bold mb-3 text-gold">Content & Voice</div>
 
-                        <div class="form-group">
-                            <label class="form-label">Welcome Message</label>
-                            <input type="text" id="emb-welcome" class="form-input" value="${cfg.welcome}">
+                            <div class="form-group">
+                                <label class="form-label">Welcome Message</label>
+                                <input type="text" id="emb-welcome" class="form-input" value="${cfg.welcome}">
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">Vapi Assistant ID</label>
+                                <input type="text" id="emb-vapi" class="form-input" placeholder="Optional (Enable Voice)" value="${cfg.vapiId}">
+                            </div>
+                            
+                            <!-- Save Button -->
+                            <button id="btn-save-config" class="btn btn-secondary btn-sm mt-3" style="width:100%;">
+                                <span class="material-icons" style="font-size:1rem;">save</span> Save Config to Cloud
+                            </button>
+                            <div id="save-status" class="text-xs text-center mt-2 text-muted" style="height:1.2rem;"></div>
                         </div>
                     </div>
 
+                    <hr style="border:0; border-top:1px solid #333; margin:20px 0;">
+
                     <div class="form-group">
-                        <label class="form-label">Copy Code</label>
-                        <p class="text-xs text-muted mb-2">Paste this before the closing &lt;/body&gt; tag.</p>
-                        <textarea id="emb-code" class="form-input" rows="10" readonly style="font-family:monospace; font-size:0.8rem; background:#111; color:#0f0;">${generateSnippet()}</textarea>
+                        <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:5px;">
+                            <label class="form-label">Universal Embed Code</label>
+                            <button id="btn-preview" class="btn btn-sm" style="background:#334; border:1px solid #556;">
+                                <span class="material-icons" style="font-size:1rem; vertical-align:middle; margin-right:4px;">visibility</span> Preview
+                            </button>
+                        </div>
+                        <p class="text-xs text-muted mb-2">
+                            Paste this code <b>once</b>. Future design changes will update automatically.
+                        </p>
+                        <textarea id="emb-code" class="form-input" rows="5" readonly style="font-family:monospace; font-size:0.8rem; background:#111; color:#0f0;">${generateSnippet()}</textarea>
                     </div>
 
                     <button class="btn btn-primary btn-block mt-3" onclick="navigator.clipboard.writeText(document.getElementById('emb-code').value); this.innerText='Copied!'">
@@ -564,27 +602,75 @@ window.openAgentModal = (agentJson = null) => {
 
         document.body.appendChild(overlay);
 
-        // Bind Events
-        const updateCode = () => {
+        // --- HANDLERS ---
+        const updateState = () => {
             cfg.title = document.getElementById('emb-title').value;
             cfg.color = document.getElementById('emb-color').value;
             document.getElementById('emb-color-text').value = cfg.color;
-            cfg.vapiId = document.getElementById('emb-vapi').value;
             cfg.welcome = document.getElementById('emb-welcome').value;
+            cfg.vapiId = document.getElementById('emb-vapi').value;
+
+            const selectedIcon = document.querySelector('input[name="emb-icon"]:checked');
+            if (selectedIcon) cfg.toggleIcon = selectedIcon.value;
+
             document.getElementById('emb-code').value = generateSnippet();
         };
 
-        const updateColorText = () => {
-            cfg.color = document.getElementById('emb-color-text').value;
-            document.getElementById('emb-color').value = cfg.color;
-            updateCode();
+        const saveToCloud = async () => {
+            const btn = document.getElementById('btn-save-config');
+            const status = document.getElementById('save-status');
+
+            btn.innerHTML = 'Saving...';
+            btn.disabled = true;
+
+            try {
+                // Update Firestore
+                await updateDoc(doc(db, "ai_agents", id), {
+                    name: cfg.title,
+                    color: cfg.color,
+                    welcomeMessage: cfg.welcome,
+                    vapiAssistantId: cfg.vapiId,
+                    toggleIcon: cfg.toggleIcon
+                });
+
+                status.innerText = "Saved! Live widget updated.";
+                status.style.color = "#4caf50";
+                setTimeout(() => status.innerText = "", 3000);
+            } catch (e) {
+                console.error(e);
+                status.innerText = "Error saving config.";
+                status.style.color = "#ff4444";
+            } finally {
+                btn.innerHTML = '<span class="material-icons" style="font-size:1rem;">save</span> Save Config to Cloud';
+                btn.disabled = false;
+            }
         };
 
-        document.getElementById('emb-title').oninput = updateCode;
-        document.getElementById('emb-color').oninput = updateCode;
-        document.getElementById('emb-color-text').oninput = updateColorText;
-        document.getElementById('emb-vapi').oninput = updateCode;
-        document.getElementById('emb-welcome').oninput = updateCode;
+        const openPreview = () => {
+            const params = new URLSearchParams({
+                agentId: id,
+                preview: 'true',
+                title: cfg.title,
+                color: cfg.color,
+                welcome: cfg.welcome,
+                vapiId: cfg.vapiId,
+                toggleIcon: cfg.toggleIcon
+            });
+            window.open(`${currentApiBase}/erp/test-widget.html?${params.toString()}`, '_blank');
+        };
+
+        document.getElementById('emb-title').oninput = updateState;
+        document.getElementById('emb-color').oninput = updateState;
+        document.getElementById('emb-color-text').oninput = () => {
+            cfg.color = document.getElementById('emb-color-text').value;
+            document.getElementById('emb-color').value = cfg.color;
+        };
+        document.getElementById('emb-welcome').oninput = updateState;
+        document.getElementById('emb-vapi').oninput = updateState;
+        document.querySelectorAll('input[name="emb-icon"]').forEach(r => r.onchange = updateState);
+
+        document.getElementById('btn-save-config').onclick = saveToCloud;
+        document.getElementById('btn-preview').onclick = openPreview;
 
         overlay.onclick = (e) => {
             if (e.target === overlay) overlay.remove();
