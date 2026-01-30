@@ -75,10 +75,8 @@ const CONFIG = {
         { label: { en: "Home", fr: "Accueil" }, href: "#top", icon: ICONS.home },
         { label: { en: "Services", fr: "Services" }, href: "#services", icon: ICONS.layers },
         { label: { en: "About", fr: "À Propos" }, href: "about.html", icon: ICONS.info },
-        { label: { en: "Reviews", fr: "Témoignages" }, href: "#reviews", icon: ICONS.star },
-        { label: { en: "Why Us", fr: "Pourquoi Nous" }, href: "#why-us", icon: ICONS.award },
-        { label: { en: "Client Portal", fr: "Portail Client" }, href: "portal.html", icon: ICONS.layers },
-        { label: { en: "Contact", fr: "Contact" }, href: "#contact", icon: ICONS.message }
+        { label: { en: "Contact", fr: "Contact" }, href: "#contact", icon: ICONS.message },
+        { label: { en: "Client Portal", fr: "Portail Client" }, href: "portal.html", icon: ICONS.layers }
     ],
     hero: {
         h1: { en: "Premium websites and apps for high standard businesses.", fr: "Sites web et applications premium pour entreprises exigeantes." },
@@ -698,8 +696,13 @@ function renderSite() {
     }
     const contactEmail = document.querySelector('.contact-email');
     if (contactEmail) {
-        contactEmail.textContent = currentLang === 'fr' ? 'Nous Écrire' : 'Email Us';
-        contactEmail.href = `mailto:${CONFIG.business.email} `;
+        contactEmail.innerHTML = ICONS.message;
+        // Point to Contact Form instead of mailto:
+        contactEmail.href = isSubPage ? 'index.html#contact' : '#contact';
+        contactEmail.ariaLabel = currentLang === 'fr' ? 'Nous Écrire' : 'Email Us';
+        contactEmail.title = currentLang === 'fr' ? 'Nous Écrire' : 'Email Us';
+        contactEmail.style.display = 'flex';
+        contactEmail.style.alignItems = 'center';
     }
 
     // Add Language Toggle to Desktop Header
@@ -808,9 +811,10 @@ function renderSite() {
     // Render Contact Info
     // Render Contact Info (Premium Cards Design)
     const contactCards = document.querySelectorAll('.contact-card');
+    const contactNav = CONFIG.nav.find(n => n.href === '#contact');
     contactCards.forEach(card => {
         card.innerHTML = `
-            <h3 style="margin-bottom:1.5rem">${t(CONFIG.nav[5].label)}</h3>
+            <h3 style="margin-bottom:1.5rem">${t(contactNav ? contactNav.label : { en: 'Contact', fr: 'Contact' })}</h3>
             <div class="contact-details-grid">
                 <!-- Phone -->
                 <a href="tel:${CONFIG.business.phoneClean}" class="contact-detail-item">
