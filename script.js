@@ -555,15 +555,13 @@ function renderAboutPage() {
 
 function renderSite() {
     // Determine context: Fix navigation on service pages
-    const isSubPage = window.location.pathname.includes('websites.html') ||
-        window.location.pathname.includes('apps.html') ||
-        window.location.pathname.includes('ai.html') ||
-        window.location.pathname.includes('privacy.html') ||
-        window.location.pathname.includes('404.html') ||
-        window.location.pathname.includes('about.html');
+    // Determine context: Generic check for any non-index page
+    const path = window.location.pathname;
+    const isSubPage = path !== '/' && !path.endsWith('index.html') && !path.endsWith('/');
 
     const getLinkHref = (href) => {
-        if (isSubPage && href.startsWith('#') && href !== '#contact') {
+        // Rewrite all hash links (including #contact) to point to index.html if we are on a subpage
+        if (isSubPage && href.startsWith('#')) {
             return 'index.html' + href;
         }
         return href;
@@ -623,12 +621,17 @@ function renderSite() {
 
             return `
                 <div style="width:100%">
-                    <button class="mobile-dropdown-trigger">
+                    <button class="mobile-dropdown-trigger" onclick="window.toggleMobileDropdown(this, event)">
                         <div style="display:flex; align-items:center; gap:1rem;">
-                            ${link.icon || ''}
+                            <!-- Ensure text and icon align -->
+                            <div style="display:flex; align-items:center; justify-content:center; min-width:24px;">
+                                ${ICONS[link.icon] || link.icon || ''}
+                            </div>
                             ${t(link.label)}
                         </div>
-                        <span class="trigger-icon">${ICONS.arrow}</span>
+                        <span class="trigger-icon">
+                            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                        </span>
                     </button>
                     <div class="mobile-dropdown-content">
                         ${dropdownItems}

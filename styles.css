@@ -1137,6 +1137,20 @@ footer {
     cursor: pointer;
 }
 
+.mobile-dropdown-trigger svg {
+    stroke: var(--gold);
+}
+
+.trigger-icon {
+    transition: transform 0.3s ease;
+    display: flex;
+    align-items: center;
+}
+
+.mobile-dropdown-trigger.open .trigger-icon {
+    transform: rotate(180deg);
+}
+
 .mobile-dropdown-content {
     max-height: 0;
     overflow: hidden;
