@@ -2,6 +2,7 @@ import { db } from '../firebase-config.js';
 import { collection, query, where, limit, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 export async function initDashboard() {
+    console.log('Initializing Dashboard...');
     const container = document.getElementById('view-dashboard');
 
     container.innerHTML = `

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Successful | Premium Quasar</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0B0D10;
+            --bg-card: #15171C;
+            --gold: #DFA53A;
+            --text-main: #F0F2F5;
+            --text-muted: #A0A5B0;
+            --success: #21BA45;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .container {
+            text-align: center;
+            background: var(--bg-card);
+            padding: 3rem;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        .icon-circle {
+            width: 80px;
+            height: 80px;
+            background: rgba(33, 186, 69, 0.1);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem auto;
+            color: var(--success);
+            border: 1px solid rgba(33, 186, 69, 0.2);
+        }
+
+        .icon-circle .material-icons {
+            font-size: 40px;
+        }
+
+        h1 {
+            margin: 0 0 0.5rem 0;
+            color: var(--gold);
+        }
+
+        p {
+            color: var(--text-muted);
+            line-height: 1.6;
+            margin-bottom: 2rem;
+        }
+
+        .invoice-badge {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-family: monospace;
+            color: var(--text-main);
+        }
+
+        .btn {
+            display: inline-block;
+            background: var(--gold);
+            color: #000;
+            text-decoration: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-weight: 600;
+            transition: opacity 0.2s;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="icon-circle">
+            <span class="material-icons">check</span>
+        </div>
+        <h1>Payment Successful</h1>
+        <p>Thank you! Your payment for invoice <span id="inv-num" class="invoice-badge">...</span> has been processed
+            securely.</p>
+
+        <a href="javascript:window.close()" class="btn">Close Window</a>
+    </div>
+
+    <script>
+        // Get params
+        const params = new URLSearchParams(window.location.search);
+        const invId = params.get('number') || params.get('invoice_id') || 'Unknown';
+        document.getElementById('inv-num').innerText = invId;
+    </script>
+</body>
+
+</html>

@@ -16,11 +16,17 @@
         welcome: 'Hello! How can I help you today?',
         vapiId: null,
         toggleIcon: 'chat',
-        voiceHint: true
+        voiceHint: true,
+        avatar: '',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        firstMessageMode: 'assistant-speaks-first',
+        firstMessage: ''
     };
     let history = [];
     let vapiInstance = null;
     let isCallActive = false;
+    let sessionId = null;
 
     // ICON SVG MAP
     const ICONS = {
@@ -38,8 +44,15 @@
             if (data.success) {
                 config = { ...config, ...data.config };
             }
+
+            // Initialize Session
+            sessionId = localStorage.getItem(`qc-session-${agentId}`);
+            if (!sessionId) {
+                sessionId = 'ssn_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+                localStorage.setItem(`qc-session-${agentId}`, sessionId);
+            }
         } catch (e) {
-            console.warn('[Quasar Chat] Using default config (Network Error)');
+            console.warn('[Quasar Chat] Initializing with defaults');
         }
 
         renderWidget();
@@ -125,13 +138,17 @@
             
             /* Mic Button */
             #quasar-chat-mic { 
-                background: transparent; border: 1px solid #444; 
+                background: rgba(255, 255, 255, 0.05); border: 1px solid #444; 
                 color: #888; 
                 width: 40px; height: 40px; border-radius: 50%; 
                 cursor: pointer; display: flex; align-items: center; justify-content: center; 
                 transition: all 0.2s; 
+                position: relative;
             }
-            #quasar-chat-mic:hover { background: #333; color: white; border-color: #666; }
+            #quasar-chat-mic:not(.active) {
+                animation: soft-pulse 3s infinite;
+            }
+            #quasar-chat-mic:hover { background: #333; color: white; border-color: ${config.color}; }
             #quasar-chat-mic.active { 
                 background: #ff4444 !important; border-color: #ff4444 !important; color: white !important; 
                 animation: pulse 1.5s infinite; 
@@ -153,10 +170,47 @@
                 70% { box-shadow: 0 0 0 15px rgba(255, 68, 68, 0); }
                 100% { box-shadow: 0 0 0 0 rgba(255, 68, 68, 0); }
             }
+            @keyframes soft-pulse {
+                0% { box-shadow: 0 0 0 0 ${config.color}33; }
+                70% { box-shadow: 0 0 0 10px ${config.color}00; }
+                100% { box-shadow: 0 0 0 0 ${config.color}00; }
+            }
             @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+            @keyframes fade-in-out {
+                0%, 100% { opacity: 0.4; }
+                50% { opacity: 1; }
+            }
             
             /* Voice Hint */
-            .qc-voice-hint { text-align: center; color: #666; font-size: 12px; margin-top: auto; margin-bottom: 20px; opacity: 0.7; }
+            .qc-voice-hint { 
+                text-align: center; 
+                color: ${config.color}; 
+                font-size: 11px; 
+                font-weight: 500;
+                margin-top: auto; 
+                margin-bottom: 12px; 
+                opacity: 0.9;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+                animation: fade-in-out 3s infinite;
+            }
+
+            .qc-header-avatar {
+                width: 32px;
+                height: 32px;
+                border-radius: 50%;
+                border: 2px solid ${config.color};
+                margin-right: 10px;
+                object-fit: cover;
+                background: #444;
+            }
+
+            .qc-bubble-avatar {
+                width: 100%;
+                height: 100%;
+                border-radius: 50%;
+                object-fit: cover;
+            }
 
         `;
         const styleTag = document.createElement('style');
@@ -170,7 +224,7 @@
             <div id="quasar-chat-window">
                 <div id="quasar-chat-header">
                     <div style="display:flex; align-items:center;">
-                        <span class="qc-status-dot"></span>
+                        ${config.avatar ? `<img src="${config.avatar}" class="qc-header-avatar" alt="Avatar">` : `<span class="qc-status-dot"></span>`}
                         ${config.title}
                     </div>
                     <span id="quasar-chat-close" style="cursor:pointer; font-size:20px; opacity:0.7;">&times;</span>
@@ -199,7 +253,7 @@
                 </div>
             </div>
             <div id="quasar-chat-bubble">
-                ${ICONS[config.toggleIcon] || ICONS.chat}
+                ${config.avatar ? `<img src="${config.avatar}" class="qc-bubble-avatar" alt="Toggle">` : (ICONS[config.toggleIcon] || ICONS.chat)}
             </div>
         `;
         document.body.appendChild(widget);
@@ -241,12 +295,11 @@
         body.scrollTop = body.scrollHeight;
 
         try {
+            history.push({ role: "user", content: text });
             const res = await fetch(`${apiBase}/api/public/chat/${agentId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    messages: [...history, { role: "user", content: text }]
-                })
+                body: JSON.stringify({ messages: history, sessionId })
             });
             const data = await res.json();
             loader.style.display = 'none';
@@ -317,7 +370,23 @@
                 });
             }
 
-            vapiInstance.start(config.vapiId);
+            // --- ASSISTANT OVERRIDES ---
+            // If they customized settings in our ERP, we pass them as overrides
+            const overrides = {
+                model: {
+                    provider: config.provider || "openai",
+                    model: config.model || "gpt-4o-mini",
+                },
+                firstMessage: config.firstMessage || config.welcome
+            };
+
+            // Support user-speaks-first by making firstMessage empty? 
+            // Vapi has a specific prop for this usually, but a safe way is:
+            if (config.firstMessageMode === 'user-speaks-first') {
+                overrides.firstMessage = "";
+            }
+
+            vapiInstance.start(config.vapiId, overrides);
 
         } catch (e) {
             console.error("Vapi Start Failed:", e);

@@ -1,14 +1,20 @@
+const dotenv = require('dotenv');
+dotenv.config();
 const express = require('express');
 const cors = require('cors');
-const dotenv = require('dotenv');
-const { tools, handlers, dynamicHandler } = require('./vapi-tools');
-const { saveCredential, verifyConnection, getApp } = require('./firebase-manager'); // Import Manager
-const { discoverSchema } = require('./schema-discovery');
+const crypto = require('crypto');
 const OpenAI = require('openai');
+const stripe = process.env.STRIPE_SECRET_KEY ? require('stripe')(process.env.STRIPE_SECRET_KEY) : null;
+
+if (!stripe) {
+    console.warn("⚠️ STRIPE_SECRET_KEY is missing in .env! Payments will be disabled.");
+}
+const { tools, handlers, dynamicHandler } = require('./vapi-tools');
+const googleAuth = require('./google-auth');
+const { saveCredential, verifyConnection, getApp } = require('./firebase-manager');
+const { discoverSchema } = require('./schema-discovery');
 
 
-
-dotenv.config();
 const PROD_URL = 'https://quasar-erp-b26d5.web.app';
 const SERVER_URL = process.env.SERVER_URL || PROD_URL;
 
@@ -152,6 +158,70 @@ app.post('/api/forgot-password', async (req, res) => {
     }
 });
 
+// Public Contact Form Endpoint
+app.post('/api/contact', async (req, res) => {
+    const { name, company, contact_method, interest, message } = req.body;
+
+    // Basic validation
+    if (!name || !contact_method) {
+        return res.status(400).json({ success: false, error: "Name and Contact Method are required." });
+    }
+
+    if (!resend) {
+        console.error("Resend not configured");
+        return res.status(500).json({ success: false, error: "Email service not configured. Please check server logs." });
+    }
+
+    const htmlContent = `
+    <div style="font-family: sans-serif; padding: 20px; color: #333;">
+        <h2 style="color: #dfa53a;">New Strategy Call Request</h2>
+        <p><strong>Name:</strong> ${name}</p>
+        <p><strong>Company:</strong> ${company || 'N/A'}</p>
+        <p><strong>Contact:</strong> ${contact_method}</p>
+        <p><strong>Interest:</strong> ${interest || 'N/A'}</p>
+        <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin-top: 10px;">
+            <strong>Message:</strong><br>
+            ${(message || '').replace(/\n/g, '<br>')}
+        </div>
+    </div>
+    `;
+
+    try {
+        const fromEmail = process.env.EMAIL_FROM || 'onboarding@resend.dev';
+        // Use the hardcoded email found in the file as a safe default for notifications
+        const notificationEmail = 'info@solutionsquasar.ca';
+
+        // 1. Send Email via Resend
+        await resend.emails.send({
+            from: 'Website Lead <' + fromEmail + '>',
+            to: [notificationEmail],
+            reply_to: contact_method.includes('@') ? contact_method : undefined,
+            subject: `New Lead: ${name} - ${interest}`,
+            html: htmlContent
+        });
+
+        // 2. Sync to Firebase (Save to Firestore)
+        await db.collection('crm_leads').add({
+            name,
+            company: company || null,
+            contactMethod: contact_method,
+            interest: interest || 'General',
+            message: message || '',
+            status: 'New',
+            source: 'website_contact_form',
+            createdAt: new Date().toISOString()
+        });
+
+        console.log(`Lead saved and emailed: ${name}`);
+
+        res.json({ success: true, message: "Request received successfully." });
+
+    } catch (error) {
+        console.error("Contact Form Error:", error);
+        res.status(500).json({ success: false, error: "Failed to send email. Please try again later." });
+    }
+});
+
 app.post('/api/send-email', verifyToken, async (req, res) => {
     const { to, subject, body } = req.body;
 
@@ -221,6 +291,93 @@ const axios = require('axios');
 
 // ... (Email routes) ...
 
+// --- STRIPE INTEGRATION ---
+
+// 1. Create Checkout Session for an Invoice
+app.post('/api/sales/create-checkout-session', verifyToken, async (req, res) => {
+    if (!stripe) {
+        return res.status(500).json({ success: false, error: "Stripe is not configured on the server." });
+    }
+    const { invoiceId, amount, clientName, clientEmail, number } = req.body;
+
+    if (!invoiceId || !amount) {
+        return res.status(400).json({ success: false, error: "Missing invoiceId or amount" });
+    }
+
+    try {
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ['card'],
+            customer_email: clientEmail,
+            line_items: [{
+                price_data: {
+                    currency: 'usd',
+                    product_data: {
+                        name: `Invoice #${number || invoiceId}`,
+                        description: `Payment for ${clientName || 'Invoice'}`,
+                    },
+                    unit_amount: Math.round(amount * 100), // Stripe expects cents
+                },
+                quantity: 1,
+            }],
+            mode: 'payment',
+            success_url: `${SERVER_URL}/erp/payment_success.html?invoice_id=${invoiceId}&number=${number || invoiceId}`,
+            cancel_url: `${SERVER_URL}/erp/index.html#sales?payment=cancelled&id=${invoiceId}`,
+            metadata: {
+                invoiceId: invoiceId,
+                type: 'invoice_payment'
+            }
+        });
+
+        res.json({ success: true, url: session.url });
+    } catch (error) {
+        console.error("Stripe Session Error:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 2. Stripe Webhook Handler
+// Note: This requires the raw body for signature verification.
+app.post('/api/stripe-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+    let event;
+
+    try {
+        if (endpointSecret) {
+            event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+        } else {
+            // If no secret, we trust the body (NOT RECOMMENDED for production)
+            event = JSON.parse(req.body);
+        }
+    } catch (err) {
+        console.error(`Webhook Error: ${err.message}`);
+        return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    // Handle the event
+    if (event.type === 'checkout.session.completed') {
+        const session = event.data.object;
+        const invoiceId = session.metadata.invoiceId;
+
+        if (invoiceId) {
+            console.log(`Payment successful for Invoice: ${invoiceId}`);
+            try {
+                // Update Invoice Status in Firestore
+                await db.collection('invoices').doc(invoiceId).update({
+                    status: 'Paid',
+                    paidAt: new Date().toISOString(),
+                    stripeSessionId: session.id
+                });
+            } catch (error) {
+                console.error("Failed to update invoice status:", error);
+            }
+        }
+    }
+
+    res.json({ received: true });
+});
+
 // --- VAPI INTEGRATION ---
 
 // 1. Get Public Key (Protected - Internal Use)
@@ -258,7 +415,8 @@ app.get('/api/public/widget-config/:agentId', async (req, res) => {
                 welcome: data.welcomeMessage || 'Hello! How can I help you today?',
                 vapiId: data.vapiAssistantId || null,
                 toggleIcon: data.toggleIcon || 'chat',
-                voiceHint: data.voiceHint !== false // Default to true
+                voiceHint: data.voiceHint !== false, // Default to true
+                avatar: data.avatarUrl || null
             }
         });
 
@@ -266,6 +424,247 @@ app.get('/api/public/widget-config/:agentId', async (req, res) => {
         console.error("Config Fetch Error:", e);
         res.status(500).json({ success: false, error: e.message });
     }
+});
+
+// --- GOOGLE INTEGRATIONS ---
+
+app.get('/api/integrations/google/auth-url', (req, res) => {
+    const { projectId } = req.query;
+    if (!projectId) return res.status(400).json({ error: "Missing projectId" });
+    const url = googleAuth.getAuthUrl(projectId);
+    res.json({ url });
+});
+
+app.get('/api/integrations/google/callback', async (req, res) => {
+    const { code, state: projectId } = req.query;
+    try {
+        const tokens = await googleAuth.getTokensFromCode(code);
+        await db.collection('ai_projects').doc(projectId).update({
+            googleTokens: tokens,
+            googleConnectedAt: new Date().toISOString()
+        });
+        // Redirect back to portal
+        res.redirect(`${SERVER_URL}/erp/portal.html?pid=${projectId}`);
+    } catch (e) {
+        console.error("Google Callback Error:", e);
+        res.status(500).send("Failed to connect Google account.");
+    }
+});
+
+// --- CLIENT PORTAL USER MANAGEMENT ---
+
+app.post('/api/projects/:projectId/portal-user', verifyToken, async (req, res) => {
+    const { projectId } = req.params;
+    const { email, password } = req.body;
+
+    if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
+
+    try {
+        let user;
+        try {
+            user = await admin.auth().getUserByEmail(email);
+            // User exists, update password if provided
+            await admin.auth().updateUser(user.uid, { password });
+        } catch (e) {
+            // Create New User
+            user = await admin.auth().createUser({
+                email,
+                password,
+                emailVerified: true
+            });
+        }
+
+        // Set Custom Claims for Project Isolation
+        await admin.auth().setCustomUserClaims(user.uid, {
+            role: 'client',
+            projectId: projectId
+        });
+
+        // Update Project Doc
+        await db.collection('ai_projects').doc(projectId).update({
+            portalEmail: email,
+            updatedAt: new Date().toISOString()
+        });
+
+        res.json({ success: true, message: `Portal access granted to ${email}` });
+
+    } catch (e) {
+        console.error("Portal User Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- CLIENT INVITATION FLOW ---
+
+app.post('/api/projects/:projectId/invite-client', verifyToken, async (req, res) => {
+    const { projectId } = req.params;
+    const { email } = req.body;
+
+    if (!email) return res.status(400).json({ error: "Email is required" });
+
+    try {
+        const projectDoc = await db.collection('ai_projects').doc(projectId).get();
+        if (!projectDoc.exists) return res.status(404).json({ error: "Project not found" });
+        const projectName = projectDoc.data().name;
+
+        // 1. Generate Token
+        const token = crypto.randomBytes(32).toString('hex');
+        const expiresAt = new Date();
+        expiresAt.setHours(expiresAt.getHours() + 48); // 48 hour expiry
+
+        // 2. Store Invitation
+        await db.collection('ai_invitations').doc(token).set({
+            email,
+            projectId,
+            projectName,
+            expiresAt: expiresAt.toISOString(),
+            used: false
+        });
+
+        // 3. Send Email
+        const inviteLink = `${PROD_URL}/erp/portal.html?invite=${token}`;
+        const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body { background-color: #08090a; color: #f0f2f5; font-family: 'Outfit', sans-serif; margin: 0; padding: 0; }
+                .container { max-width: 600px; margin: 40px auto; background: #121418; border-radius: 24px; overflow: hidden; border: 1px solid #2d3139; }
+                .header { padding: 40px; text-align: center; border-bottom: 1px solid #2d3139; }
+                .content { padding: 40px; text-align: center; }
+                .btn { display: inline-block; background-color: #dfa53a; color: #000; padding: 16px 32px; text-decoration: none; border-radius: 12px; font-weight: bold; margin-top: 24px; }
+                .footer { padding: 20px; text-align: center; color: #94a3b8; font-size: 12px; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1 style="color: #dfa53a; margin: 0; font-size: 24px; letter-spacing: 2px;">QUASAR AI</h1>
+                </div>
+                <div class="content">
+                    <h2 style="margin-top: 0; font-size: 20px;">Welcome to your Portal</h2>
+                    <p style="color: #94a3b8; line-height: 1.6;">You have been invited to manage your AI workforce for <strong>${projectName}</strong>.</p>
+                    <p style="color: #94a3b8;">Click the button below to secure your account and set your password.</p>
+                    
+                    <a href="${inviteLink}" class="btn">Setup My Portal</a>
+                    
+                    <p style="margin-top: 30px; font-size: 12px; color: #555;">This invitation link expires in 48 hours.</p>
+                </div>
+                <div class="footer">
+                    &copy; ${new Date().getFullYear()} Solutions Quasar Inc.
+                </div>
+            </div>
+        </body>
+        </html>
+        `;
+
+        const fromEmail = process.env.EMAIL_FROM || 'onboarding@resend.dev';
+        if (!resend) throw new Error("Email service not configured");
+
+        await resend.emails.send({
+            from: 'Quasar AI <' + fromEmail + '>',
+            to: [email],
+            subject: `Invitation: Access your portal for ${projectName}`,
+            html: htmlContent
+        });
+
+        res.json({ success: true, message: `Invitation sent to ${email}` });
+
+    } catch (e) {
+        console.error("Invite Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/public/portal/verify-invite/:token', async (req, res) => {
+    const { token } = req.params;
+    try {
+        const doc = await db.collection('ai_invitations').doc(token).get();
+        if (!doc.exists) return res.status(404).json({ error: "Invalid invitation link." });
+
+        const data = doc.data();
+        if (data.used) return res.status(400).json({ error: "This invitation has already been used." });
+        if (new Date(data.expiresAt) < new Date()) return res.status(400).json({ error: "This invitation has expired." });
+
+        res.json({
+            success: true,
+            email: data.email,
+            projectName: data.projectName
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/public/portal/setup-account', async (req, res) => {
+    const { token, password } = req.body;
+    if (!token || !password) return res.status(400).json({ error: "Missing required fields" });
+
+    try {
+        const inviteDoc = await db.collection('ai_invitations').doc(token).get();
+        if (!inviteDoc.exists || inviteDoc.data().used) throw new Error("Invalid or used token");
+
+        const inviteData = inviteDoc.data();
+        if (new Date(inviteData.expiresAt) < new Date()) throw new Error("Token expired");
+
+        const { email, projectId } = inviteData;
+
+        // 1. Create or Update User
+        let user;
+        try {
+            user = await admin.auth().getUserByEmail(email);
+            await admin.auth().updateUser(user.uid, { password });
+        } catch (e) {
+            user = await admin.auth().createUser({ email, password, emailVerified: true });
+        }
+
+        // 2. Set Claims
+        await admin.auth().setCustomUserClaims(user.uid, {
+            role: 'client',
+            projectId: projectId
+        });
+
+        // 3. Mark Invite as Used
+        await db.collection('ai_invitations').doc(token).update({ used: true });
+
+        // 4. Update Project
+        await db.collection('ai_projects').doc(projectId).update({
+            portalEmail: email,
+            portalSetupAt: new Date().toISOString()
+        });
+
+        res.json({ success: true, message: "Account secured successfully." });
+
+    } catch (e) {
+        console.error("Setup Account Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Helper to get project info for a logged in client
+app.get('/api/public/portal/session', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: "No token" });
+
+    try {
+        const idToken = authHeader.split('Bearer ')[1];
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+
+        if (decodedToken.role !== 'client' || !decodedToken.projectId) {
+            return res.json({ success: false, error: "Not a client portal user (ERP Admin detected)" });
+        }
+
+        const projectDoc = await db.collection('ai_projects').doc(decodedToken.projectId).get();
+        if (!projectDoc.exists) return res.status(404).json({ error: "Project lost" });
+
+        res.json({
+            success: true,
+            projectId: decodedToken.projectId,
+            projectName: projectDoc.data().name,
+            projectData: projectDoc.data()
+        });
+
+    } catch (e) { res.status(401).json({ error: "Invalid session" }); }
 });
 
 
@@ -596,7 +995,7 @@ app.post('/api/chat', verifyToken, async (req, res) => {
         while (keepGoing && loops < 5) {
             loops++;
             const completion = await openai.chat.completions.create({
-                model: agentData.model || "gpt-3.5-turbo",
+                model: agentData.model || "gpt-4o-mini",
                 messages: currentHistory,
                 tools: availableTools.length > 0 ? availableTools : undefined,
                 tool_choice: "auto"
@@ -657,7 +1056,7 @@ app.post('/api/chat', verifyToken, async (req, res) => {
 app.post('/api/public/chat/:agentId', async (req, res) => {
     try {
         const { agentId } = req.params;
-        const { messages } = req.body;
+        const { messages, sessionId } = req.body;
 
         if (!agentId || !messages) return res.status(400).json({ error: "Missing required fields" });
 
@@ -666,7 +1065,7 @@ app.post('/api/public/chat/:agentId', async (req, res) => {
 
         const openai = new OpenAI({ apiKey });
 
-        // 1. Get Agent Config from MAIN DB (Search across all agents)
+        // 1. Get Agent Config from MAIN DB
         const agentDoc = await db.collection('ai_agents').doc(agentId).get();
         if (!agentDoc.exists) return res.status(404).json({ error: "Agent not found" });
         const agentData = agentDoc.data();
@@ -682,7 +1081,7 @@ app.post('/api/public/chat/:agentId', async (req, res) => {
         const systemMessage = { role: "system", content: agentData.prompt || "You are a helpful assistant." };
         const fullHistory = [systemMessage, ...messages];
 
-        // 4. OpenAI Loop (Handle Tool Calls) - REUSED FROM PRIVATE CHAT
+        // 4. OpenAI Loop (Handle Tool Calls)
         let currentHistory = fullHistory;
         let finalResponse = null;
         let loops = 0;
@@ -690,7 +1089,7 @@ app.post('/api/public/chat/:agentId', async (req, res) => {
         while (loops < 5) {
             loops++;
             const completion = await openai.chat.completions.create({
-                model: agentData.model || "gpt-3.5-turbo",
+                model: agentData.model || "gpt-4o-mini",
                 messages: currentHistory,
                 tools: availableTools.length > 0 ? availableTools : undefined,
                 tool_choice: "auto"
@@ -707,14 +1106,12 @@ app.post('/api/public/chat/:agentId', async (req, res) => {
                     let result = { error: "Tool not found" };
 
                     try {
-                        // --- SECURITY CHECK (PUBLIC CHATBOT) ---
                         if (agentData.tools && agentData.tools[fnName] === false) {
                             result = { error: "Access to this tool is disabled by the administrator." };
                         } else {
                             if (handlers[fnName]) {
                                 result = await handlers[fnName](fnArgs, projectId);
                             } else {
-                                // Unified Dynamic Handler
                                 result = await dynamicHandler(fnName, fnArgs, projectId);
                             }
                         }
@@ -726,6 +1123,25 @@ app.post('/api/public/chat/:agentId', async (req, res) => {
                 finalResponse = assistantMsg.content;
                 break;
             }
+        }
+
+        // 5. ASYNC LOGGING
+        if (sessionId) {
+            const lastMsg = currentHistory[currentHistory.length - 1];
+            const logData = {
+                agentId,
+                projectId,
+                sessionId,
+                agentName: agentData.name || 'AI Assistant',
+                updatedAt: new Date().toISOString(),
+                messages: currentHistory.map(m => ({
+                    role: m.role,
+                    content: m.content || (m.tool_calls ? "Executed tools" : ""),
+                    timestamp: new Date().toISOString()
+                })).slice(-50),
+                preview: lastMsg.content ? lastMsg.content.substring(0, 100) : "Conversation update"
+            };
+            db.collection('conversations').doc(sessionId).set(logData, { merge: true }).catch(e => console.error("Logging Error:", e));
         }
 
         res.json({ success: true, message: finalResponse, history: currentHistory });

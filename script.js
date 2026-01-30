@@ -77,6 +77,7 @@ const CONFIG = {
         { label: { en: "About", fr: "À Propos" }, href: "about.html", icon: ICONS.info },
         { label: { en: "Reviews", fr: "Témoignages" }, href: "#reviews", icon: ICONS.star },
         { label: { en: "Why Us", fr: "Pourquoi Nous" }, href: "#why-us", icon: ICONS.award },
+        { label: { en: "Client Portal", fr: "Portail Client" }, href: "portal.html", icon: ICONS.layers },
         { label: { en: "Contact", fr: "Contact" }, href: "#contact", icon: ICONS.message }
     ],
     hero: {
@@ -116,6 +117,22 @@ const CONFIG = {
                 detail: { en: "Chatbots, predictive analytics, and automated content.", fr: "Chatbots, analyses prédictives et contenu automatisé." },
                 url: "ai.html",
                 image: "hero_bg_ai.png"
+            },
+            {
+                icon: "search",
+                title: { en: "Digital Marketing", fr: "Marketing Numérique" },
+                desc: { en: "Data-driven strategies to dominate search results and capture high-value leads.", fr: "Stratégies axées sur les données pour dominer les résultats de recherche et capturer des prospects." },
+                detail: { en: "SEO, PPC, and localized growth campaigns.", fr: "SEO, PPC et campagnes de croissance localisées." },
+                url: "marketing.html",
+                image: "hero_bg_marketing.png"
+            },
+            {
+                icon: "smartphone",
+                title: { en: "Mobile App Development", fr: "Dév. d'Applications Mobiles" },
+                desc: { en: "Native and cross-platform mobile experiences that feel premium and intuitive.", fr: "Expériences mobiles natives et multiplateformes au ressenti premium et intuitif." },
+                detail: { en: "iOS, Android, and Store Management.", fr: "iOS, Android et Gestion des Stores." },
+                url: "mobile.html",
+                image: "hero_bg_mobile.png"
             }
         ]
     },
@@ -353,6 +370,106 @@ const CONFIG = {
             }
         }
     },
+    marketing: {
+        hero: {
+            tag: { en: "Market Dominance", fr: "Domination du Marché" },
+            h1: { en: "Be seen by the clients who matter.", fr: "Soyez vu par les clients qui comptent." },
+            desc: { en: "Traffic is vanity, revenue is sanity. We deploy precision targeted campaigns to put your firm in front of high-net-worth individuals exactly when they need you.", fr: "Le trafic est une vanité, le revenu est une santé. Nous déployons des campagnes ciblées avec précision pour placer votre firme devant les individus à haute valeur nette exactement quand ils ont besoin de vous." },
+            cta: { en: "Launch Your Campaign", fr: "Lancez Votre Campagne" }
+        },
+        features: {
+            seo: {
+                tag: { en: "Organic Growth", fr: "Croissance Organique" },
+                title: { en: "Elite S.E.O.", fr: "S.E.O. d'Élite" },
+                desc: { en: "We don't just target keywords; we target intent. Our technical SEO audits and content strategies ensure you rank for the terms that drive revenue, not just clicks.", fr: "Nous ne visons pas juste les mots-clés ; nous visons l'intention. Nos audits SEO techniques et stratégies de contenu assurent votre classement sur les termes qui génèrent des revenus." },
+                list: [
+                    { en: "Technical SEO Audits", fr: "Audits SEO Techniques" },
+                    { en: "Local Authority Building", fr: "Construction d'Autorité Locale" },
+                    { en: "High-Intent Keyword Targeting", fr: "Ciblage de Mots-Clés à Haute Intention" }
+                ]
+            },
+            ads: {
+                tag: { en: "Paid Acquisition", fr: "Acquisition Payante" },
+                title: { en: "Precision PPC", fr: "PPC de Précision" },
+                desc: { en: "Stop wasting budget on broad matches. We build hyper-segmented campaigns on Google and LinkedIn to target specific job titles, incomes, and legal needs.", fr: "Arrêtez de gaspiller votre budget. Nous construisons des campagnes hyper-segmentées sur Google et LinkedIn pour cibler des titres de poste, revenus et besoins juridiques spécifiques." },
+                list: [
+                    { en: "Google Ads Management", fr: "Gestion Google Ads" },
+                    { en: "LinkedIn B2B Targeting", fr: "Ciblage B2B LinkedIn" },
+                    { en: "Retargeting Funnels", fr: "Entonnoirs de Retargeting" }
+                ]
+            },
+            social: {
+                tag: { en: "Brand Authority", fr: "Autorité de Marque" },
+                title: { en: "Strategic Social", fr: "Social Stratégique" },
+                desc: { en: "Your reputation precedes you. We curate a professional social media presence that establishes your firm as a thought leader in your industry.", fr: "Votre réputation vous précède. Nous curons une présence sociale professionnelle qui établit votre firme comme un leader d'opinion dans votre industrie." },
+                list: [
+                    { en: "Thought Leadership Content", fr: "Contenu de Leadership d'Opinion" },
+                    { en: "Professional Branding", fr: "Branding Professionnel" },
+                    { en: "Community Management", fr: "Gestion de Communauté" }
+                ]
+            },
+            analytics: {
+                tag: { en: "Data Intelligence", fr: "Intelligence de Données" },
+                title: { en: "Revenue Tracking", fr: "Suivi des Revenus" },
+                desc: { en: "Know exactly where your clients come from. We implement closed-loop reporting to attribute every dollar of revenue back to the specific campaign that generated it.", fr: "Sachez exactement d'où viennent vos clients. Nous implémentons un reporting en boucle fermée pour attribuer chaque dollar de revenu à la campagne spécifique qui l'a généré." },
+                list: [
+                    { en: "Custom Data Boards", fr: "Tableaux de Données Personnalisés" },
+                    { en: "Conversion Attribution", fr: "Attribution de Conversion" },
+                    { en: "ROI Analysis", fr: "Analyse de ROI" }
+                ]
+            }
+        }
+    },
+    mobile: {
+        hero: {
+            tag: { en: "Mobile Innovation", fr: "Innovation Mobile" },
+            h1: { en: "Your brand, right in their pocket.", fr: "Votre marque, directement dans leur poche." },
+            desc: { en: "Stay connected with your clients 24/7. We design and build premium native mobile applications that offer seamless access to your services and portals.", fr: "Restez connecté avec vos clients 24/7. Nous concevons et construisons des applications mobiles natives premium offrant un accès fluide à vos services et portails." },
+            cta: { en: "Start Your App", fr: "Démarrez Votre App" }
+        },
+        features: {
+            native: {
+                tag: { en: "Native Performance", fr: "Performance Native" },
+                title: { en: "iOS & Android", fr: "iOS & Android" },
+                desc: { en: "The gold standard of mobile apps. We build native applications using Swift and Kotlin to ensure maximum performance, smooth animations, and full hardware access.", fr: "L'étalon-or des applis mobiles. Nous construisons des applications natives utilisant Swift et Kotlin pour assurer une performance maximale." },
+                list: [
+                    { en: "Swift (iOS) Development", fr: "Développement Swift (iOS)" },
+                    { en: "Kotlin (Android) Development", fr: "Développement Kotlin (Android)" },
+                    { en: "Native UI Components", fr: "Composants UI Natifs" }
+                ]
+            },
+            cross: {
+                tag: { en: "Efficiency", fr: "Efficacité" },
+                title: { en: "Cross-Platform", fr: "Multiplateforme" },
+                desc: { en: "Launch faster on both platforms. Using Flutter or React Native, we deliver a near-native experience with a single codebase, reducing time-to-market and maintenance costs.", fr: "Lancez plus vite sur les deux plateformes. Utilisant Flutter ou React Native, nous livrons une expérience quasi-native avec une seule base de code." },
+                list: [
+                    { en: "React Native / Flutter", fr: "React Native / Flutter" },
+                    { en: "Single Codebase", fr: "Base de Code Unique" },
+                    { en: "Unified Logic", fr: "Logique Unifiée" }
+                ]
+            },
+            ux: {
+                tag: { en: "User Experience", fr: "Expérience Utilisateur" },
+                title: { en: "Premium UX/UI", fr: "UX/UI Premium" },
+                desc: { en: "Mobile screens are small; attention spans are shorter. We design intuitive, thumb-friendly interfaces that make navigating your app a joy, not a chore.", fr: "Les écrans sont petits; l'attention est courte. Nous concevons des interfaces intuitives qui rendent la navigation dans votre appli agréable." },
+                list: [
+                    { en: "Gesture-Based Navigation", fr: "Navigation Gestuelle" },
+                    { en: "Dark Mode Support", fr: "Support Mode Sombre" },
+                    { en: "Accessibility First", fr: "Accessibilité Avant Tout" }
+                ]
+            },
+            store: {
+                tag: { en: "Launch & Growth", fr: "Lancement & Croissance" },
+                title: { en: "Store Management", fr: "Gestion des Stores" },
+                desc: { en: "The App Store and Play Store can be complex. We handle the entire submission process, metadata optimization, and updates, ensuring your app stays live and compliant.", fr: "L'App Store et Play Store peuvent être complexes. Nous gérons tout le processus de soumission, l'optimisation des métadonnées et les mises à jour." },
+                list: [
+                    { en: "App Store Optimization (ASO)", fr: "Optimisation App Store (ASO)" },
+                    { en: "Submission Management", fr: "Gestion des Soumissions" },
+                    { en: "Review Handling", fr: "Gestion des Avis" }
+                ]
+            }
+        }
+    },
     footer: {
         desc: { en: "Ultra-Premium Digital Architecture for high-standard businesses. We build the systems that power your growth.", fr: "Architecture Numérique Ultra-Premium pour entreprises exigeantes. Nous construisons les systèmes qui propulsent votre croissance." },
         company: { en: "Company", fr: "Entreprise" },
@@ -455,26 +572,99 @@ function renderSite() {
     };
 
     // Render Header Links
+    // Render Header Links
     const desktopNav = document.querySelector('.desktop-nav');
     if (desktopNav) {
-        const navHTML = CONFIG.nav.map(link => `<a href="${getLinkHref(link.href)}">${t(link.label)}</a>`).join('');
+        const navHTML = CONFIG.nav.map(link => {
+            const labelEn = link.label.en || link.label;
+
+            // Special handling for Services Dropdown
+            if (labelEn === 'Services') {
+                const dropdownItems = CONFIG.services.items.map(service => `
+                    <a href="${getLinkHref(service.url)}" class="dropdown-item">
+                        <span class="dropdown-icon">${ICONS[service.icon] || ''}</span>
+                        <div class="dropdown-text">
+                            <span class="dropdown-title">${t(service.title)}</span>
+                            <span class="dropdown-desc">${t(service.desc).split('.')[0]}.</span>
+                        </div>
+                    </a>
+                `).join('');
+
+                return `
+                    <div class="dropdown-container">
+                        <a href="${getLinkHref(link.href)}">
+                            ${t(link.label)}
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:4px; opacity:0.7"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                        </a>
+                        <div class="dropdown-menu">
+                            ${dropdownItems}
+                        </div>
+                    </div>
+                `;
+            }
+
+            return `<a href="${getLinkHref(link.href)}">${t(link.label)}</a>`;
+        }).join('');
+
         desktopNav.innerHTML = navHTML;
     }
 
     // Render Mobile Menu Links
-    const mobileNavHTML = CONFIG.nav.map(link =>
-        `<a href="${getLinkHref(link.href)}" class="menu-link" onclick="window.toggleMobileMenu()">
+    // Render Mobile Menu Links
+    const mobileNavHTML = CONFIG.nav.map(link => {
+        const labelEn = link.label.en || link.label;
+        const isServices = String(link.href).includes('services') || labelEn === 'Services';
+
+        if (isServices) {
+            const dropdownItems = CONFIG.services.items.map(service => `
+                <a href="${getLinkHref(service.url)}" class="mobile-dropdown-item" onclick="window.toggleMobileMenu()">
+                    <span class="mobile-dropdown-icon">${ICONS[service.icon] || ''}</span>
+                    ${t(service.title)}
+                </a>
+            `).join('');
+
+            return `
+                <div style="width:100%">
+                    <button class="mobile-dropdown-trigger">
+                        <div style="display:flex; align-items:center; gap:1rem;">
+                            ${link.icon || ''}
+                            ${t(link.label)}
+                        </div>
+                        <span class="trigger-icon">${ICONS.arrow}</span>
+                    </button>
+                    <div class="mobile-dropdown-content">
+                        ${dropdownItems}
+                    </div>
+                </div>
+            `;
+        }
+
+        return `<a href="${getLinkHref(link.href)}" class="menu-link">
             ${link.icon || ''}
             ${t(link.label)}
-        </a>`
-    ).join('');
+        </a>`;
+    }).join('');
 
-    const menuNav = document.querySelector('.menu-nav');
-    if (menuNav) {
-        menuNav.innerHTML = mobileNavHTML;
+    // Global helper not needed for inline clicks anymore, verifying cleanup
+    window.toggleMobileDropdown = function (btn, e) {
+        if (e) e.stopPropagation();
+        btn.classList.toggle('open');
+        const content = btn.nextElementSibling;
+        content.classList.toggle('open');
+    };
 
-        // Add minimal contact info to mobile menu
-        menuNav.innerHTML += `
+    const menuNavs = document.querySelectorAll('.menu-nav'); // Handle duplicates
+
+    // Force clear first
+    menuNavs.forEach(nav => nav.innerHTML = '');
+
+    // Delay assignment to defeat race conditions
+    setTimeout(() => {
+        menuNavs.forEach(nav => {
+            nav.innerHTML = mobileNavHTML;
+
+            // Add minimal contact info to mobile menu
+            nav.innerHTML += `
             <div class="mobile-menu-contact mobile-contact-info" style="margin-top:0; padding-top:0; border:none;">
                 <p style="margin-bottom:0.5rem; color:var(--gold);">${t(CONFIG.business.tagline)}</p>
                 <a href="tel:${CONFIG.business.phoneClean}">
@@ -487,14 +677,15 @@ function renderSite() {
                 </a>
             </div>
         `;
-    }
+        });
+    }, 50);
 
     // Logo Injection
     const logoHTML = `
-    <a href="index.html" style="text-decoration:none; display:flex; align-items:center; color:inherit; gap: 0.5rem;">
-        <img src="logo.png?v=final" alt="${CONFIG.business.name}" class="nav-logo">
-        <span class="brand-text">SOLUTIONS QUASAR</span>
-    </a>`;
+        <a href="index.html" style="text-decoration:none; display:flex; align-items:center; color:inherit; gap: 0.5rem;">
+            <img src="logo.png?v=final" alt="${CONFIG.business.name}" class="nav-logo">
+            <span class="brand-text">SOLUTIONS QUASAR</span>
+        </a>`;
     const brandContainer = document.querySelector('.brand');
     if (brandContainer) brandContainer.innerHTML = logoHTML;
     const mobileLogo = document.querySelector('.mobile-logo');
@@ -503,12 +694,12 @@ function renderSite() {
     const contactPhone = document.querySelector('.contact-phone');
     if (contactPhone) {
         contactPhone.textContent = CONFIG.business.phone;
-        contactPhone.href = `tel:${CONFIG.business.phoneClean}`;
+        contactPhone.href = `tel:${CONFIG.business.phoneClean} `;
     }
     const contactEmail = document.querySelector('.contact-email');
     if (contactEmail) {
         contactEmail.textContent = currentLang === 'fr' ? 'Nous Écrire' : 'Email Us';
-        contactEmail.href = `mailto:${CONFIG.business.email}`;
+        contactEmail.href = `mailto:${CONFIG.business.email} `;
     }
 
     // Add Language Toggle to Desktop Header
@@ -544,7 +735,7 @@ function renderSite() {
     // Mobile Top Bar
     const mobileCallBtn = document.querySelector('.mobile-call-btn');
     if (mobileCallBtn) {
-        mobileCallBtn.href = `tel:${CONFIG.business.phoneClean}`;
+        mobileCallBtn.href = `tel:${CONFIG.business.phoneClean} `;
         mobileCallBtn.innerHTML = ICONS.phone;
     }
 
@@ -552,35 +743,35 @@ function renderSite() {
     const hero = document.getElementById('hero');
     if (hero) {
         hero.innerHTML = `
-        <div class="hero-split">
-            <div class="hero-content">
-                <h1>${t(CONFIG.hero.h1)}</h1>
-                <p>${t(CONFIG.hero.subhead)}</p>
-                <a href="#contact" class="btn-primary">${t(CONFIG.hero.cta)} ${ICONS.arrow}</a>
-                <div class="trust-cue">${t(CONFIG.hero.trust)}</div>
+            <div class="hero-split">
+                <div class="hero-content">
+                    <h1>${t(CONFIG.hero.h1)}</h1>
+                    <p>${t(CONFIG.hero.subhead)}</p>
+                    <a href="#contact" class="btn-primary">${t(CONFIG.hero.cta)} ${ICONS.arrow}</a>
+                    <div class="trust-cue">${t(CONFIG.hero.trust)}</div>
+                </div>
+                <img src="${CONFIG.hero.imageDesktop}" alt="Premium Strategy" class="hero-image">
             </div>
-            <img src="${CONFIG.hero.imageDesktop}" alt="Premium Strategy" class="hero-image">
-        </div>
-    `;
+        `;
     }
 
     // Render Services
     const servicesGrid = document.querySelector('.services-grid');
     if (servicesGrid) {
         servicesGrid.innerHTML = CONFIG.services.items.map(s => `
-        <div class="service-card" onclick="window.location.href='${s.url}'" style="cursor: pointer;">
-            <div class="service-image-header">
-                <img src="${s.image}" alt="${t(s.title)}" loading="lazy">
+            <div class="service-card" onclick="window.location.href='${s.url}'" style="cursor: pointer;">
+                <div class="service-image-header">
+                    <img src="${s.image}" alt="${t(s.title)}" loading="lazy">
+                </div>
+                <div class="service-content">
+                    <div class="service-icon">${ICONS[s.icon] || ICONS.monitor}</div>
+                    <h3>${t(s.title)}</h3>
+                    <p>${t(s.desc)}</p>
+                    <div class="service-details">${t(s.detail)}</div>
+                    <a href="${s.url}" class="text-gold uppercase" style="display:block; margin-top:1.5rem; font-size:0.8rem;">${currentLang === 'fr' ? 'En Savoir Plus' : 'Learn More'} &rarr;</a>
+                </div>
             </div>
-            <div class="service-content">
-                <div class="service-icon">${ICONS[s.icon] || ICONS.monitor}</div>
-                <h3>${t(s.title)}</h3>
-                <p>${t(s.desc)}</p>
-                <div class="service-details">${t(s.detail)}</div>
-                <a href="${s.url}" class="text-gold uppercase" style="display:block; margin-top:1.5rem; font-size:0.8rem;">${currentLang === 'fr' ? 'En Savoir Plus' : 'Learn More'} &rarr;</a>
-            </div>
-        </div>
-    `).join('');
+        `).join('');
     }
 
     // Render Reviews
@@ -601,17 +792,17 @@ function renderSite() {
         const whyTitle = document.querySelector('#why-us h2');
         if (whyTitle) whyTitle.textContent = t(CONFIG.why.title);
         whyGrid.innerHTML = CONFIG.why.items.map(item => `
-        <div class="why-card">
-            <div class="why-image-header">
-                <img src="${item.image}" alt="${t(item.title)}" loading="lazy">
-            </div>
+            <div class="why-card">
+                <div class="why-image-header">
+                    <img src="${item.image}" alt="${t(item.title)}" loading="lazy">
+                </div>
             <div class="why-content">
                 <div class="why-icon text-gold">${ICONS[item.icon] || ICONS.check}</div>
                 <h3 style="margin:1rem 0; font-size:1.1rem;">${t(item.title)}</h3>
                 <p class="text-muted" style="font-size:0.95rem;">${t(item.desc)}</p>
             </div>
-        </div>
-    `).join('');
+            </div>
+        `).join('');
     }
 
     // Render Contact Info
@@ -629,7 +820,7 @@ function renderSite() {
                         <span class="detail-value">${CONFIG.business.phone}</span>
                     </div>
                 </a>
-                
+
                 <!-- Email -->
                 <a href="mailto:${CONFIG.business.email}" class="contact-detail-item">
                     <div class="detail-icon">${ICONS.message}</div>
@@ -641,18 +832,18 @@ function renderSite() {
 
                 <!-- Offices -->
                 <div class="contact-detail-item full-width">
-                     <div class="detail-icon">${ICONS.home}</div>
-                     <div class="detail-content">
+                    <div class="detail-icon">${ICONS.home}</div>
+                    <div class="detail-content">
                         ${CONFIG.business.offices.map(office => `
                             <div class="office-block" style="margin-bottom:0.5rem">
                                 <strong style="color:var(--gold)">${t(office.name)}</strong>
                                 <div style="font-size:0.9rem; color:var(--text-muted)">${office.address}</div>
                             </div>
                         `).join('')}
-                     </div>
+                    </div>
                 </div>
             </div>
-        `;
+    `;
     });
 
     // Safety checks for elements that might have been removed
@@ -703,6 +894,7 @@ function renderSite() {
                     <li><a href="mailto:${CONFIG.business.email}">${CONFIG.business.email}</a></li>
                     <li style="opacity:0.7; margin-top:1rem;">${t(CONFIG.business.address)}</li>
                 </ul>
+            </div>
             </div>
         </div>
 
@@ -772,17 +964,17 @@ function renderContactForm() {
     const infoEmail = document.querySelector('.info-email');
     const infoAddress = document.querySelector('.info-address');
 
-    if (infoPhone) infoPhone.innerHTML = `<strong>${t(CONFIG.contact.info.phone)}</strong> <a href="tel:${CONFIG.business.phoneClean}">${CONFIG.business.phone}</a>`;
-    if (infoEmail) infoEmail.innerHTML = `<strong>${t(CONFIG.contact.info.email)}</strong> <a href="mailto:${CONFIG.business.email}">${CONFIG.business.email}</a>`;
+    if (infoPhone) infoPhone.innerHTML = `< strong > ${t(CONFIG.contact.info.phone)}</strong > <a href="tel:${CONFIG.business.phoneClean}">${CONFIG.business.phone}</a>`;
+    if (infoEmail) infoEmail.innerHTML = `< strong > ${t(CONFIG.contact.info.email)}</strong > <a href="mailto:${CONFIG.business.email}">${CONFIG.business.email}</a>`;
     if (infoAddress) {
         // Display both office addresses
         const officesHTML = CONFIG.business.offices.map(office =>
-            `<div style="margin-top: 1rem;">
+            `< div style = "margin-top: 1rem;" >
                 <strong>${t(office.name)}:</strong><br>
                 <span style="opacity: 0.8;">${office.address}</span>
             </div>`
         ).join('');
-        infoAddress.innerHTML = `<strong>${t(CONFIG.contact.info.address)}</strong>${officesHTML}`;
+        infoAddress.innerHTML = `< strong > ${t(CONFIG.contact.info.address)}</strong > ${officesHTML} `;
     }
 
 }
@@ -821,7 +1013,7 @@ function renderMobileBottomBar() {
         btnCall.innerHTML = `
             <div>${ICONS.phone}</div>
         `;
-        btnCall.href = `tel:${CONFIG.business.phoneClean}`;
+        btnCall.href = `tel:${CONFIG.business.phoneClean} `;
     }
 
     // Msg: Message SVG
@@ -844,15 +1036,16 @@ function setupInteractions() {
     // Bottom Bar Links
     const btnCall = document.getElementById('btn-call');
     if (btnCall) {
-        btnCall.href = `tel:${CONFIG.business.phoneClean}`;
+        btnCall.href = `tel:${CONFIG.business.phoneClean} `;
     }
 
     function updateMenuIcon(isOpen) {
+        if (!menuBtn) return;
         const wrapper = menuBtn.querySelector('.menu-icon-wrapper');
 
-        if (isOpen) {
+        if (wrapper && isOpen) {
             wrapper.classList.add('open');
-        } else {
+        } else if (wrapper) {
             wrapper.classList.remove('open');
         }
     }
@@ -885,8 +1078,23 @@ function setupInteractions() {
     }
 
     // Use event delegation for dynamically added links
+    // Use event delegation for dynamically added links
     document.querySelector('.menu-nav').addEventListener('click', (e) => {
-        if (e.target.closest('.menu-link')) {
+        // Handle Mobile Dropdown Toggle
+        const dropdownTrigger = e.target.closest('.mobile-dropdown-trigger');
+        if (dropdownTrigger) {
+            e.stopPropagation(); // Stop bubbling to prevent any parent listeners
+            e.preventDefault();  // Stop default button behavior
+
+            // Toggle Logic
+            dropdownTrigger.classList.toggle('open');
+            const content = dropdownTrigger.nextElementSibling;
+            if (content) content.classList.toggle('open');
+            return; // Exit completely
+        }
+
+        // Handle standard links closing the menu
+        if (e.target.closest('.menu-link') || e.target.closest('.mobile-dropdown-item')) {
             toggleMenu();
         }
     });
@@ -903,6 +1111,8 @@ function setupInteractions() {
 
 function setupForm() {
     const form = document.querySelector('form');
+    if (!form) return;
+
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const btn = form.querySelector('button[type="submit"]');
@@ -911,22 +1121,33 @@ function setupForm() {
         btn.disabled = true;
 
         const formData = new FormData(form);
+        const data = Object.fromEntries(formData.entries());
+
+        // Determine API URL
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const API_BASE = isLocal ? 'http://localhost:5000' : '';
 
         try {
-            const response = await fetch(form.action, {
+            // Use API
+            const response = await fetch(`${API_BASE}/api/contact`, {
                 method: 'POST',
-                body: formData,
                 headers: {
+                    'Content-Type': 'application/json',
                     'Accept': 'application/json'
-                }
+                },
+                body: JSON.stringify(data)
             });
 
             if (response.ok) {
-                form.innerHTML = `<div class="success-message"><h3>Request Received</h3><p>We will contact you shortly.</p></div>`;
+                form.innerHTML = `<div class="success-message" style="text-align:center; padding:2rem;">
+                    <h3 style="color:var(--gold); margin-bottom:1rem;">Request Received</h3>
+                    <p>We'll get back to you shortly.</p>
+                </div>`;
             } else {
                 throw new Error('Network error');
             }
         } catch (error) {
+            console.error(error);
             btn.textContent = 'Error. Try Again.';
             btn.disabled = false;
             setTimeout(() => {
