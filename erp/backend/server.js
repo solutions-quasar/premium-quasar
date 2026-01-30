@@ -204,6 +204,42 @@ app.post('/api/contact', async (req, res) => {
             html: htmlContent
         });
 
+        // 1b. Send Auto-Confirmation to Client (if email is provided)
+        if (contact_method.includes('@')) {
+            const userHtml = `
+            <div style="font-family: sans-serif; background-color: #0B0D10; color: #F0F2F5; padding: 40px 20px;">
+                <div style="max-width: 600px; margin: 0 auto; background-color: #15171C; border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1);">
+                    <div style="background-color: #0B0D10; padding: 20px; text-align: center; border-bottom: 2px solid #DFA53A;">
+                        <h1 style="color: #DFA53A; margin: 0; font-size: 24px; letter-spacing: 2px;">SOLUTIONS QUASAR</h1>
+                    </div>
+                    <div style="padding: 30px;">
+                        <h2 style="color: #F0C468; margin-top: 0;">Request Received</h2>
+                        <p>Hello ${name},</p>
+                        <p>Thank you for reaching out to Solutions Quasar. We have received your inquiry regarding <strong>${interest}</strong>.</p>
+                        <p>Our team reviews every request carefully. We will get back to you shortly to discuss how we can elevate your digital presence.</p>
+                        <br>
+                        <p style="color: #A0A5B0; font-size: 14px;">If you have any urgent questions, feel free to reply to this email.</p>
+                    </div>
+                    <div style="background-color: #0B0D10; padding: 15px; text-align: center; color: #555; font-size: 12px;">
+                        &copy; ${new Date().getFullYear()} Solutions Quasar Inc.
+                    </div>
+                </div>
+            </div>`;
+
+            try {
+                await resend.emails.send({
+                    from: 'Solutions Quasar <' + fromEmail + '>',
+                    to: [contact_method],
+                    subject: 'We received your request - Solutions Quasar',
+                    html: userHtml
+                });
+                console.log(`Confirmation sent to ${contact_method}`);
+            } catch (confError) {
+                console.error("Confirmation Email Failed:", confError);
+                // Don't block the main flow
+            }
+        }
+
         // 2. Sync to Firebase (Save to Firestore)
         await db.collection('crm_leads').add({
             name,

@@ -194,14 +194,35 @@ button {
     display: flex;
     gap: 1.5rem;
     font-size: 0.9rem;
+    align-items: center;
+    /* Fix vertical alignment */
 }
 
 .contact-actions a {
     border-bottom: 1px solid transparent;
+    display: flex;
+    /* Ensure content inside link aligns */
+    align-items: center;
+    gap: 0.5rem;
+    /* Space between icon and text if present */
+}
+
+.contact-actions svg {
+    width: 20px;
+    height: 20px;
+    stroke: var(--gold);
 }
 
 .contact-actions a:hover {
     border-bottom-color: var(--gold);
+}
+
+@media (max-width: 1200px) {
+
+    .desktop-nav,
+    .contact-actions {
+        display: none;
+    }
 }
 
 /* Dropdown Menu Styles */
@@ -982,7 +1003,7 @@ footer {
     /* Only safe area padding, letting grid/flex center the rest */
 }
 
-@media (min-width: 769px) {
+@media (min-width: 1201px) {
     #mobile-bar {
         display: none;
     }
