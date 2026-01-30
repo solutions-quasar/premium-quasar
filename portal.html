@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Solutions Quasar Client Portal</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="icon" type="image/svg+xml" href="erp/favicon.svg">
+    <link rel="stylesheet" href="erp/css/style.css">
+    <style>
+        :root {
+            --bg-body: #08090a;
+            --bg-card: #121418;
+            --bg-accent: #1c1f24;
+            --gold: #dfa53a;
+            --gold-light: #f1c46d;
+            --text-main: #f0f2f5;
+            --text-dim: #94a3b8;
+            --border: #2d3139;
+            --safe-bottom: env(safe-area-inset-bottom);
+        }
+
+        body {
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            font-family: 'Outfit', sans-serif;
+            margin: 0;
+            padding: 0;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* --- LOGIN SCREEN (Mobile First Center) --- */
+        #portal-login {
+            display: none;
+            /* Changed via JS to flex */
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 2rem;
+            text-align: center;
+            background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%);
+        }
+
+        .login-card {
+            width: 100%;
+            max-width: 400px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 2.5rem 2rem;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        }
+
+        /* --- PORTAL APP LAYOUT --- */
+        #portal-app {
+            display: none;
+            flex-direction: column;
+            min-height: 100vh;
+            padding-bottom: calc(70px + var(--safe-bottom));
+            /* Header/Nav space */
+        }
+
+        .header {
+            padding: 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            background: rgba(8, 9, 10, 0.8);
+            backdrop-filter: blur(10px);
+            z-index: 100;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .main-container {
+            padding: 1.5rem;
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            box-sizing: border-box;
+        }
+
+        /* --- UI COMPONENTS --- */
+        .section-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(to right, #fff, var(--gold));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .card-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1rem;
+        }
+
+        .portal-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 1.5rem;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .portal-card:active {
+            transform: scale(0.98);
+        }
+
+        .status-badge {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding: 4px 10px;
+            border-radius: 100px;
+            font-weight: 700;
+        }
+
+        .badge-live {
+            background: rgba(34, 197, 94, 0.1);
+            color: #22c55e;
+            border: 1px solid rgba(34, 197, 94, 0.2);
+        }
+
+        .badge-draft {
+            background: rgba(148, 163, 184, 0.1);
+            color: #94a3b8;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+        }
+
+        /* --- INTEGRATIONS --- */
+        .int-row {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem;
+            background: var(--bg-accent);
+            border-radius: 16px;
+            margin-bottom: 1rem;
+        }
+
+        /* --- BOTTOM NAV (MOBILE) --- */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--bg-card);
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: space-around;
+            padding: 10px 0 calc(10px + var(--safe-bottom));
+            z-index: 1000;
+        }
+
+        .nav-link {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 0.65rem;
+            font-weight: 500;
+            gap: 4px;
+        }
+
+        .nav-link.active {
+            color: var(--gold);
+        }
+
+        .nav-link .material-icons {
+            font-size: 1.5rem;
+        }
+
+        /* --- DESKTOP ADJUSTMENTS --- */
+        @media (min-width: 1024px) {
+            .card-grid {
+                grid-template-columns: repeat(3, 1fr);
+                gap: 1.5rem;
+            }
+
+            .bottom-nav {
+                top: 0;
+                left: 0;
+                bottom: 0;
+                width: 80px;
+                flex-direction: column;
+                justify-content: flex-start;
+                padding: 2rem 0;
+                border-top: 0;
+                border-right: 1px solid var(--border);
+                position: fixed;
+            }
+
+            .nav-link {
+                margin-bottom: 2rem;
+                font-size: 0.75rem;
+            }
+
+            .header,
+            #portal-app,
+            .main-container {
+                margin-left: 80px;
+            }
+        }
+
+        /* Utility */
+        .btn-large {
+            height: 56px;
+            border-radius: 16px;
+            font-weight: 600;
+            font-size: 1rem;
+        }
+
+        .rotating {
+            animation: spin 2s linear infinite;
+        }
+
+        @keyframes spin {
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- 0. SPLASH SECTION -->
+    <!-- 0. SPLASH SECTION REMOVED -->
+
+    <!-- 1. LOGIN SECTION -->
+    <div id="portal-login">
+        <div class="login-card">
+            <img src="logo.png" alt="Solutions Quasar" style="height: 64px; margin-bottom: 1.5rem;">
+            <h1 style="font-size: 1.5rem; margin-bottom: 0.5rem;">Solutions Quasar Client Portal</h1>
+            <p style="color: var(--text-dim); font-size: 0.9rem; margin-bottom: 2.5rem;">Manage your AI workforce & sync
+                data</p>
+
+            <form id="login-form" style="text-align: left;">
+                <div class="form-group mb-4">
+                    <label class="form-label" style="font-size: 0.8rem;">Email Address</label>
+                    <input type="email" id="login-email" class="form-input" placeholder="name@company.com" required
+                        style="height: 52px; background: var(--bg-accent);">
+                </div>
+                <div class="form-group mb-4">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+                        <label class="form-label" style="font-size: 0.8rem; margin:0;">Password</label>
+                        <a href="#" style="color: var(--gold); font-size: 0.75rem; text-decoration:none;">Forgot
+                            password?</a>
+                    </div>
+                    <input type="password" id="login-pass" class="form-input" placeholder="••••••••" required
+                        style="height: 52px; background: var(--bg-accent);">
+                </div>
+
+                <div
+                    style="display:grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 2rem; text-align: left;">
+                    <label
+                        style="display:flex; align-items:center; gap:8px; font-size:0.75rem; color:var(--text-dim); cursor:pointer;">
+                        <input type="checkbox" id="remember-email" style="accent-color:var(--gold);"> Remember email
+                    </label>
+                    <label
+                        style="display:flex; align-items:center; gap:8px; font-size:0.75rem; color:var(--text-dim); cursor:pointer;">
+                        <input type="checkbox" id="stay-connected" style="accent-color:var(--gold);" checked> Stay
+                        connected
+                    </label>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block btn-large">
+                    <span id="btn-text">Sign In</span>
+                    <span id="btn-loader" style="display:none;" class="material-icons rotating">sync</span>
+                </button>
+            </form>
+            <div id="login-error" class="text-danger text-sm mt-3" style="display: none;">Invalid credentials.</div>
+        </div>
+    </div>
+
+    <!-- 1.1 SETUP SECTION (INVITATION) -->
+    <div id="portal-setup"
+        style="display: none; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 2rem;">
+        <div class="login-card">
+            <h1 style="font-size: 1.5rem; margin-bottom: 0.5rem;">Account Setup</h1>
+            <p id="setup-welcome" style="color: var(--text-dim); font-size: 0.9rem; margin-bottom: 2rem;">Setup your
+                portal password</p>
+
+            <form id="setup-form" style="text-align: left;">
+                <div class="form-group mb-4">
+                    <label class="form-label" style="font-size: 0.8rem;">Your Email</label>
+                    <input type="email" id="setup-email" class="form-input" readonly
+                        style="height: 52px; background: rgba(0,0,0,0.2); color: var(--text-dim);">
+                </div>
+                <div class="form-group mb-4">
+                    <label class="form-label" style="font-size: 0.8rem;">Choose Password</label>
+                    <input type="password" id="setup-pass" class="form-input" placeholder="Minimum 6 characters"
+                        required minlength="6" style="height: 52px; background: var(--bg-accent);">
+                </div>
+                <div class="form-group mb-4">
+                    <label class="form-label" style="font-size: 0.8rem;">Confirm Password</label>
+                    <input type="password" id="setup-pass-confirm" class="form-input" placeholder="••••••••" required
+                        style="height: 52px; background: var(--bg-accent);">
+                </div>
+                <button type="submit" class="btn btn-primary btn-block btn-large">
+                    Secure Account & Enter
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 2. MAIN APP SECTION -->
+    <div id="portal-app">
+        <!-- Header -->
+        <header class="header">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <div style="background: var(--gold); height: 32px; width: 4px; border-radius: 2px;"></div>
+                <span id="project-name" style="font-weight: 700; font-size: 1.1rem; letter-spacing: -0.5px;">-</span>
+            </div>
+            <button class="icon-btn" onclick="logout()" style="color:var(--text-dim);"><span
+                    class="material-icons">logout</span></button>
+        </header>
+
+        <!-- Pages -->
+        <main class="main-container">
+            <!-- Dashboard -->
+            <div id="tab-dashboard">
+                <h2 class="section-title">AI Agents</h2>
+                <div id="agent-list" class="card-grid">
+                    <!-- Dynamic Agents -->
+                    <div class="portal-card"
+                        style="border-style: dashed; display:flex; flex-direction:column; align-items:center; justify-content:center; color: var(--text-dim); padding: 3rem 1rem;">
+                        <span class="material-icons"
+                            style="font-size: 3rem; opacity: 0.2; margin-bottom: 1rem;">smart_toy</span>
+                        <p>Scanning for agents...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Integrations -->
+            <div id="tab-integrations" style="display:none;">
+                <h2 class="section-title">Integrations</h2>
+
+                <div class="portal-card">
+                    <div class="int-row">
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/a/a5/Google_Calendar_icon_%282020%29.svg"
+                            style="width: 32px;">
+                        <div style="flex:1;">
+                            <div style="font-weight: 600;">Google Calendar</div>
+                            <div style="font-size: 0.75rem; color: var(--text-dim);">Auto-booking & Availability</div>
+                        </div>
+                        <div id="gcal-status">
+                            <button class="btn btn-sm" onclick="connectGoogle()"
+                                style="background:var(--gold); color:#000; font-weight:700;">Connect</button>
+                        </div>
+                    </div>
+
+                    <div
+                        style="padding: 1rem; border-radius: 12px; background: rgba(0,0,0,0.2); font-size: 0.8rem; line-height: 1.4; color: var(--text-dim);">
+                        Allow your AI agents to check your schedule and book appointments directly with your clients.
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Bottom Navigation -->
+        <nav class="bottom-nav">
+            <a href="javascript:void(0)" class="nav-link active" onclick="switchTab('dashboard')">
+                <span class="material-icons">grid_view</span>
+                <span>Dashboard</span>
+            </a>
+            <a href="javascript:void(0)" class="nav-link" onclick="switchTab('integrations')">
+                <span class="material-icons">extension</span>
+                <span>Connect</span>
+            </a>
+            <a href="javascript:void(0)" class="nav-link" onclick="logout()">
+                <span class="material-icons">account_circle</span>
+                <span>Sign Out</span>
+            </a>
+        </nav>
+    </div>
+
+    <script type="module" src="erp/js/portal.js"></script>
+</body>
+
+</html>

@@ -107,13 +107,32 @@
         .crm-toast.error {
             border-left-color: var(--danger);
         }
+
+        .rotating {
+            animation: spin 2s linear infinite;
+        }
+
+        @keyframes spin {
+            100% {
+                transform: rotate(360deg);
+            }
+        }
     </style>
 </head>
 
 <body>
 
+    <!-- Splash Screen (Authenticating...) -->
+    <div id="splash-view" class="login-container active"
+        style="z-index: 5000; background: var(--bg-dark); display: flex; align-items: center; justify-content: center;">
+        <div class="text-center">
+            <img src="favicon.svg" alt="Q" style="height: 60px; margin-bottom: 2rem;" class="rotating">
+            <div class="text-gold" style="letter-spacing: 0.2rem; font-weight: 700;">AUTHENTICATING</div>
+        </div>
+    </div>
+
     <!-- Login View (Overlay) -->
-    <div id="login-view" class="login-container active">
+    <div id="login-view" class="login-container">
         <div class="login-card">
             <div class="login-logo-area">
                 <img src="favicon.svg" alt="Q" class="login-logo-img">
@@ -188,7 +207,8 @@
                 <a href="#calendar" class="nav-item"><span class="material-icons">event</span> Calendar</a>
                 <a href="#sales" class="nav-item"><span class="material-icons">receipt</span> Sales</a>
                 <a href="#team" class="nav-item"><span class="material-icons">groups</span> Team</a>
-                <a href="#ai-agents" class="nav-item text-green"><span class="material-icons">smart_toy</span> AI Agents</a>
+                <a href="#ai-agents" class="nav-item text-green"><span class="material-icons">smart_toy</span> AI
+                    Agents</a>
             </nav>
             <div class="drawer-footer">
                 <div class="user-profile">
@@ -274,7 +294,7 @@
 
     <!-- Scripts -->
     <!-- Load Firebase via Module to ensure scoped access -->
-    <script type="module" src="js/app.js"></script>
+    <script type="module" src="js/app.js?v=9"></script>
 
 </body>
 

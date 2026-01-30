@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Viewer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        body {
+            background: #E5E5E5;
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .controls {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border-radius: 6px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #DFA53A;
+            color: #000;
+        }
+
+        .btn-primary:hover {
+            background: #c48e2b;
+            box-shadow: 0 4px 12px rgba(223, 165, 58, 0.3);
+        }
+
+        .btn-secondary {
+            background: #333;
+            color: #fff;
+        }
+
+        #doc-container {
+            width: 210mm;
+            /* A4 width */
+            min-height: 297mm;
+            /* A4 height */
+            background: #fff;
+            padding: 40px 50px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            position: relative;
+            color: #333;
+        }
+
+        /* Print-specific styles */
+        @media print {
+            body {
+                background: #fff;
+                padding: 0;
+            }
+
+            .controls {
+                display: none;
+            }
+
+            #doc-container {
+                box-shadow: none;
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 40px 50px;
+                /* Enforce padding on print */
+            }
+        }
+
+        /* Document Typography */
+        h1 {
+            margin: 0;
+            font-weight: 800;
+            font-size: 2rem;
+            letter-spacing: 1px;
+            color: #111;
+        }
+
+        h2 {
+            margin: 0;
+            font-weight: 700;
+            font-size: 1.2rem;
+            color: #111;
+        }
+
+        h3 {
+            margin: 0;
+            font-weight: 700;
+            font-size: 1rem;
+            color: #111;
+        }
+
+        p {
+            margin: 0 0 5px 0;
+            font-size: 0.9rem;
+            color: #555;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 50px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .meta {
+            text-align: right;
+        }
+
+        .meta-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            color: #999;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+
+        .client-section {
+            display: flex;
+            gap: 50px;
+            margin-bottom: 50px;
+            background: #f9fafb;
+            padding: 25px;
+            border-radius: 8px;
+            border: 1px solid #eee;
+        }
+
+        .bill-to p {
+            color: #444;
+        }
+
+        table {
+            width: 90%;
+            /* Reduced width for better whitespace */
+            margin: 0 auto 40px auto;
+            /* Centered */
+            border-collapse: collapse;
+        }
+
+        thead th {
+            text-align: left;
+            padding: 15px 10px;
+            border-bottom: 2px solid #111;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #111;
+        }
+
+        tbody td {
+            padding: 20px 10px;
+            border-bottom: 1px solid #eee;
+            vertical-align: top;
+            font-size: 0.95rem;
+        }
+
+        .footer {
+            margin-top: 50px;
+            padding-top: 30px;
+            border-top: 2px solid #f0f0f0;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+        }
+
+        .totals {
+            margin-left: auto;
+            width: 300px;
+        }
+
+        .total-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .grand-total {
+            display: flex;
+            justify-content: space-between;
+            padding: 15px 0;
+            border-top: 2px solid #111;
+            margin-top: 10px;
+            font-weight: 800;
+            font-size: 1.3rem;
+            color: #DFA53A;
+        }
+
+        .grand-total span:first-child {
+            color: #111;
+        }
+
+        .notes {
+            font-size: 0.85rem;
+            color: #777;
+            line-height: 1.6;
+            margin-top: 10px;
+            white-space: pre-wrap;
+        }
+
+        .terms {
+            margin-top: 40px;
+            font-size: 0.8rem;
+            color: #999;
+            text-align: center;
+        }
+
+        /* Status Stamp */
+        .stamp {
+            position: absolute;
+            top: 200px;
+            right: 100px;
+            font-size: 3rem;
+            font-weight: 900;
+            color: rgba(223, 165, 58, 0.1);
+            text-transform: uppercase;
+            transform: rotate(-15deg);
+            border: 5px solid rgba(223, 165, 58, 0.1);
+            padding: 10px 30px;
+            border-radius: 10px;
+            user-select: none;
+            pointer-events: none;
+        }
+
+        .logo-box {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .logo-img {
+            height: 50px;
+            width: auto;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="controls">
+        <button class="btn btn-secondary" onclick="window.close()">Close</button>
+        <button class="btn btn-primary" onclick="generatePDF()">Download PDF</button>
+        <button class="btn btn-secondary" onclick="window.print()">Print</button>
+    </div>
+
+    <div id="doc-container">
+        <!-- Content injected by JS -->
+    </div>
+
+    <script>
+        window.onload = function () {
+            const dataStr = localStorage.getItem('currentQuoteToPrint');
+            if (!dataStr) {
+                document.getElementById('doc-container').innerHTML = '<h3 style="text-align:center; padding:50px;">No document data found.</h3>';
+                return;
+            }
+
+            const data = JSON.parse(dataStr);
+            const isQuote = data.type === 'quotes';
+
+            // Calc Integers
+            const dateStr = new Date(data.date || Date.now()).toLocaleDateString();
+
+            let itemsHtml = '';
+            data.items.forEach(item => {
+                const total = (parseFloat(item.qty) * parseFloat(item.price)).toFixed(2);
+                itemsHtml += `
+                    <tr>
+                        <td style="width:50%; white-space:pre-wrap;">${item.desc}</td>
+                        <td style="text-align:center;">${item.qty}</td>
+                        <td style="text-align:right;">$${parseFloat(item.price).toFixed(2)}</td>
+                        <td style="text-align:right;">$${total}</td>
+                    </tr>
+                `;
+            });
+
+            // Taxes
+            let taxHtml = '';
+            let subtotal = 0;
+            data.items.forEach(i => subtotal += (parseFloat(i.qty) * parseFloat(i.price)));
+
+            if (data.taxes && Array.isArray(data.taxes)) {
+                data.taxes.forEach(t => {
+                    const amt = subtotal * (parseFloat(t.rate) / 100);
+                    taxHtml += `
+                        <div class="total-row">
+                            <span>${t.name} (${t.rate}%)</span>
+                            <span>$${amt.toFixed(2)}</span>
+                        </div>
+                    `;
+                });
+            } else if (data.taxRate) {
+                const amt = subtotal * (data.taxRate / 100);
+                taxHtml += `
+                    <div class="total-row">
+                        <span>Tax (${data.taxRate}%)</span>
+                        <span>$${amt.toFixed(2)}</span>
+                    </div>
+                `;
+            }
+
+            const docHtml = `
+                <div class="header">
+                    <div class="logo-box">
+                         <!-- You can swap this with an actual <img> tag if you have one formatted -->
+                         <div style="font-weight:900; font-size:1.5rem; color:#DFA53A; letter-spacing:-1px;">QUASAR</div>
+                    </div>
+                    <div class="meta">
+                        <h1>${isQuote ? 'QUOTE' : 'INVOICE'}</h1>
+                        <p style="font-size:1.1rem; color:#777;">#${data.number}</p>
+                        <div style="margin-top:10px;">
+                            <div class="meta-label">DATE</div>
+                            <div style="font-weight:600;">${dateStr}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="client-section">
+                    <div class="bill-to">
+                        <div class="meta-label" style="margin-bottom:8px;">BILL TO</div>
+                        <div style="font-weight:700; font-size:1.1rem; color:#111; margin-bottom:5px;">${data.clientName}</div>
+                        ${data.clientCompany ? `<p>${data.clientCompany}</p>` : ''}
+                        ${data.clientAddress ? `<p>${data.clientAddress}</p>` : ''}
+                        ${data.clientCity ? `<p>${data.clientCity}</p>` : ''}
+                        ${data.clientEmail ? `<p>${data.clientEmail}</p>` : ''}
+                        ${data.clientPhone ? `<p>${data.clientPhone}</p>` : ''}
+                    </div>
+                    <div class="from" style="margin-left:auto; text-align:right;">
+                        <div class="meta-label" style="margin-bottom:8px;">FROM</div>
+                        <div style="font-weight:700; font-size:1.1rem; color:#111; margin-bottom:5px;">Solutions Quasar Inc.</div>
+                        <p>Experts en Solutions Web</p>
+                        <p>admin@solutionsquasar.com</p>
+                         ${data.taxId ? `<p>Tax ID: ${data.taxId}</p>` : ''}
+                    </div>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Description</th>
+                            <th style="text-align:center;">Qty</th>
+                            <th style="text-align:right;">Price</th>
+                            <th style="text-align:right;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${itemsHtml}
+                    </tbody>
+                </table>
+
+                <div class="footer">
+                    <div class="payment-info">
+                        <div class="meta-label" style="margin-bottom:10px;">PAYMENT INSTRUCTIONS</div>
+                        <div class="notes">${data.paymentInfo || 'Please make checks payable to Premium Quasar Inc.'}</div>
+                        ${data.notes ? `<div class="meta-label" style="margin-top:20px; margin-bottom:10px;">NOTES</div><div class="notes">${data.notes}</div>` : ''}
+                    </div>
+                    <div class="totals">
+                        <div class="total-row">
+                            <span>Subtotal</span>
+                            <span>$${subtotal.toFixed(2)}</span>
+                        </div>
+                        ${taxHtml}
+                        <div class="grand-total">
+                            <span>Total</span>
+                            <span>$${parseFloat(data.total).toFixed(2)}</span>
+                        </div>
+                    </div>
+                </div>
+
+                ${data.status !== 'Draft' ? `<div class="stamp" style="border-color:${getStatusColor(data.status)}; color:${getStatusColor(data.status)};">${data.status}</div>` : ''}
+            `;
+
+            document.getElementById('doc-container').innerHTML = docHtml;
+        };
+
+        function getStatusColor(status) {
+            switch (status.toLowerCase()) {
+                case 'paid': return '#21BA45'; // Green
+                case 'accepted': return '#21BA45';
+                case 'sent': return '#31CCEC'; // Blue
+                case 'rejected': return '#C10015'; // Red
+                default: return 'rgba(0,0,0,0.1)';
+            }
+        }
+
+        async function generatePDF() {
+            const { jsPDF } = window.jspdf;
+            const element = document.getElementById('doc-container');
+
+            // Temporarily remove shadow for clean capture
+            element.style.boxShadow = 'none';
+
+            await html2canvas(element, { scale: 2 }).then(canvas => {
+                const imgData = canvas.toDataURL('image/png');
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                const pdfWidth = pdf.internal.pageSize.getWidth();
+                const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+                pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+                pdf.save('Document.pdf');
+            });
+
+            element.style.boxShadow = '0 10px 30px rgba(0,0,0,0.1)';
+        }
+    </script>
+</body>
+
+</html>

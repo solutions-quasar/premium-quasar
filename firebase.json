@@ -23,6 +23,10 @@
         ],
         "rewrites": [
             {
+                "source": "/portal",
+                "destination": "/erp/portal.html"
+            },
+            {
                 "source": "/api/**",
                 "function": "api"
             }

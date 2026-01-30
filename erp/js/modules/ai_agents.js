@@ -1,10 +1,15 @@
-import { db } from '../firebase-config.js';
+import { db, auth } from '../firebase-config.js';
 import { collection, query, where, getDocs, getDoc, addDoc, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 // --- CONFIG ---
 const API_BASE = window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1')
     ? 'http://localhost:5000'
     : '';
+
+async function getAuthToken() {
+    if (!auth.currentUser) return null;
+    return await auth.currentUser.getIdToken();
+}
 
 // --- STATE ---
 let activeProjectId = null;
@@ -204,11 +209,6 @@ async function renderAgentList(projectId) {
     }
 }
 
-// --- HELPER: Get Token ---
-async function getAuthToken() {
-    return localStorage.getItem('authToken');
-}
-
 // --- MODALS ---
 
 window.openProjectModal = async () => {
@@ -308,10 +308,124 @@ window.openProjectSettings = async () => {
 
                         <button type="submit" class="btn btn-primary btn-block mt-3">Upload & Verify</button>
                     </form>
+
+                    <hr style="border:0; border-top:1px solid #333; margin:2rem 0;">
+
+                    <div class="text-h mb-3" style="font-size:1.1rem;">Client Portal Access</div>
+                    
+                    <!-- Invitation Section -->
+                    <div class="form-group mb-4" style="padding: 1.5rem; background: rgba(223, 165, 58, 0.05); border-radius: 12px; border: 1px solid rgba(223, 165, 58, 0.2);">
+                        <div class="text-sm font-bold mb-3 text-gold">Secure Invitation</div>
+                        <p class="text-xs text-muted mb-3">Invite your client to set their own password and access the portal.</p>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Client Email</label>
+                            <input type="email" id="proj-client-email" class="form-input" value="${currentProject?.portalEmail || ''}" placeholder="client@example.com">
+                        </div>
+                        
+                        <button id="btn-invite-client" class="btn btn-primary btn-block mt-3" style="background:var(--gold); color:#000;">
+                            <span class="material-icons" style="font-size:1.1rem; vertical-align:middle; margin-right:5px;">mail</span>
+                            Send Portal Invitation
+                        </button>
+                    </div>
+
+                    <!-- Manual Override Accordeon-style -->
+                    <div style="border-top:1px solid var(--border); padding-top:1rem; margin-top:2rem;">
+                         <div class="text-xs font-bold text-muted mb-3">MANUAL ACCESS (ADMIN SET PASSWORD)</div>
+                         <div id="portal-setup-form">
+                            <div class="form-group">
+                                <label class="form-label">Override Password</label>
+                                <div style="display:flex; gap:10px;">
+                                    <input type="password" id="proj-client-pass" class="form-input" placeholder="••••••••">
+                                    <button id="btn-save-client-user" class="btn btn-secondary" style="white-space:nowrap;">Grant Access</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group mt-3">
+                        <label class="form-label">Portal Link for Client</label>
+                        <div style="display:flex; gap:10px;">
+                            <input type="text" id="proj-portal-url" class="form-input" readonly value="${window.location.origin}/portal.html" style="background:var(--bg-dark); color:var(--text-muted); font-size:0.8rem;">
+                            <button id="btn-copy-portal" class="btn btn-sm" style="background:#333;"><span class="material-icons" style="font-size:1.2rem;">content_copy</span></button>
+                        </div>
+                        <div class="text-xs text-muted mt-2">Give this URL and the credentials above to your client. This link works anywhere.</div>
+                    </div>
                 </div>
             </div>
         </div>
     `;
+
+    document.getElementById('btn-copy-portal').onclick = () => {
+        const url = document.getElementById('proj-portal-url');
+        url.select();
+        document.execCommand('copy');
+        window.showToast("Link copied!", "success");
+    };
+
+    document.getElementById('btn-invite-client').onclick = async () => {
+        const email = document.getElementById('proj-client-email').value;
+        if (!email) return window.showToast("Client email is required", "error");
+
+        const btn = document.getElementById('btn-invite-client');
+        btn.disabled = true;
+        btn.innerText = "Sending Invite...";
+
+        try {
+            const token = await getAuthToken();
+            const res = await fetch(`${API_BASE}/api/projects/${activeProjectId}/invite-client`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ email })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                window.showToast("Invitation email sent!", "success");
+            } else {
+                throw new Error(data.error || "Failed to send invitation");
+            }
+        } catch (e) {
+            console.error(e);
+            window.showToast(e.message, "error");
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<span class="material-icons" style="font-size:1.1rem; vertical-align:middle; margin-right:5px;">mail</span> Send Portal Invitation`;
+        }
+    };
+
+    document.getElementById('btn-save-client-user').onclick = async () => {
+        const email = document.getElementById('proj-client-email').value;
+        const password = document.getElementById('proj-client-pass').value;
+        if (!email || !password) return window.showToast("Email and Password are required", "error");
+
+        const btn = document.getElementById('btn-save-client-user');
+        btn.disabled = true;
+        btn.innerText = "Processing...";
+
+        try {
+            const token = await getAuthToken();
+            const res = await fetch(`${API_BASE}/api/projects/${activeProjectId}/portal-user`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ email, password })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                window.showToast(data.message, "success");
+                currentProject.portalEmail = email; // Sync local state
+            } else {
+                throw new Error(data.error || "Failed to grant access");
+            }
+        } catch (e) {
+            console.error(e);
+            window.showToast(e.message, "error");
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "Grant Access";
+        }
+    };
 
     document.getElementById('settings-form').onsubmit = async (e) => {
         e.preventDefault();
@@ -360,7 +474,7 @@ window.openAgentModal = (agentJson = null) => {
     const host = document.getElementById('ai-modal-host');
 
     let knowledgeBase = agent?.knowledgeBase || [];
-    let tools = agent?.tools || { createLead: true, checkAvailability: true, bookAppointment: true }; // Default tools
+    let tools = agent?.tools || {}; // Default tools (empty, relying on discovery)
     let activeTab = 'general';
 
     // Assign global helpers
@@ -460,8 +574,6 @@ window.openAgentModal = (agentJson = null) => {
 
     window.agent_showEmbedCode = (id) => {
         const prodUrl = 'https://quasar-erp-b26d5.web.app';
-        // Force Production URL for the snippet so users get the working public link
-        // Use API_BASE only if we really want to generate a localhost snippet (optional)
         const currentApiBase = prodUrl;
 
         let cfg = {
@@ -470,7 +582,11 @@ window.openAgentModal = (agentJson = null) => {
             welcome: 'Hello! How can I help you today?',
             vapiId: '',
             toggleIcon: 'chat',
-            voiceHint: true
+            avatar: '',
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+            firstMessageMode: 'assistant-speaks-first',
+            firstMessage: 'Hello, how can I help you today?'
         };
 
         // Fetch config from DB
@@ -482,6 +598,13 @@ window.openAgentModal = (agentJson = null) => {
                 if (d.welcomeMessage) cfg.welcome = d.welcomeMessage;
                 if (d.vapiAssistantId) cfg.vapiId = d.vapiAssistantId;
                 if (d.toggleIcon) cfg.toggleIcon = d.toggleIcon;
+                if (d.avatarUrl) cfg.avatar = d.avatarUrl;
+
+                // New fields
+                if (d.provider) cfg.provider = d.provider;
+                if (d.model) cfg.model = d.model;
+                if (d.firstMessageMode) cfg.firstMessageMode = d.firstMessageMode;
+                if (d.firstMessage) cfg.firstMessage = d.firstMessage;
 
                 // Update UI if open
                 if (document.getElementById('emb-title')) {
@@ -490,9 +613,19 @@ window.openAgentModal = (agentJson = null) => {
                     document.getElementById('emb-color-text').value = cfg.color;
                     document.getElementById('emb-welcome').value = cfg.welcome;
                     document.getElementById('emb-vapi').value = cfg.vapiId;
+                    document.getElementById('emb-provider').value = cfg.provider;
+                    document.getElementById('emb-model').value = cfg.model;
+                    document.getElementById('emb-first-msg-mode').value = cfg.firstMessageMode;
+                    document.getElementById('emb-first-msg').value = cfg.firstMessage;
 
                     const radio = document.querySelector(`input[name="emb-icon"][value="${cfg.toggleIcon}"]`);
                     if (radio) radio.checked = true;
+
+                    if (document.getElementById('emb-avatar')) {
+                        document.getElementById('emb-avatar').value = cfg.avatar;
+                        const preview = document.getElementById('emb-avatar-preview');
+                        if (preview) preview.innerHTML = cfg.avatar ? `<img src="${cfg.avatar}" style="width:100%; height:100%; object-fit:cover;">` : `<span class="material-icons" style="font-size:1.5rem; color:#444;">person</span>`;
+                    }
                 }
             }
         });
@@ -510,94 +643,166 @@ window.openAgentModal = (agentJson = null) => {
         const overlay = document.createElement('div');
         overlay.className = 'crm-modal-overlay';
         overlay.style.zIndex = '999999';
+        overlay.style.padding = '0'; // Fullscreen-ish padding
 
         overlay.innerHTML = `
-            <div class="crm-modal-content" style="max-width:700px;" onclick="event.stopPropagation()">
-                <div class="crm-modal-header">
-                    <div class="text-h">Embed & Customize Widget</div>
-                    <button class="icon-btn" onclick="this.closest('.crm-modal-overlay').remove()"><span class="material-icons">close</span></button>
-                </div>
-                <div class="crm-modal-body">
+            <div class="crm-modal-content" style="max-width:100%; width:100%; height:100%; border-radius:0; border:none;" onclick="event.stopPropagation()">
+                <div class="crm-modal-header" style="background:var(--bg-dark); border-bottom: 2px solid var(--gold-dark); padding: 1rem 2rem;">
+                    <div style="display:flex; align-items:center; gap:15px;">
+                        <button class="icon-btn text-muted" onclick="this.closest('.crm-modal-overlay').remove()"><span class="material-icons">arrow_back</span></button>
+                        <div>
+                            <div class="text-h" style="margin:0; font-size:1.2rem;">Widget Customizer</div>
+                            <div class="text-xs text-muted">ID: ${id}</div>
+                        </div>
+                    </div>
                     
-                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                    <div style="display:flex; gap:12px;">
+                        <button id="btn-preview" class="btn btn-secondary btn-sm">
+                            <span class="material-icons" style="font-size:1.1rem; vertical-align:middle; margin-right:5px;">visibility</span> Preview Live
+                        </button>
+                        <button id="btn-save-config" class="btn btn-primary btn-sm">
+                            <span class="material-icons" style="font-size:1.1rem; vertical-align:middle; margin-right:5px;">save</span> Save Config
+                        </button>
+                    </div>
+                </div>
+
+                <div class="crm-modal-body" style="background:var(--bg-dark); display:grid; grid-template-columns: 350px 1fr 400px; gap:2px; padding:0; height:calc(100% - 70px); overflow:hidden;">
+                    
+                    <!-- 1. APPEARANCE PANEL (LEFT) -->
+                    <div style="background:var(--bg-card); padding:2rem; border-right:1px solid var(--border); overflow-y:auto;">
+                        <div class="text-xs font-bold text-gold mb-4" style="letter-spacing:1px; text-transform:uppercase;">Appearance</div>
                         
-                        <!-- Left: Customization -->
-                        <div>
-                            <div class="text-sm font-bold mb-3 text-gold">Appearance</div>
-                            
-                            <div class="form-group">
-                                <label class="form-label">Widget Title</label>
-                                <input type="text" id="emb-title" class="form-input" value="${cfg.title}">
-                            </div>
+                        <div class="form-group mb-4">
+                            <label class="form-label">Widget Title</label>
+                            <input type="text" id="emb-title" class="form-input" value="${cfg.title}" placeholder="e.g. Quasar AI Support">
+                        </div>
 
-                            <div class="form-group">
-                                <label class="form-label">Primary Color</label>
-                                <div style="display:flex; gap:10px;">
-                                    <input type="color" id="emb-color" class="form-input" style="padding:2px; width:50px;" value="${cfg.color}">
-                                    <input type="text" id="emb-color-text" class="form-input" value="${cfg.color}">
-                                </div>
-                            </div>
-
-                            <div class="form-group">
-                                <label class="form-label">Toggle Icon</label>
-                                <div style="display:flex; gap:10px; margin-top:5px; flex-wrap:wrap;">
-                                    <label style="cursor:pointer; display:flex; align-items:center; gap:4px; font-size:0.9rem;">
-                                        <input type="radio" name="emb-icon" value="chat" checked> Chat
-                                    </label>
-                                    <label style="cursor:pointer; display:flex; align-items:center; gap:4px; font-size:0.9rem;">
-                                        <input type="radio" name="emb-icon" value="robot"> Robot
-                                    </label>
-                                    <label style="cursor:pointer; display:flex; align-items:center; gap:4px; font-size:0.9rem;">
-                                        <input type="radio" name="emb-icon" value="sparkles"> Sparkles
-                                    </label>
-                                    <label style="cursor:pointer; display:flex; align-items:center; gap:4px; font-size:0.9rem;">
-                                        <input type="radio" name="emb-icon" value="question"> ?
-                                    </label>
-                                </div>
+                        <div class="form-group mb-4">
+                            <label class="form-label">Primary Color</label>
+                            <div style="display:flex; gap:10px;">
+                                <input type="color" id="emb-color" class="form-input" style="padding:4px; width:54px; height:54px; cursor:pointer;" value="${cfg.color}">
+                                <input type="text" id="emb-color-text" class="form-input" value="${cfg.color}" style="font-family:monospace;">
                             </div>
                         </div>
 
-                        <!-- Right: Content & Voice -->
-                        <div>
-                            <div class="text-sm font-bold mb-3 text-gold">Content & Voice</div>
-
-                            <div class="form-group">
-                                <label class="form-label">Welcome Message</label>
-                                <input type="text" id="emb-welcome" class="form-input" value="${cfg.welcome}">
+                        <div class="form-group mb-4">
+                            <label class="form-label">Toggle Icon</label>
+                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:8px;">
+                                <label style="cursor:pointer; background:rgba(255,255,255,0.03); border:1px solid var(--border); padding:10px; border-radius:8px; display:flex; align-items:center; gap:8px; font-size:0.9rem;">
+                                    <input type="radio" name="emb-icon" value="chat" checked> Chat
+                                </label>
+                                <label style="cursor:pointer; background:rgba(255,255,255,0.03); border:1px solid var(--border); padding:10px; border-radius:8px; display:flex; align-items:center; gap:8px; font-size:0.9rem;">
+                                    <input type="radio" name="emb-icon" value="robot"> Robot
+                                </label>
+                                <label style="cursor:pointer; background:rgba(255,255,255,0.03); border:1px solid var(--border); padding:10px; border-radius:8px; display:flex; align-items:center; gap:8px; font-size:0.9rem;">
+                                    <input type="radio" name="emb-icon" value="sparkles"> Sparkles
+                                </label>
+                                <label style="cursor:pointer; background:rgba(255,255,255,0.03); border:1px solid var(--border); padding:10px; border-radius:8px; display:flex; align-items:center; gap:8px; font-size:0.9rem;">
+                                    <input type="radio" name="emb-icon" value="question"> Quest.
+                                </label>
                             </div>
+                        </div>
 
-                            <div class="form-group">
-                                <label class="form-label">Vapi Assistant ID</label>
-                                <input type="text" id="emb-vapi" class="form-input" placeholder="Optional (Enable Voice)" value="${cfg.vapiId}">
+                        <div class="form-group">
+                            <label class="form-label">Agent Avatar</label>
+                            <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:12px; padding:1.5rem; text-align:center;">
+                                <div id="emb-avatar-preview" style="width:80px; height:80px; border-radius:50%; border:2px solid var(--gold); overflow:hidden; background:#111; display:flex; align-items:center; justify-content:center; margin:0 auto 1.5rem;">
+                                    ${cfg.avatar ? `<img src="${cfg.avatar}" style="width:100%; height:100%; object-fit:cover;">` : `<span class="material-icons" style="font-size:2.5rem; color:#444;">person</span>`}
+                                </div>
+                                <input type="file" id="emb-avatar-file" accept="image/*" style="display:none;">
+                                <button type="button" class="btn btn-secondary btn-block" onclick="document.getElementById('emb-avatar-file').click()">Change Avatar</button>
+                                <input type="hidden" id="emb-avatar" value="${cfg.avatar}">
                             </div>
-                            
-                            <!-- Save Button -->
-                            <button id="btn-save-config" class="btn btn-secondary btn-sm mt-3" style="width:100%;">
-                                <span class="material-icons" style="font-size:1rem;">save</span> Save Config to Cloud
-                            </button>
-                            <div id="save-status" class="text-xs text-center mt-2 text-muted" style="height:1.2rem;"></div>
                         </div>
                     </div>
 
-                    <hr style="border:0; border-top:1px solid #333; margin:20px 0;">
-
-                    <div class="form-group">
-                        <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:5px;">
-                            <label class="form-label">Universal Embed Code</label>
-                            <button id="btn-preview" class="btn btn-sm" style="background:#334; border:1px solid #556;">
-                                <span class="material-icons" style="font-size:1rem; vertical-align:middle; margin-right:4px;">visibility</span> Preview
-                            </button>
+                    <!-- 2. CONFIGURATION PANEL (MIDDLE) -->
+                    <div style="background:var(--bg-dark); padding:2rem; overflow-y:auto; border-right:1px solid var(--border);">
+                        <div class="text-xs font-bold text-gold mb-4" style="letter-spacing:1px; text-transform:uppercase;">Brain & Logic</div>
+                        
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                            <div class="form-group mb-4">
+                                <label class="form-label">Model Provider</label>
+                                <select id="emb-provider" class="form-input">
+                                    <option value="openai">OpenAI</option>
+                                    <option value="anthropic">Anthropic</option>
+                                    <option value="together-ai">Together AI</option>
+                                    <option value="anyscale">Anyscale</option>
+                                    <option value="groq">Groq</option>
+                                    <option value="openrouter">OpenRouter</option>
+                                </select>
+                            </div>
+                            <div class="form-group mb-4">
+                                <label class="form-label">Model</label>
+                                <select id="emb-model" class="form-input">
+                                    <option value="gpt-4o">GPT-4o (High Intelligence)</option>
+                                    <option value="gpt-4o-mini" selected>GPT-4o Mini (Fast & Cheap)</option>
+                                    <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                                    <option value="claude-3-opus">Claude 3 Opus</option>
+                                    <option value="claude-3-sonnet">Claude 3 Sonnet</option>
+                                    <option value="claude-3-haiku">Claude 3 Haiku</option>
+                                </select>
+                            </div>
                         </div>
-                        <p class="text-xs text-muted mb-2">
-                            Paste this code <b>once</b>. Future design changes will update automatically.
+
+                        <div class="form-group mb-4">
+                            <label class="form-label">Chat Welcome Message (UI)</label>
+                            <input type="text" id="emb-welcome" class="form-input" value="${cfg.welcome}" style="height:50px;">
+                            <div class="text-xs text-muted mt-2">What the user sees in the chat bubble before typing.</div>
+                        </div>
+
+                        <div class="form-group mb-4">
+                            <label class="form-label">First Message Mode (Voice/Logic)</label>
+                            <select id="emb-first-msg-mode" class="form-input">
+                                <option value="assistant-speaks-first">Assistant speaks first</option>
+                                <option value="user-speaks-first">User speaks first</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group mb-4">
+                            <label class="form-label">Assistant First Message</label>
+                            <textarea id="emb-first-msg" class="form-input" rows="3" style="resize:none;">${cfg.firstMessage}</textarea>
+                            <div class="text-xs text-muted mt-2">The initial prompt spoken or sent by the AI when connection is established.</div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Vapi Assistant ID (Voice Enable)</label>
+                            <input type="text" id="emb-vapi" class="form-input" placeholder="e.g. e0c42c3c-..." value="${cfg.vapiId}">
+                            <div class="text-xs text-muted mt-2">Link to a Vapi assistant for real-time voice capabilities.</div>
+                        </div>
+                        
+                        <div id="save-status" class="text-sm text-center font-bold mt-4" style="height:1.5rem;"></div>
+                    </div>
+
+                    <!-- 3. DEPLOY PANEL (RIGHT) -->
+                    <div style="background:var(--bg-card); padding:2rem; overflow-y:auto;">
+                        <div class="text-xs font-bold text-gold mb-4" style="letter-spacing:1px; text-transform:uppercase;">Deploy & Embed</div>
+                        
+                        <p class="text-sm text-muted mb-4">
+                            Copy the snippet below and paste it into the <code>&lt;head&gt;</code> or <code>&lt;body&gt;</code> of your website.
                         </p>
-                        <textarea id="emb-code" class="form-input" rows="5" readonly style="font-family:monospace; font-size:0.8rem; background:#111; color:#0f0;">${generateSnippet()}</textarea>
+
+                        <div class="form-group">
+                            <label class="form-label">Universal Embed Code</label>
+                            <div style="position:relative;">
+                                <textarea id="emb-code" class="form-input" rows="8" readonly style="font-family:monospace; font-size:0.85rem; background:#0a0a0a; color:#f0f0f0; border-color:var(--gold-dark); line-height:1.4; padding:1.5rem;">${generateSnippet()}</textarea>
+                                <button class="btn btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('emb-code').value); window.showToast('Code Copied!')" style="position:absolute; top:10px; right:10px; background:rgba(255,255,255,0.05);">
+                                    <span class="material-icons" style="font-size:1.1rem;">content_copy</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div style="padding:1.5rem; background:rgba(223, 165, 58, 0.05); border:1px solid var(--gold-dark); border-radius:12px; margin-top:2rem;">
+                            <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+                                <span class="material-icons text-gold">info</span>
+                                <div class="text-sm font-bold">Auto-Updates Enabled</div>
+                            </div>
+                            <p class="text-xs text-muted" style="margin:0;">
+                                Changes made in this dashboard are applied <b>instantly</b> to all live widgets. No need to re-copy the code.
+                            </p>
+                        </div>
                     </div>
 
-                    <button class="btn btn-primary btn-block mt-3" onclick="navigator.clipboard.writeText(document.getElementById('emb-code').value); this.innerText='Copied!'">
-                        <span class="material-icons" style="font-size:1rem; vertical-align:text-bottom; margin-right:5px;">content_copy</span>
-                        Copy to Clipboard
-                    </button>
                 </div>
             </div>
         `;
@@ -611,6 +816,19 @@ window.openAgentModal = (agentJson = null) => {
             document.getElementById('emb-color-text').value = cfg.color;
             cfg.welcome = document.getElementById('emb-welcome').value;
             cfg.vapiId = document.getElementById('emb-vapi').value;
+            cfg.avatar = document.getElementById('emb-avatar').value;
+
+            // Updated New Fields
+            cfg.provider = document.getElementById('emb-provider').value;
+            cfg.model = document.getElementById('emb-model').value;
+            cfg.firstMessageMode = document.getElementById('emb-first-msg-mode').value;
+            cfg.firstMessage = document.getElementById('emb-first-msg').value;
+
+            // Updated Preview
+            const preview = document.getElementById('emb-avatar-preview');
+            if (preview) {
+                preview.innerHTML = cfg.avatar ? `<img src="${cfg.avatar}" style="width:100%; height:100%; object-fit:cover;">` : `<span class="material-icons" style="font-size:2.5rem; color:#444;">person</span>`;
+            }
 
             const selectedIcon = document.querySelector('input[name="emb-icon"]:checked');
             if (selectedIcon) cfg.toggleIcon = selectedIcon.value;
@@ -622,7 +840,8 @@ window.openAgentModal = (agentJson = null) => {
             const btn = document.getElementById('btn-save-config');
             const status = document.getElementById('save-status');
 
-            btn.innerHTML = 'Saving...';
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = 'SYNCING...';
             btn.disabled = true;
 
             try {
@@ -632,18 +851,24 @@ window.openAgentModal = (agentJson = null) => {
                     color: cfg.color,
                     welcomeMessage: cfg.welcome,
                     vapiAssistantId: cfg.vapiId,
-                    toggleIcon: cfg.toggleIcon
+                    toggleIcon: cfg.toggleIcon,
+                    avatarUrl: cfg.avatar,
+                    // New fields
+                    provider: cfg.provider,
+                    model: cfg.model,
+                    firstMessageMode: cfg.firstMessageMode,
+                    firstMessage: cfg.firstMessage
                 });
 
-                status.innerText = "Saved! Live widget updated.";
-                status.style.color = "#4caf50";
-                setTimeout(() => status.innerText = "", 3000);
+                status.innerText = "Deployment Success! Changes are live.";
+                status.style.color = "var(--gold)";
+                setTimeout(() => status.innerText = "", 4000);
             } catch (e) {
                 console.error(e);
-                status.innerText = "Error saving config.";
+                status.innerText = "Failed to sync config.";
                 status.style.color = "#ff4444";
             } finally {
-                btn.innerHTML = '<span class="material-icons" style="font-size:1rem;">save</span> Save Config to Cloud';
+                btn.innerHTML = originalHtml;
                 btn.disabled = false;
             }
         };
@@ -656,19 +881,42 @@ window.openAgentModal = (agentJson = null) => {
                 color: cfg.color,
                 welcome: cfg.welcome,
                 vapiId: cfg.vapiId,
-                toggleIcon: cfg.toggleIcon
+                toggleIcon: cfg.toggleIcon,
+                avatar: cfg.avatar,
+                provider: cfg.provider,
+                model: cfg.model,
+                mode: cfg.firstMessageMode
             });
             window.open(`${currentApiBase}/erp/test-widget.html?${params.toString()}`, '_blank');
         };
 
-        document.getElementById('emb-title').oninput = updateState;
-        document.getElementById('emb-color').oninput = updateState;
+        // Attach listeners
+        ['emb-title', 'emb-color', 'emb-welcome', 'emb-vapi', 'emb-provider', 'emb-model', 'emb-first-msg-mode', 'emb-first-msg'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.oninput = updateState;
+        });
+
         document.getElementById('emb-color-text').oninput = () => {
-            cfg.color = document.getElementById('emb-color-text').value;
-            document.getElementById('emb-color').value = cfg.color;
+            const color = document.getElementById('emb-color-text').value;
+            if (/^#[0-9A-F]{6}$/i.test(color)) {
+                cfg.color = color;
+                document.getElementById('emb-color').value = color;
+                updateState();
+            }
         };
-        document.getElementById('emb-welcome').oninput = updateState;
-        document.getElementById('emb-vapi').oninput = updateState;
+
+        document.getElementById('emb-avatar-file').onchange = (evt) => {
+            const file = evt.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                document.getElementById('emb-avatar').value = e.target.result;
+                updateState();
+            };
+            reader.readAsDataURL(file);
+        };
+
         document.querySelectorAll('input[name="emb-icon"]').forEach(r => r.onchange = updateState);
 
         document.getElementById('btn-save-config').onclick = saveToCloud;
@@ -766,7 +1014,7 @@ window.openAgentModal = (agentJson = null) => {
 
                                 <div class="form-group">
                                     <label class="form-label">System Personality / Instructions</label>
-                                    <textarea id="ag-personality" class="form-input" rows="3" placeholder="You are a helpful assistant...">${agent?.personality || 'You are a helpful assistant for ' + (currentProject?.clientName || 'our company') + '.'}</textarea>
+                                    <textarea id="ag-personality" class="form-input" rows="24" placeholder="You are a helpful assistant...">${agent?.personality || 'You are a helpful assistant for ' + (currentProject?.clientName || 'our company') + '.'}</textarea>
                                     <div class="text-xs text-muted mt-1">Define the agent's core behavior and tone here.</div>
                                 </div>
                                 <div class="form-group">
