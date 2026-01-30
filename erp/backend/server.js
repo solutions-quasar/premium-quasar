@@ -187,7 +187,11 @@ app.post('/api/contact', async (req, res) => {
     `;
 
     try {
-        const fromEmail = process.env.EMAIL_FROM || 'onboarding@resend.dev';
+        // Use verified domain sender by default
+        const fromEmail = process.env.EMAIL_FROM && !process.env.EMAIL_FROM.includes('resend.dev')
+            ? process.env.EMAIL_FROM
+            : 'info@solutionsquasar.ca';
+
         // Use the hardcoded email found in the file as a safe default for notifications
         const notificationEmail = 'info@solutionsquasar.ca';
 
@@ -218,6 +222,43 @@ app.post('/api/contact', async (req, res) => {
 
     } catch (error) {
         console.error("Contact Form Error:", error);
+
+        // --- SANDBOX FALLBACK (Duplicate from send-email) ---
+        if (error.message && (error.message.includes('only send testing emails') || error.message.includes('verify a domain'))) {
+            try {
+                const sandboxEmail = 'bensult78@gmail.com'; // Hardcoded dev email
+                const fallbackSender = 'onboarding@resend.dev';
+
+                console.log(`REDIRECTING contact form to sandbox: ${sandboxEmail}`);
+
+                await resend.emails.send({
+                    from: 'Website Lead <' + fallbackSender + '>',
+                    to: [sandboxEmail],
+                    subject: `[SANDBOX] New Lead: ${name}`,
+                    html: `<p><strong>Original Destination:</strong> info@solutionsquasar.ca</p><hr>${htmlContent}`
+                });
+
+                // Still save to DB
+                try {
+                    await db.collection('crm_leads').add({
+                        name,
+                        company: company || null,
+                        contactMethod: contact_method,
+                        interest: interest || 'General',
+                        message: message || '',
+                        status: 'New',
+                        source: 'website_contact_form (sandbox_redirect)',
+                        createdAt: new Date().toISOString()
+                    });
+                } catch (dbErr) { console.error("DB Save Error:", dbErr); }
+
+                return res.json({ success: true, message: "Request received (Sandbox Mode)." });
+
+            } catch (retryError) {
+                console.error('Contact Sandbox Retry Failed:', retryError);
+            }
+        }
+
         res.status(500).json({ success: false, error: "Failed to send email. Please try again later." });
     }
 });
@@ -232,7 +273,7 @@ app.post('/api/send-email', verifyToken, async (req, res) => {
     // Force usage of the verified domain if possible, ignoring the sandbox default from env
     let fromEmail = process.env.EMAIL_FROM;
     if (!fromEmail || fromEmail.includes('resend.dev')) {
-        fromEmail = 'noreply@solutionsquasar.ca';
+        fromEmail = 'info@solutionsquasar.ca';
     }
 
     console.log(`Attempting to send email FROM: ${fromEmail} TO: ${to}`);
