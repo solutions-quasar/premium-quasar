@@ -432,6 +432,7 @@ window.addServiceFieldRow = () => {
     row.style.cssText = 'background: rgba(0,0,0,0.2); padding:15px; border-radius:8px; position:relative; border: 1px solid var(--border); margin-bottom:10px;';
     row.innerHTML = `
         <input type="text" class="form-input service-title-input mb-2" placeholder="Service Name" required>
+        <textarea class="form-input service-desc-input mb-2" rows="3" placeholder="Service Detailed Description (for inner page)" required></textarea>
         <div style="display:flex; gap:10px;">
             <input type="url" class="form-input service-img-input" placeholder="Image URL" style="flex:1;" required>
             <button type="button" class="btn btn-secondary" onclick="triggerImageUpload(this)"><span class="material-icons" style="font-size:18px;">upload</span></button>
@@ -487,6 +488,7 @@ window.handleDemoSubmit = async (e) => {
         const services = Array.from(document.querySelectorAll('.service-row')).map(row => ({
             id: row.querySelector('.service-title-input').value.toLowerCase().replace(/[^a-z0-9]/g, '-'),
             title: row.querySelector('.service-title-input').value,
+            description: row.querySelector('.service-desc-input').value,
             image: row.querySelector('.service-img-input').value
         })).filter(s => s.title.trim() !== '');
 

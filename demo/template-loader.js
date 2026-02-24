@@ -146,7 +146,7 @@ function applyDemoData(data) {
                     <div class="card-content">
                         <h3>${service.title}</h3>
                         <p>Premium aesthetic solution tailored for your exact needs.</p>
-                        <a href="#contact" class="text-link">Learn More</a>
+                        <a href="service-detail.html?id=${data.id || new URLSearchParams(window.location.search).get('id')}&serviceIndex=${index}" class="text-link">Learn More</a>
                     </div>
                 </article>
                 `;

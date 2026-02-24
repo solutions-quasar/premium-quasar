@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Premium Clinic | Aesthetic Excellence</title>
+    <meta name="description"
+        content="Experience ultra-premium dermatological care at Premium Clinic. Where science meets luxury.">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap"
+        rel="stylesheet">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Favicon (using logo for now) -->
+    <link rel="icon" type="image/png" href="assets/images/logo.png" class="demo-logo-icon">
+
+    <!-- Material Icons (for the loader) -->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+</head>
+
+<body>
+
+
+
+    <!-- Navigation -->
+    <nav class="navbar" id="navbar">
+        <div class="container navbar-content">
+            <a href="#" class="brand">
+                <img src="assets/images/logo.png" alt="Clinic Logo" class="demo-logo">
+                <span class="demo-clinic-name"
+                    style="display:none; font-family: var(--font-heading); font-size: 1.5rem; font-weight: bold;">Clinic
+                    Name</span>
+            </a>
+            <!-- Mobile Phone Link -->
+            <a href="tel:1800263376" class="demo-phone-href mobile-phone-link" aria-label="Call Us">
+                <span class="material-icons">phone</span>
+            </a>
+            <div class="nav-links">
+                <a href="#services">Services</a>
+                <a href="#about">About</a>
+                <a href="#reviews">Reviews</a>
+                <a href="#gallery">Gallery</a>
+                <a href="tel:1800263376" class="demo-phone-href nav-phone"
+                    style="display:inline-flex; align-items:center; gap:5px; font-weight:600;"><span
+                        class="material-icons" style="font-size:16px;">phone</span><span class="demo-phone">Call
+                        Us</span></a>
+                <a href="#contact" class="btn-primary">Book Consultation</a>
+            </div>
+        </div>
+        <!-- Mobile Toggle removed as per user request -->
+        </div>
+    </nav>
+
+    <!-- Header Spacer (for fixed navbar) -->
+    <div style="height: 80px;"></div>
+
+    <!-- Inner Page Header -->
+    <header class="inner-header section-padding"
+        style="background: var(--bg-card); border-bottom: 1px solid var(--border); text-align: center;">
+        <div class="container small-container">
+            <h1 id="service-detail-title"
+                style="font-family: var(--font-heading); font-size: 2.5rem; margin-bottom: 15px;">Service Name</h1>
+            <div class="divider text-center"></div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <section class="section-padding">
+        <div class="container small-container">
+            <div
+                style="margin-bottom: 30px; border-radius: var(--radius-img); overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.1);">
+                <img id="service-detail-image" src="" alt="Service Image"
+                    style="width: 100%; height: auto; display: block; max-height: 400px; object-fit: cover;">
+            </div>
+            <div id="service-detail-description" style="line-height: 1.8; font-size: 1.1rem; color: var(--text-main);">
+                <!-- Dynamic text injected here -->
+            </div>
+            <div style="margin-top: 40px; text-align: center;">
+                <a href="#contact" class="btn-primary-large">Book This Service</a>
+                <a href="index.html" class="btn-secondary" style="margin-left: 10px;" id="back-home-btn">Back to
+                    Home</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Contact Section -->
+    <section id="contact" class="contact section-padding">
+        <div class="container">
+            <div class="contact-wrapper">
+                <div class="contact-info-panel">
+                    <h2>Get in Touch</h2>
+                    <p>Start your transformation today.</p>
+                    <ul class="contact-details">
+                        <li>
+                            <span class="material-icons">call</span>
+                            <div>
+                                <strong>Phone</strong>
+                                <a href="tel:1800263376" class="demo-phone-href demo-phone">+1 (800) 263-376</a>
+                            </div>
+                        </li>
+                        <li>
+                            <span class="material-icons">mail</span>
+                            <div>
+                                <strong>Email</strong>
+                                <a href="mailto:hello@example.com" class="demo-email">hello@example.com</a>
+                            </div>
+                        </li>
+                        <li>
+                            <span class="material-icons">location_on</span>
+                            <div>
+                                <strong>Address</strong>
+                                <span class="demo-address">123 Luxury Ave, Beverly Hills, CA</span>
+                            </div>
+                        </li>
+                    </ul>
+                    <div class="hours">
+                        <h4><span class="material-icons"
+                                style="font-size: 1.1rem; vertical-align: middle; margin-right: 6px; position:relative; top:-2px;">schedule</span>
+                            Hours</h4>
+                        <p>Mon - Fri: 9am - 7pm<br>Sat: 10am - 4pm<br>Sun: Closed</p>
+                    </div>
+                    <div class="demo-embed-map-container"
+                        style="margin-top: 20px; border-radius: 8px; overflow: hidden; height: 200px; background: rgba(0,0,0,0.05);">
+                        <!-- Map embedded via JS -->
+                    </div>
+                    <a href="#" target="_blank" class="btn-secondary demo-itinerary-btn"
+                        style="margin-top: 15px; width: 100%; text-align: center;">Get Directions</a>
+                </div>
+                <div class="contact-form-panel">
+                    <!-- New Interactive Booking Widget -->
+                    <div id="demo-booking-widget"
+                        style="background: var(--bg-card); padding: 30px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); border: 1px solid var(--border);">
+                        <h3 style="font-family: var(--font-heading); margin-bottom: 20px; font-size: 1.5rem;">Book Your
+                            Visit</h3>
+
+                        <div id="booking-step-1" class="booking-step">
+                            <form id="demo-lead-form" class="premium-form">
+                                <div class="form-group">
+                                    <label>First Name</label>
+                                    <input type="text" id="demo-lead-first-name" required placeholder="Jane">
+                                </div>
+                                <div class="form-group">
+                                    <label>Last Name</label>
+                                    <input type="text" id="demo-lead-last-name" required placeholder="Doe">
+                                </div>
+                                <div class="form-group">
+                                    <label>Email Address</label>
+                                    <input type="email" id="demo-lead-email" required placeholder="jane@example.com">
+                                </div>
+                                <div class="form-group">
+                                    <label>Phone Number</label>
+                                    <input type="tel" id="demo-lead-phone" required placeholder="(555) 123-4567">
+                                </div>
+                                <div class="form-group">
+                                    <label>Service of Interest</label>
+                                    <select id="demo-lead-service" class="demo-service-select" required>
+                                        <option value="">Select a service...</option>
+                                        <option value="Consultation">Consultation</option>
+                                        <option value="Laser Treatment">Laser Treatment</option>
+                                        <option value="Facial">Facial</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Message (Optional)</label>
+                                    <textarea id="demo-lead-message" rows="3"
+                                        placeholder="Any specific concerns?"></textarea>
+                                </div>
+                                <button type="submit" id="demo-booking-submit-btn" class="btn-primary block"
+                                    style="margin-top: 15px;">Complete Booking</button>
+                            </form>
+                        </div>
+
+                        <!-- Success State -->
+                        <div id="booking-success-state" class="booking-step"
+                            style="display: none; text-align: center; padding: 20px 0;">
+                            <div
+                                style="width: 60px; height: 60px; border-radius: 50%; background: rgba(46, 204, 113, 0.1); color: #2ecc71; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
+                                <span class="material-icons" style="font-size: 32px;">check_circle</span>
+                            </div>
+                            <h3 style="font-family: var(--font-heading); margin-bottom: 10px; font-size: 1.5rem;">
+                                Booking Confirmed!</h3>
+                            <p style="color: var(--text-muted); margin-bottom: 25px;">We've received your request and a
+                                confirmation email is on its way.</p>
+
+                            <div
+                                style="padding: 20px; background: rgba(223, 165, 58, 0.05); border: 1px dashed rgba(223, 165, 58, 0.3); border-radius: 8px;">
+                                <p style="font-size: 0.9rem; margin-bottom: 15px; color: var(--text-main);"><strong>👀
+                                        Want to see where this booking went?</strong></p>
+                                <a href="#" id="view-in-erp-btn" target="_blank" class="btn-primary block"
+                                    style="display:flex; justify-content:center; align-items:center; gap:8px;">
+                                    <span class="material-icons" style="font-size:18px;">dashboard</span> View in Demo
+                                    ERP
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-col brand-col">
+                    <img src="assets/images/logo.png" alt="Logo" class="footer-logo demo-logo">
+                    <span class="demo-clinic-name"
+                        style="display:none; font-family: var(--font-heading); font-size: 1.5rem; margin-bottom: 20px;">Clinic
+                        Name</span>
+                    <p>Excellence in every detail.</p>
+                </div>
+                <div class="footer-col">
+                    <h4><span class="material-icons" style="font-size: 1.2rem;">menu</span> Menu</h4>
+                    <ul>
+                        <li><a href="#services">Services</a></li>
+                        <li><a href="#about">About</a></li>
+                        <li><a href="#gallery">Gallery</a></li>
+                        <li><a href="#contact">Contact</a></li>
+                    </ul>
+                </div>
+                <div class="footer-col">
+                    <h4><span class="material-icons" style="font-size: 1.2rem;">gavel</span> Legal</h4>
+                    <ul>
+                        <li><a href="#">Privacy Policy</a></li>
+                        <li><a href="#">Terms of Service</a></li>
+                        <li><a href="#" id="footer-erp-link" target="_blank"
+                                style="color: var(--gold); font-weight: bold; margin-top: 10px; display: inline-block;"><span
+                                    class="material-icons"
+                                    style="font-size: 14px; vertical-align: middle; margin-right: 4px;">dashboard</span>
+                                ERP Dashboard</a></li>
+                    </ul>
+                </div>
+                <div class="footer-col">
+                    <h4><span class="material-icons" style="font-size: 1.2rem;">hub</span> Connect</h4>
+                    <ul class="contact-details" style="margin-top: 0; margin-bottom: 0;">
+                        <li style="margin-bottom: 10px;">
+                            <span class="material-icons" style="font-size: 1rem; margin-top: 3px;">call</span>
+                            <a href="tel:1800263376" class="demo-phone-href demo-phone">+1 (800) 263-376</a>
+                        </li>
+                        <li style="margin-bottom: 10px;">
+                            <span class="material-icons" style="font-size: 1rem; margin-top: 3px;">mail</span>
+                            <a href="mailto:hello@example.com" class="demo-email">hello@example.com</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom text-center">
+                <p>&copy; 2026 <span class="demo-clinic-name">Premium Clinic</span>. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Premium Mobile Bottom Bar -->
+    <div class="mobile-bottom-bar premium-bottom-bar">
+        <button class="bottom-bar-item mobile-toggle-btn" onclick="togglePremiumMobileMenu()" aria-label="Toggle Menu">
+            <div class="premium-burger-icon">
+                <span class="bar top-bar"></span>
+                <span class="bar middle-bar"></span>
+                <span class="bar bottom-bar"></span>
+            </div>
+            <span class="burger-label"
+                style="font-size: 10px; margin-top: 4px; font-weight: 500; letter-spacing: 0.5px;">MENU</span>
+        </button>
+        <a href="tel:1800263376" class="bottom-bar-item demo-phone-href" aria-label="Call Us">
+            <span class="material-icons" style="font-size: 22px;">phone_in_talk</span>
+            <span style="font-size: 10px; margin-top: 4px; font-weight: 500; letter-spacing: 0.5px;">CALL</span>
+        </a>
+        <a href="#contact" class="bottom-bar-item" aria-label="Message Us">
+            <span class="material-icons" style="font-size: 22px;">chat_bubble_outline</span>
+            <span style="font-size: 10px; margin-top: 4px; font-weight: 500; letter-spacing: 0.5px;">MESSAGE</span>
+        </a>
+    </div>
+
+
+
+    <!-- Premium Mobile Overlay Menu -->
+    <div id="premium-mobile-menu" class="premium-mobile-menu">
+        <div class="menu-content">
+            <img src="assets/images/logo.png" alt="Logo" class="demo-logo mobile-logo"
+                style="height: 60px; max-width: 80%; object-fit: contain; filter: brightness(0) invert(1);">
+            <nav class="mobile-nav-links">
+                <a href="#services" onclick="togglePremiumMobileMenu()">Our Expertise</a>
+                <a href="#about" onclick="togglePremiumMobileMenu()">About Us</a>
+                <a href="#reviews" onclick="togglePremiumMobileMenu()">Client Reviews</a>
+                <a href="#gallery" onclick="togglePremiumMobileMenu()">Experience Gallery</a>
+                <a href="#contact" onclick="togglePremiumMobileMenu()">Contact & Location</a>
+            </nav>
+            <div class="mobile-menu-footer">
+                <a href="tel:1800263376" class="demo-phone-href btn-secondary-large"
+                    style="width: 100%; text-align: center; margin-bottom: 15px; border-color: rgba(255,255,255,0.2); color: #fff;">
+                    <span class="material-icons"
+                        style="vertical-align: middle; margin-right: 5px; font-size: 18px;">phone_in_talk</span> <span
+                        class="demo-phone">Call Us Today</span>
+                </a>
+                <a href="#contact" class="btn-primary-large block" style="width: 100%; text-align: center;"
+                    onclick="togglePremiumMobileMenu()">Book Consultation</a>
+            </div>
+        </div>
+    </div>
+
+    <div id="demo-loader"
+        style="position:fixed; top:0; left:0; right:0; bottom:0; background:var(--color-bg); z-index:99999; display:flex; flex-direction:column; align-items:center; justify-content:center; transition: opacity 0.5s ease;">
+        <span class="material-icons rotating"
+            style="font-size: 3rem; color: var(--color-primary); margin-bottom: 20px;">sync</span>
+        <h2 style="font-family: var(--font-heading); color: var(--color-text);">Loading Experience...</h2>
+    </div>
+    <!-- Fullscreen Gallery Modal -->
+    <div id="gallery-modal" onclick="closeGalleryModal()"
+        style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.9); z-index:100000; justify-content:center; align-items:center; cursor:zoom-out;">
+        <span class="material-icons"
+            style="position:absolute; top:20px; right:20px; color:#fff; font-size:30px; cursor:pointer;">close</span>
+        <img id="gallery-modal-img" src="" alt="Full size image"
+            style="max-width:90%; max-height:90%; object-fit:contain; border-radius:8px; box-shadow:0 10px 30px rgba(0,0,0,0.5);">
+    </div>
+
+    <script>
+        window.openGalleryModal = function (url) {
+            const modal = document.getElementById('gallery-modal');
+            const img = document.getElementById('gallery-modal-img');
+            img.src = url;
+            modal.style.display = 'flex';
+        }
+        window.closeGalleryModal = function () {
+            document.getElementById('gallery-modal').style.display = 'none';
+        }
+    </script>
+
+    <script type="module" src="service-loader.js"></script>
+    <script src="script.js"></script>
+</body>
+
+</html>
