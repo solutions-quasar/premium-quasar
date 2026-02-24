@@ -1,9 +1,12 @@
 import { db, auth } from '../firebase-config.js';
 import { collection, query, where, getDocs, doc, getDoc, updateDoc, addDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { t } from '../services/translationService.js';
+import { erpConfirm, erpAlert } from '../services/uiService.js';
 
 // --- STATE ---
 let currentScriptId = null;
 let currentLeadId = null;
+let currentCategory = 'ALL';
 let currentSettings = {
     targetCalls: 20,
     targetMeetings: 2,
@@ -127,12 +130,20 @@ export async function initColdCall() {
                     <button class="btn btn-sm" onclick="openScriptsManager()">Scripts</button>
                 </div>
                 
-                <!-- Filters -->
-                <div style="padding:0.5rem; display:flex; gap:5px; overflow-x:auto;">
-                     <button class="btn btn-sm btn-primary cc-filter" data-cat="ALL">All</button>
-                     <button class="btn btn-sm cc-filter" data-cat="NO_WEBSITE">No Web</button>
-                     <button class="btn btn-sm cc-filter" data-cat="DATED_DESIGN">Dated</button>
-                     <button class="btn btn-sm cc-filter" data-cat="BAD_RANKING">SEO</button>
+                <!-- Filters and Sort -->
+                <div style="padding:0.5rem; display:flex; flex-direction:column; gap:10px; border-bottom:1px solid var(--border);">
+                    <div style="display:flex; gap:5px; overflow-x:auto;">
+                         <button class="btn btn-sm btn-primary cc-filter" data-cat="ALL">All</button>
+                         <button class="btn btn-sm cc-filter" data-cat="NO_WEBSITE">No Web</button>
+                         <button class="btn btn-sm cc-filter" data-cat="DATED_DESIGN">Dated</button>
+                         <button class="btn btn-sm cc-filter" data-cat="BAD_RANKING">SEO</button>
+                    </div>
+                    <select id="cc-sort-select" onchange="handleSortChange()" style="background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); padding:6px 10px; border-radius:4px; font-size:0.8rem; cursor:pointer; width:100%; outline:none;">
+                        <option value="date_desc">Date Added (Newest First)</option>
+                        <option value="date_asc">Date Added (Oldest First)</option>
+                        <option value="name_asc">Business Name (A-Z)</option>
+                        <option value="name_desc">Business Name (Z-A)</option>
+                    </select>
                 </div>
 
                 <div id="cc-lead-list" style="flex:1; overflow-y:auto;">
@@ -248,6 +259,23 @@ async function loadApprovedLeads(categoryFilter) {
         leads = leads.filter(l => l.lead_quality_category === categoryFilter);
     }
 
+    const sortVal = document.getElementById('cc-sort-select') ? document.getElementById('cc-sort-select').value : 'date_desc';
+    leads.sort((a, b) => {
+        if (sortVal === 'name_asc') {
+            return (a.business_name || '').localeCompare(b.business_name || '');
+        } else if (sortVal === 'name_desc') {
+            return (b.business_name || '').localeCompare(a.business_name || '');
+        } else if (sortVal === 'date_asc') {
+            const dateA = a.created_at ? new Date(a.created_at) : new Date(0);
+            const dateB = b.created_at ? new Date(b.created_at) : new Date(0);
+            return dateA - dateB;
+        } else {
+            const dateA = a.created_at ? new Date(a.created_at) : new Date(0);
+            const dateB = b.created_at ? new Date(b.created_at) : new Date(0);
+            return dateB - dateA;
+        }
+    });
+
     if (leads.length === 0) {
         list.innerHTML = `<div class="text-center text-muted p-3">No leads assigned to you.</div>`;
         return;
@@ -280,10 +308,15 @@ function setupFilterListeners() {
         btn.addEventListener('click', (e) => {
             document.querySelectorAll('.cc-filter').forEach(b => b.classList.remove('btn-primary'));
             e.target.classList.add('btn-primary');
-            loadApprovedLeads(e.target.dataset.cat);
+            currentCategory = e.target.dataset.cat;
+            loadApprovedLeads(currentCategory);
         });
     });
 }
+
+window.handleSortChange = () => {
+    loadApprovedLeads(currentCategory);
+};
 
 // --- WORKSPACE LOGIC ---
 window.selectColdCallLead = async (id) => {
@@ -709,7 +742,7 @@ window.saveScript = async () => {
 
 window.deleteScript = async () => {
     const id = document.getElementById('edit-script-id').value;
-    if (id && confirm("Delete script?")) {
+    if (id && await erpConfirm("Delete script?")) {
         // Deletion logic omitted for brevity (Firebase deleteDoc needed in import)
         // Ideally: await deleteDoc(doc(db, "scripts", id));
         alert('Deleted (simulated)');

@@ -1,6 +1,6 @@
 // --- FullCalendar Integration ---
 import { db } from '../firebase-config.js';
-import { collection, addDoc, getDocs, query, where } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { collection, addDoc, getDocs, query, where, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 export async function initCalendar() {
     const container = document.getElementById('view-calendar');
@@ -92,7 +92,11 @@ export async function initCalendar() {
         },
         eventDrop: function (info) {
             console.log(info.event.title + " was dropped on " + info.event.start.toISOString());
-            // Sync with DB
+            updateEventInFirestore(info.event);
+        },
+        eventResize: function (info) {
+            console.log(info.event.title + " was resized to " + (info.event.end ? info.event.end.toISOString() : 'null'));
+            updateEventInFirestore(info.event);
         }
     });
 
@@ -138,3 +142,22 @@ window.saveCalEvent = async (start, end, allDay) => {
     }
     closeCalModal();
 };
+
+async function updateEventInFirestore(event) {
+    if (!event.id) return;
+    try {
+        const eventRef = doc(db, "events", event.id);
+        const updateData = {
+            start: event.start.toISOString(),
+            allDay: event.allDay
+        };
+        // end can be null for allDay or single-point events
+        if (event.end) {
+            updateData.end = event.end.toISOString();
+        }
+        await updateDoc(eventRef, updateData);
+        console.log("Event updated in Firestore:", event.id);
+    } catch (e) {
+        console.error("Error updating event in Firestore:", e);
+    }
+}

@@ -1,6 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getFirestore, collection, query, where, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { erpAlert } from './services/uiService.js';
 
 const firebaseConfig = {
     apiKey: "AIzaSyB84uWdhZK08M6PNpL0PtB9sfa26EfmjCQ",
@@ -76,7 +77,7 @@ const verifyInvitation = async (token) => {
         if (data.success) {
             showSetup(data.email, data.projectName, token);
         } else {
-            alert(data.error || "Invalid invitation");
+            await erpAlert(data.error || "Invalid invitation");
             showLogin();
         }
     } catch (e) {
@@ -152,8 +153,14 @@ const showSetup = (email, projectName, token) => {
         const pass = document.getElementById('setup-pass').value;
         const confirm = document.getElementById('setup-pass-confirm').value;
 
-        if (pass !== confirm) return alert("Passwords do not match.");
-        if (pass.length < 6) return alert("Password must be at least 6 characters.");
+        if (pass !== confirm) {
+            await erpAlert("Passwords do not match.");
+            return;
+        }
+        if (pass.length < 6) {
+            await erpAlert("Password must be at least 6 characters.");
+            return;
+        }
 
         const btn = e.target.querySelector('button');
         btn.disabled = true;
@@ -176,7 +183,7 @@ const showSetup = (email, projectName, token) => {
                 throw new Error(setupData.error);
             }
         } catch (err) {
-            alert(err.message);
+            await erpAlert(err.message);
             btn.disabled = false;
             btn.innerText = "Secure Account & Enter";
         }
@@ -260,7 +267,7 @@ window.connectGoogle = async () => {
             window.location.href = data.url;
         }
     } catch (e) {
-        alert("Failed to start Google connection.");
+        await erpAlert("Failed to start Google connection.");
     }
 };
 
