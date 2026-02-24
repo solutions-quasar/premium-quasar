@@ -127,7 +127,8 @@
         style="z-index: 5000; background: var(--bg-dark); display: flex; align-items: center; justify-content: center;">
         <div class="text-center">
             <img src="favicon.svg" alt="Q" style="height: 60px; margin-bottom: 2rem;" class="rotating">
-            <div class="text-gold" style="letter-spacing: 0.2rem; font-weight: 700;">AUTHENTICATING</div>
+            <div id="splash-text" class="text-gold" style="letter-spacing: 0.2rem; font-weight: 700;"
+                data-i18n="login_authenticating">AUTHENTICATING</div>
         </div>
     </div>
 
@@ -137,20 +138,23 @@
             <div class="login-logo-area">
                 <img src="favicon.svg" alt="Q" class="login-logo-img">
             </div>
-            <div class="text-h text-center text-gold mb-4" style="font-size: 1.5rem;">Premium Quasar</div>
-            <p class="text-center text-muted mb-4 text-sm">Enterprise Resource Planning System</p>
+            <div class="text-h text-center text-gold mb-4" style="font-size: 1.5rem;" data-i18n="login_title">Premium
+                Quasar</div>
+            <p class="text-center text-muted mb-4 text-sm" data-i18n="login_subtitle">Enterprise Resource Planning
+                System</p>
 
             <form id="login-form">
                 <div class="form-group">
-                    <label class="form-label">Email Access ID</label>
+                    <label class="form-label" data-i18n="login_email_label">Email Access ID</label>
                     <div class="input-with-icon">
                         <span class="material-icons">person</span>
-                        <input type="email" id="login-email" class="form-input" placeholder="Enter your email" required>
+                        <input type="email" id="login-email" class="form-input" placeholder="Enter your email"
+                            data-i18n-placeholder="login_email_placeholder" required>
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Password</label>
+                    <label class="form-label" data-i18n="login_password_label">Password</label>
                     <div class="input-with-icon" style="position:relative;">
                         <span class="material-icons" style="pointer-events:none;">lock</span>
                         <input type="password" id="login-password" class="form-input" placeholder="••••••••" required
@@ -163,21 +167,29 @@
                 <div class="form-group"
                     style="display:flex; justify-content:space-between; align-items:center; margin-top:1rem; margin-bottom:1.5rem;">
                     <label class="form-label-checkbox">
-                        <input type="checkbox" id="remember-email" class="custom-checkbox"> Remember Email
+                        <input type="checkbox" id="remember-email" class="custom-checkbox"> <span
+                            data-i18n="login_remember_email">Remember Email</span>
                     </label>
                     <label class="form-label-checkbox">
-                        <input type="checkbox" id="stay-connected" class="custom-checkbox" checked> Stay Connected
+                        <input type="checkbox" id="stay-connected" class="custom-checkbox" checked> <span
+                            data-i18n="login_stay_connected">Stay Connected</span>
                     </label>
                 </div>
 
-                <button type="submit" class="btn btn-primary btn-block" style="padding: 12px;">
+                <button type="submit" class="btn btn-primary btn-block" style="padding: 12px;" data-i18n="login_btn">
                     Authenticate
                 </button>
             </form>
 
             <div class="text-center mt-3">
-                <a href="#" id="forgot-password-link" class="text-xs text-muted" style="text-decoration:none;">Forgot
+                <a href="#" id="forgot-password-link" class="text-xs text-muted" style="text-decoration:none;"
+                    data-i18n="login_forgot">Forgot
                     Credentials?</a>
+            </div>
+            <!-- Language Toggle in Login -->
+            <div style="display:flex; justify-content:center; gap:15px; margin-top:2rem;">
+                <button class="btn btn-sm lang-btn" onclick="erpSetLanguage('en')">EN</button>
+                <button class="btn btn-sm lang-btn" onclick="erpSetLanguage('fr')">FR</button>
             </div>
         </div>
         <div class="login-bg-overlay"></div>
@@ -196,33 +208,73 @@
                 </div>
             </div>
             <nav class="drawer-nav">
-                <a href="#dashboard" class="nav-item"><span class="material-icons">dashboard</span> Dashboard</a>
-                <a href="#crm" class="nav-item"><span class="material-icons">people</span> CRM</a>
-                <a href="#leads" class="nav-item"><span class="material-icons">filter_list</span> Leads</a>
-                <a href="#leadhunter" class="nav-item text-gold"><span class="material-icons">track_changes</span> Lead
-                    Hunter</a>
-                <a href="#coldcall" class="nav-item"><span class="material-icons">phone_in_talk</span> Cold Call</a>
-                <a href="#followup" class="nav-item" style="padding-left: 2rem; font-size: 0.9em;"><span
-                        class="material-icons" style="font-size: 1.1em;">checklist</span> Follow-up</a>
-                <a href="#calendar" class="nav-item"><span class="material-icons">event</span> Calendar</a>
-                <a href="#sales" class="nav-item"><span class="material-icons">receipt</span> Sales</a>
-                <a href="#team" class="nav-item"><span class="material-icons">groups</span> Team</a>
-                <a href="#ai-agents" class="nav-item text-green"><span class="material-icons">smart_toy</span> AI
-                    Agents</a>
+                <a href="#dashboard" class="nav-item"><span class="material-icons">dashboard</span> <span
+                        data-i18n="nav_dashboard">Dashboard</span></a>
+                <a href="#crm" class="nav-item"><span class="material-icons">people</span> <span
+                        data-i18n="nav_crm">Clients</span></a>
+                <div class="nav-group" id="group-prospection">
+                    <div class="nav-group-header" onclick="toggleNavGroup('group-prospection')">
+                        <span class="material-icons">track_changes</span>
+                        <span data-i18n="nav_prospection">Prospection</span>
+                        <span class="material-icons arrow-icon">expand_more</span>
+                    </div>
+                    <div class="nav-group-items">
+                        <a href="#automations" class="nav-item">
+                            <span class="material-icons">auto_mode</span>
+                            <span data-i18n="nav_automations">Automations Intelligence</span>
+                        </a>
+                        <a href="#leads" class="nav-item">
+                            <span class="material-icons">filter_list</span>
+                            <span data-i18n="nav_leads">Leads</span>
+                        </a>
+                        <a href="#leadhunter" class="nav-item text-gold">
+                            <span class="material-icons">track_changes</span>
+                            <span data-i18n="nav_leadhunter">Lead Hunter</span>
+                        </a>
+                        <a href="#coldcall" class="nav-item">
+                            <span class="material-icons">phone_in_talk</span>
+                            <span data-i18n="nav_coldcall">Cold Call</span>
+                        </a>
+                        <a href="#followup" class="nav-item sub-item">
+                            <span class="material-icons">checklist</span>
+                            <span data-i18n="nav_followup">Follow-up</span>
+                        </a>
+                    </div>
+                </div>
+                <a href="#calendar" class="nav-item"><span class="material-icons">event</span> <span
+                        data-i18n="nav_calendar">Calendar</span></a>
+                <a href="#sales" class="nav-item"><span class="material-icons">receipt</span> <span
+                        data-i18n="nav_sales">Sales</span></a>
+                <a href="#cashflow" class="nav-item"><span class="material-icons">account_balance_wallet</span>
+                    <span data-i18n="nav_cashflow">Cashflow</span></a>
+                <a href="#demos" class="nav-item text-gold"><span class="material-icons">web</span>
+                    <span data-i18n="nav_demos">Web Demos</span></a>
+                <a href="#team" class="nav-item"><span class="material-icons">groups</span> <span
+                        data-i18n="nav_team">Team</span></a>
+                <a href="#emails" class="nav-item"><span class="material-icons">email</span> <span
+                        data-i18n="nav_emails">Email Templates</span></a>
+                <a href="#ai-agents" class="nav-item text-green"><span class="material-icons">smart_toy</span> <span
+                        data-i18n="nav_ai_agents">AI Agents</span></a>
             </nav>
             <div class="drawer-footer">
                 <div class="user-profile">
                     <div class="user-avatar">AD</div>
                     <div class="user-info">
-                        <div class="user-name">Admin User</div>
-                        <div class="user-role">Super Admin</div>
+                        <div class="user-name" data-i18n="nav_admin">Admin User</div>
+                        <div class="user-role" data-i18n="nav_super_admin">Super Admin</div>
                     </div>
                 </div>
                 <div style="display:flex; justify-content:space-between; margin-top:10px;">
                     <button class="btn btn-sm text-gold" style="background:none; border:none; padding:0;"
-                        onclick="window.location.hash='#account'">My Account</button>
-                    <button class="btn btn-sm text-danger"
-                        style="background:none; border:none; padding:0;">Logout</button>
+                        onclick="window.location.hash='#account'" data-i18n="nav_account">My Account</button>
+                    <button class="btn btn-sm text-danger" style="background:none; border:none; padding:0;"
+                        onclick="performLogout()" data-i18n="nav_logout">Logout</button>
+                </div>
+                <!-- Language Toggle in Sidebar -->
+                <div
+                    style="display:flex; justify-content:center; gap:10px; margin-top:15px; padding-top:10px; border-top:1px solid rgba(255,255,255,0.05);">
+                    <button class="btn btn-sm lang-btn" onclick="erpSetLanguage('en')">EN</button>
+                    <button class="btn btn-sm lang-btn" onclick="erpSetLanguage('fr')">FR</button>
                 </div>
                 <!-- Collapse Toggle -->
                 <div style="text-align:center; padding-top:10px; border-top:1px solid #333; margin-top:10px; cursor:pointer;"
@@ -244,10 +296,14 @@
             <div id="view-leads" class="view"></div>
             <div id="view-leadhunter" class="view"></div>
             <div id="view-coldcall" class="view"></div>
+            <div id="view-automations" class="view"></div>
             <div id="view-followup" class="view"></div>
             <div id="view-account" class="view"></div>
             <div id="view-team" class="view"></div>
             <div id="view-ai-agents" class="view"></div>
+            <div id="view-emails" class="view"></div>
+            <div id="view-cashflow" class="view"></div>
+            <div id="view-demos" class="view"></div>
         </main>
 
         <!-- Bottom Navigation (Mobile First) -->
@@ -258,7 +314,7 @@
             </a>
             <a href="#crm" class="nav-link" data-target="view-crm">
                 <span class="material-icons">people</span>
-                <span>CRM</span>
+                <span data-i18n="nav_crm">Clients</span>
             </a>
             <div class="fab-container">
                 <button id="main-fab" class="fab"><span class="material-icons">add</span></button>
@@ -269,7 +325,7 @@
             </a>
             <a href="#sales" class="nav-link" data-target="view-sales">
                 <span class="material-icons">receipt</span>
-                <span>Sales</span>
+                <span data-i18n="nav_sales">Invoice / Quote</span>
             </a>
         </nav>
 
@@ -288,6 +344,9 @@
         <div id="toast-container"></div>
 
     </div>
+
+    <!-- Leads Detail Portal -->
+    <div id="lead-detail-overlay"></div>
 
     <!-- Modals Container -->
     <div id="modal-container"></div>

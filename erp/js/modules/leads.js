@@ -1,7 +1,9 @@
 import { db, auth } from '../firebase-config.js';
 import { collection, query, where, getDocs, getDoc, updateDoc, doc, addDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { triggerWorkflowForLead } from './automations.js';
 import { getTeamDropdownOptions } from './team.js';
 import { LeadFilterService } from '../services/LeadFilterService.js';
+import { t } from '../services/translationService.js';
 import Fuse from 'https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.mjs';
 
 const API_BASE = window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1')
@@ -13,10 +15,11 @@ window.addEventListener('hashchange', () => {
     const hash = window.location.hash;
 
     // 1. Clean route (Close Overlay)
-    if (hash === '#leads' || hash === '#leads?') {
+    // Close Overlay if not in detail mode
+    if (!hash.startsWith('#leads?id=')) {
         const overlay = document.getElementById('lead-detail-overlay');
         if (overlay) overlay.innerHTML = '';
-        return;
+        if (hash === '#leads') return;
     }
 
     // 2. ID route (Open Overlay)
@@ -52,12 +55,12 @@ export async function initLeads() {
     container.innerHTML = `
         <div class="top-actions" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
             <div style="display:flex; align-items:center; gap:15px;">
-                <div class="text-h text-gold">Leads Pipeline</div>
-                <input type="text" id="lead-search-input" class="form-input" placeholder="Search leads..." style="width:250px; padding:6px 12px; font-size:0.9rem;" onkeyup="handleLeadSearch(this.value)">
+                <div class="text-h text-gold">${t('leads_title')}</div>
+                <input type="text" id="lead-search-input" class="form-input" placeholder="${t('leads_search_placeholder')}" style="width:250px; padding:6px 12px; font-size:0.9rem;" onkeyup="handleLeadSearch(this.value)">
             </div>
             <div style="display:flex; gap:10px; align-items:center;">
                 <button class="btn btn-primary" onclick="openNewLeadModal()" style="display:flex; align-items:center; gap:5px;">
-                    <span class="material-icons">add</span> New Lead
+                    <span class="material-icons">add</span> ${t('leads_new_lead')}
                 </button>
                 <!-- View Toggles -->
                 <div class="view-toggle">
@@ -65,44 +68,42 @@ export async function initLeads() {
                     <div class="view-toggle-btn" id="btn-view-list" onclick="setViewMode('list')"><span class="material-icons" style="font-size:1.2rem;">view_list</span></div>
                 </div>
                 <button class="btn btn-secondary" onclick="openImportModal()" style="display:flex; align-items:center; gap:5px;">
-                    <span class="material-icons" style="font-size:1.1rem;">upload_file</span> Import CSV
+                    <span class="material-icons" style="font-size:1.1rem;">upload_file</span> ${t('leads_import_csv')}
                 </button>
                 <input type="file" id="csv-file-input" style="display:none;" accept=".csv" onchange="handleCSVImport(this)">
-                <button class="btn" onclick="window.location.hash='#leadhunter'">Go to Hunter</button>
+                <button class="btn" onclick="window.location.hash='#leadhunter'">${t('leads_go_to_hunter')}</button>
             </div>
         </div>
 
         <!-- Smart Filter Bar -->
         <div class="smart-filter-bar" style="margin-bottom:1rem;">
             <select id="smart-filter-industry" onchange="applySmartFilters()">
-                <option value="ALL">All Industries</option>
+                <option value="ALL">${t('leads_all_industries')}</option>
             </select>
             <select id="smart-filter-region" onchange="applySmartFilters()">
-                <option value="ALL">All Regions</option>
+                <option value="ALL">${t('leads_all_regions')}</option>
             </select>
             <select id="smart-filter-pain" onchange="applySmartFilters()">
-                <option value="ALL">All Pain Points</option>
+                <option value="ALL">${t('leads_all_pain_points')}</option>
             </select>
             <div class="smart-filter-stats" id="smart-filter-count">
-                Loading filters...
+                ${t('leads_loading_filters')}
             </div>
         </div>
 
         <!-- Filter Tabs -->
         <div style="display:flex; gap:1rem; margin-bottom:1rem; overflow-x:auto; padding-bottom:5px;">
-            <button class="btn btn-sm active-filter" data-filter="NEW">New</button>
-            <button class="btn btn-sm" data-filter="APPROVED">Approved</button>
-            <button class="btn btn-sm" data-filter="CONTACTED">Contacted</button>
-            <button class="btn btn-sm" data-filter="AUDITED">Audited</button>
-            <button class="btn btn-sm" data-filter="ALL">All</button>
+            <button class="btn btn-sm active-filter" data-filter="NEW">${t('leads_status_new')}</button>
+            <button class="btn btn-sm" data-filter="APPROVED">${t('leads_status_approved')}</button>
+            <button class="btn btn-sm" data-filter="CONTACTED">${t('leads_status_contacted')}</button>
+            <button class="btn btn-sm" data-filter="AUDITED">${t('leads_status_audited')}</button>
+            <button class="btn btn-sm" data-filter="ALL">${t('leads_status_all')}</button>
         </div>
 
         <div id="leads-list-container">
-            <div class="text-center text-muted" style="padding: 2rem;">Loading pipeline...</div>
+            <div class="text-center text-muted" style="padding: 2rem;">${t('leads_fetching')}</div>
         </div>
 
-        <!-- Detail Overlay Container -->
-        <div id="lead-detail-overlay"></div>
     `;
 
     // Add filter listeners
@@ -191,8 +192,8 @@ function renderLeads(leads) {
     if (leads.length === 0) {
         listContainer.innerHTML = `
             <div class="card" style="text-align:center; padding:3rem;">
-                <div class="text-h text-muted">No leads found</div>
-                <p class="text-sm text-muted">Try adjusting your search or filter.</p>
+                <div class="text-h text-muted">${t('leads_no_leads')}</div>
+                <p class="text-sm text-muted">${t('leads_adjust_search')}</p>
             </div>
         `;
         return;
@@ -232,7 +233,7 @@ function renderLeads(leads) {
 
                  <!-- Mini Info -->
                 <div class="text-xs text-muted" style="margin-bottom:0.5rem;">
-                     Found via: "${escapeHtml(data.discovered_query || 'N/A')}"
+                     ${t('leads_found_via')}: "${escapeHtml(data.discovered_query || 'N/A')}"
                 </div>
 
                 <div style="margin-top:auto; display:flex; gap:10px; justify-content: space-between; align-items:center;">
@@ -253,7 +254,7 @@ function renderLeads(leads) {
 
 async function loadLeads(statusFilter) {
     const listContainer = document.getElementById('leads-list-container');
-    listContainer.innerHTML = '<div class="text-center text-muted mt-4">Fetching leads...</div>';
+    listContainer.innerHTML = `<div class="text-center text-muted mt-4">${t('leads_fetching')}</div>`;
 
     // reset search input
     const searchInput = document.getElementById('lead-search-input');
@@ -300,7 +301,7 @@ async function loadLeads(statusFilter) {
     } catch (e) {
         console.error(e);
 
-        listContainer.innerHTML = '<div class="text-danger">Error loading leads.</div>';
+        listContainer.innerHTML = `<div class="text-danger">${t('leads_error_loading')}</div>`;
     }
 }
 
@@ -384,22 +385,22 @@ window.openLeadDetail = async (data) => {
                 <!-- SECTION 1: IDENTITY -->
                 <div style="padding: 0.75rem 1rem; border-bottom: 1px solid var(--border);">
                     <div class="form-group" style="margin-bottom: 8px;">
-                        <label class="form-label">Business Name</label>
+                        <label class="form-label">${t('leads_business_name')}</label>
                         <input type="text" id="edit-business-name" class="form-input" value="${escapeHtml(lead.business_name)}" style="font-weight: 600; border-color: rgba(223, 165, 58, 0.2); padding: 8px 12px; font-size: 1rem;">
                     </div>
                     <div style="display: flex; gap: 15px; margin-top: 5px;">
                         <div style="flex: 1;">
-                            <div class="text-xs text-muted mb-0.5">Source / Query</div>
+                            <div class="text-xs text-muted mb-0.5">${t('leads_source_query')}</div>
                             <div class="text-sm font-bold truncate" title="${escapeHtml(lead.discovered_query || 'N/A')}">
                                 <span class="material-icons" style="font-size: 14px; color: var(--gold); margin-right: 4px;">search</span>
                                 ${escapeHtml(lead.discovered_query || 'N/A')}
                             </div>
                         </div>
                         <div style="flex: 1;">
-                            <div class="text-xs text-muted mb-0.5">Result Type</div>
+                            <div class="text-xs text-muted mb-0.5">${t('leads_result_type')}</div>
                             <div class="text-sm font-bold" style="color: var(--warning);">
                                 <span class="material-icons" style="font-size: 14px; margin-right: 4px;">visibility_off</span>
-                                Page 2+ 
+                                ${t('leads_page_2')}
                             </div>
                         </div>
                     </div>
@@ -407,7 +408,7 @@ window.openLeadDetail = async (data) => {
 
                 <!-- SECTION 1.5: PAIN POINTS (EDITABLE) -->
                 <div style="padding: 0.75rem 1rem; border-bottom: 1px solid var(--border);">
-                    <div class="text-xs text-muted uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">Pain Points</div>
+                    <div class="text-xs text-muted uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">${t('leads_pain_points')}</div>
                     <div id="sidebar-pain-selector" style="display:flex; flex-wrap:wrap; gap:5px;">
                         ${['NO_WEBSITE', 'BAD_DESIGN', 'BAD_SEO', 'SLOW_SPEED', 'OTHER'].map(p => {
         const isSelected = lead.pain_signals && lead.pain_signals.includes(p) ? 'selected' : '';
@@ -422,68 +423,68 @@ window.openLeadDetail = async (data) => {
                     <div class="form-group" style="margin-bottom: 8px;">
                         <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
                             <span class="material-icons text-muted" style="font-size:1rem;">location_on</span>
-                            <input type="text" id="edit-address" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.address || '')}" placeholder="Company Address">
+                            <input type="text" id="edit-address" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.address || '')}" placeholder="${t('leads_company_address')}">
                         </div>
                     </div>
 
                     <div class="form-group" style="margin-bottom: 8px;">
                         <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
                             <span class="material-icons text-muted" style="font-size:1rem;">language</span>
-                            <input type="text" id="edit-website" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.website || '')}" placeholder="Official Website">
+                            <input type="text" id="edit-website" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.website || '')}" placeholder="${t('leads_official_website')}">
                         </div>
                     </div>
 
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
                         <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
                             <span class="material-icons text-muted" style="font-size:1rem;">location_city</span>
-                            <input type="text" id="edit-city" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.85rem;" value="${escapeHtml(lead.city || '')}" placeholder="City">
+                            <input type="text" id="edit-city" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.85rem;" value="${escapeHtml(lead.city || '')}" placeholder="${t('leads_city')}">
                         </div>
                         <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
                             <span class="material-icons text-muted" style="font-size:1rem;">map</span>
-                            <input type="text" id="edit-state" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.85rem;" value="${escapeHtml(lead.state || '')}" placeholder="State/Prov">
+                            <input type="text" id="edit-state" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.85rem;" value="${escapeHtml(lead.state || '')}" placeholder="${t('leads_state_prov')}">
                         </div>
                     </div>
 
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                         <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
                             <span class="material-icons text-muted" style="font-size:1rem;">phone</span>
-                            <input type="text" id="edit-phone" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.85rem;" value="${escapeHtml(lead.phone || '')}" placeholder="Phone">
+                            <input type="text" id="edit-phone" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.85rem;" value="${escapeHtml(lead.phone || '')}" placeholder="${t('leads_phone')}">
                         </div>
                         <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
                             <span class="material-icons text-muted" style="font-size:1rem;">email</span>
-                            <input type="text" id="edit-email" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.85rem;" value="${escapeHtml(lead.email || '')}" placeholder="Public Email">
+                            <input type="text" id="edit-email" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.85rem;" value="${escapeHtml(lead.email || '')}" placeholder="${t('leads_public_email')}">
                         </div>
                     </div>
                 </div>
 
                 <!-- SECTION 3: DECISION MAKER -->
                 <div style="padding: 1rem; border-bottom: 1px solid var(--border); background: rgba(223, 165, 58, 0.02);">
-                    <div class="text-xs text-gold uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">Governance / Decision Maker</div>
+                    <div class="text-xs text-gold uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">${t('leads_governance')}</div>
                     
                     <div class="form-group" style="margin-bottom: 6px;">
                         <div style="display:flex; align-items:center; gap:8px; border-bottom: 1px solid rgba(255,255,255,0.05);">
                             <span class="material-icons text-gold" style="font-size:0.9rem; opacity: 0.7;">person</span>
-                            <input type="text" id="edit-dm-name" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.dm_name || '')}" placeholder="Contact Name">
+                            <input type="text" id="edit-dm-name" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.dm_name || '')}" placeholder="${t('leads_contact_name')}">
                         </div>
                     </div>
 
                     <div class="form-group" style="margin-bottom: 6px;">
                         <div style="display:flex; align-items:center; gap:8px; border-bottom: 1px solid rgba(255,255,255,0.05);">
                             <span class="material-icons text-gold" style="font-size:0.9rem; opacity: 0.7;">alternate_email</span>
-                            <input type="text" id="edit-dm-email" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.dm_email || '')}" placeholder="Direct Email">
+                            <input type="text" id="edit-dm-email" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.dm_email || '')}" placeholder="${t('leads_direct_email')}">
                         </div>
                     </div>
 
                     <div class="form-group" style="margin-bottom: 0;">
                         <div style="display:flex; align-items:center; gap:8px;">
                             <span class="material-icons text-gold" style="font-size:0.9rem; opacity: 0.7;">contact_phone</span>
-                            <input type="text" id="edit-dm-phone" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.dm_phone || '')}" placeholder="Direct Phone / extension">
+                            <input type="text" id="edit-dm-phone" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.9rem;" value="${escapeHtml(lead.dm_phone || '')}" placeholder="${t('leads_direct_phone')}">
                         </div>
                     </div>
 
                     <!-- ASSIGNED AGENT SELECTOR -->
                         <div style="margin-top: 1rem; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 1rem;">
-                        <div class="text-xs text-muted uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">Assigned Agent</div>
+                        <div class="text-xs text-muted uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">${t('leads_assigned_agent')}</div>
                         <select id="edit-assigned-agent" class="form-input" style="background: rgba(0,0,0,0.2); border: 1px solid var(--border); font-size: 0.9rem;">
                             ${await getTeamDropdownOptions(lead.assigned_agent_id)}
                         </select>
@@ -494,15 +495,15 @@ window.openLeadDetail = async (data) => {
 
                 <!-- SECTION 4: STRATEGIC NOTES -->
                 <div style="padding: 1rem; border-bottom: 1px solid var(--border);">
-                        <div class="text-xs text-muted uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">Strategic Internal Notes</div>
-                        <textarea id="edit-notes" class="form-input" rows="3" style="font-size: 0.85rem; background: rgba(0,0,0,0.15); border-style: dashed; padding: 8px;" placeholder="Prospecting notes, points or conversation history...">${escapeHtml(lead.notes || '')}</textarea>
+                        <div class="text-xs text-muted uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">${t('leads_strategic_notes')}</div>
+                        <textarea id="edit-notes" class="form-input" rows="3" style="font-size: 0.85rem; background: rgba(0,0,0,0.15); border-style: dashed; padding: 8px;" placeholder="${t('leads_notes_placeholder')}">${escapeHtml(lead.notes || '')}</textarea>
                 </div>
 
                 <!-- PERFORMANCE & AUDIT -->
                 <div style="padding: 1rem; border-bottom: 1px solid var(--border); background: rgba(49, 204, 236, 0.05);">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                        <div class="text-xs text-info uppercase tracking-wider font-bold" style="letter-spacing: 1px;">SEO & Performance</div>
-                        <div class="text-xs text-muted">Load: <strong id="load-time-display" style="color:var(--info);">-</strong></div>
+                        <div class="text-xs text-info uppercase tracking-wider font-bold" style="letter-spacing: 1px;">${t('leads_seo_performance')}</div>
+                        <div class="text-xs text-muted">${t('leads_load_time')}: <strong id="load-time-display" style="color:var(--info);">-</strong></div>
                     </div>
 
                     <div id="seo-report-container">
@@ -512,19 +513,19 @@ window.openLeadDetail = async (data) => {
                                     <span style="font-weight:bold;">${lead.lastAudit.score}</span>
                                 </div>
                                 <div>
-                                        <div class="text-h" style="font-size:1.1rem;">AI Audit Saved</div>
-                                        <div class="text-xs text-muted">Audited: ${lead.lastAudit.timestamp}</div>
+                                        <div class="text-h" style="font-size:1.1rem;">${t('leads_ai_audit_saved')}</div>
+                                        <div class="text-xs text-muted">${t('leads_audited_at')}: ${lead.lastAudit.timestamp}</div>
                                 </div>
                             </div>
-                            <button class="btn btn-primary btn-block btn-sm" onclick="openAuditPopup()">View Report</button>
-                            <div class="text-center" style="margin-top:0.5rem;"><a href="javascript:void(0)" class="text-xs text-muted" onclick="runDeepAudit('${lead.website}', '${lead.id}')">Run New Audit</a></div>
+                            <button class="btn btn-primary btn-block btn-sm" onclick="openAuditPopup()">${t('leads_view_report')}</button>
+                            <div class="text-center" style="margin-top:0.5rem;"><a href="javascript:void(0)" class="text-xs text-muted" onclick="runDeepAudit('${lead.website}', '${lead.id}')">${t('leads_run_new_audit')}</a></div>
                             ` : `
                                 <div style="background: rgba(0,0,0,0.2); border: 1px dashed var(--info); padding: 10px; border-radius: 8px; text-align: center;">
                                 <span class="material-icons text-info" style="font-size: 1.5rem; margin-bottom: 5px;">analytics</span>
-                                <p class="text-muted text-xs mb-2">No AI Audit performed yet.</p>
+                                <p class="text-muted text-xs mb-2">${t('leads_no_audit')}</p>
                                 <button class="btn btn-block btn-sm" style="border-color: var(--info); color: var(--info); font-weight: bold; background: rgba(49, 204, 236, 0.1); font-size: 0.7rem;" onclick="runDeepAudit('${lead.website}', '${lead.id}')">
                                     <span class="material-icons" style="font-size: 12px; margin-right: 4px;">psychology</span>
-                                    RUN DEEP AI AUDIT
+                                    ${t('leads_run_deep_audit')}
                                 </button>
                                 </div>
                             `}
@@ -567,7 +568,7 @@ window.openLeadDetail = async (data) => {
                                 <span class="badge status-${lead.status.toLowerCase()}" style="font-size:0.7rem; padding: 2px 6px;">${escapeHtml(lead.status)}</span>
                                 ${lead.google_page_rank ? `<span class="badge" style="background:rgba(255,255,255,0.05); color:var(--text-muted); border:1px solid var(--border); font-size:0.7rem; padding: 2px 6px;">Page ${lead.google_page_rank}</span>` : ''}
                                 <a href="${googleSearchUrl}" target="_blank" class="text-xs text-gold hover-underline" style="display:flex; align-items:center; gap:3px;">
-                                    <span class="material-icons" style="font-size:13px;">open_in_new</span> Verify Rank
+                                    <span class="material-icons" style="font-size:13px;">open_in_new</span> ${t('leads_verify_rank')}
                                 </a>
                                 </div>
                         </div>
@@ -618,12 +619,12 @@ window.openLeadDetail = async (data) => {
                     </div>
                     <!-- DEVICE TOOLBAR -->
                     <div id="device-toolbar" class="preview-toolbar" style="display: ${siteUrl ? 'flex' : 'none'};">
-                        <div class="device-btn active" onclick="setPreviewMode('mobile', this)"><span class="material-icons">smartphone</span> Mobile</div>
-                        <div class="device-btn" onclick="setPreviewMode('tablet', this)"><span class="material-icons">tablet</span> Tablet</div>
-                        <div class="device-btn" onclick="setPreviewMode('desktop', this)"><span class="material-icons">laptop</span> Desktop</div>
+                        <div class="device-btn active" onclick="setPreviewMode('mobile', this)"><span class="material-icons">smartphone</span> ${t('leads_mobile')}</div>
+                        <div class="device-btn" onclick="setPreviewMode('tablet', this)"><span class="material-icons">tablet</span> ${t('leads_tablet')}</div>
+                        <div class="device-btn" onclick="setPreviewMode('desktop', this)"><span class="material-icons">laptop</span> ${t('leads_desktop')}</div>
                         
                         <div class="dev-slider-group">
-                                <span class="text-xs text-muted">Width:</span>
+                                <span class="text-xs text-muted">${t('leads_width')}:</span>
                                 <input type="range" class="dev-slider" min="320" max="1600" value="375" oninput="setCustomWidth(this.value)">
                                 <span class="text-xs text-gold" id="width-display">375px</span>
                         </div>
@@ -631,12 +632,12 @@ window.openLeadDetail = async (data) => {
                         <div style="flex:1;"></div>
 
                         <!-- Explicit Blocked Help Button -->
-                        <div class="device-btn" style="border-color:var(--danger); color:var(--danger);" onclick="toggleScreenshotMode('${siteUrl}')" title="Use this if website refuses to connect">
-                            <span class="material-icons">broken_image</span> <span class="desktop-only text-xs ml-1">Site Blocked?</span>
+                        <div class="device-btn" style="border-color:var(--danger); color:var(--danger);" onclick="toggleScreenshotMode('${siteUrl}')" title="${t('leads_site_blocked')}">
+                            <span class="material-icons">broken_image</span> <span class="desktop-only text-xs ml-1">${t('leads_site_blocked')}</span>
                         </div>
 
-                        <div class="device-btn" onclick="toggleScreenshotMode('${siteUrl}')" title="Switch to Screenshot">
-                            <span class="material-icons">image</span> <span class="desktop-only text-xs ml-1">Screenshot</span>
+                        <div class="device-btn" onclick="toggleScreenshotMode('${siteUrl}')" title="${t('leads_screenshot')}">
+                            <span class="material-icons">image</span> <span class="desktop-only text-xs ml-1">${t('leads_screenshot')}</span>
                         </div>
 
                         <div class="device-btn" onclick="window.open('${siteUrl}', '_blank')" title="Open External">
@@ -660,7 +661,7 @@ window.openLeadDetail = async (data) => {
                             </div>`
             :
             `<div style="display:flex; align-items:center; justify-content:center; height:100%; color: var(--text-muted);">
-                            No Website URL to Preview
+                            ${t('leads_no_preview')}
                         </div>`
         }
                 </div>
@@ -1600,6 +1601,11 @@ window.updateLeadStatus = async (id, newStatus, category = null) => {
         const ref = doc(db, "leads", id);
         await updateDoc(ref, updateData);
 
+        // --- NEW: Trigger Automation ---
+        if (newStatus === 'APPROVED') {
+            triggerWorkflowForLead(id);
+        }
+
         // Close overlay via URL reset
         window.location.hash = '#leads';
 
@@ -1975,16 +1981,21 @@ window.saveLeadDetails = async (leadId) => {
 
 // --- NEW LEAD LOGIC ---
 
+window.closeNewLeadModal = () => {
+    const host = document.getElementById('modal-container');
+    if (host) host.innerHTML = '';
+};
+
 window.openNewLeadModal = () => {
     const host = document.getElementById('modal-container') || document.body.appendChild(document.createElement('div'));
     host.id = 'modal-container'; // Ensure ID if created
 
     host.innerHTML = `
-        <div class="crm-modal-overlay" onclick="document.getElementById('modal-container').innerHTML=''">
+        <div class="crm-modal-overlay" onclick="window.closeNewLeadModal()">
             <div class="crm-modal-content" style="max-width:500px;" onclick="event.stopPropagation()">
                 <div class="crm-modal-header">
                     <div class="text-h">Create New Lead</div>
-                    <button class="icon-btn" onclick="document.getElementById('modal-container').innerHTML=''"><span class="material-icons">close</span></button>
+                    <button class="icon-btn" onclick="window.closeNewLeadModal()"><span class="material-icons">close</span></button>
                 </div>
                 <div class="crm-modal-body">
                     <div class="form-group">
@@ -2015,7 +2026,7 @@ window.openNewLeadModal = () => {
                     </div>
 
                     <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">
-                        <button class="btn btn-secondary" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
+                        <button class="btn btn-secondary" onclick="window.closeNewLeadModal()">Cancel</button>
                         <button class="btn btn-primary" onclick="saveNewLead()">Create Lead</button>
                     </div>
                 </div>

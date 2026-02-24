@@ -1129,6 +1129,7 @@ function setupForm() {
 
         const formData = new FormData(form);
         const data = Object.fromEntries(formData.entries());
+        data.lang = currentLang; // Send language context
 
         // Determine API URL
         const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -1146,9 +1147,13 @@ function setupForm() {
             });
 
             if (response.ok) {
+                const successMsg = currentLang === 'fr'
+                    ? { title: 'Demande Reçue', desc: 'Nous vous contacterons sous peu.' }
+                    : { title: 'Request Received', desc: 'We\'ll get back to you shortly.' };
+
                 form.innerHTML = `<div class="success-message" style="text-align:center; padding:2rem;">
-                    <h3 style="color:var(--gold); margin-bottom:1rem;">Request Received</h3>
-                    <p>We'll get back to you shortly.</p>
+                    <h3 style="color:var(--gold); margin-bottom:1rem;">${successMsg.title}</h3>
+                    <p>${successMsg.desc}</p>
                 </div>`;
             } else {
                 throw new Error('Network error');

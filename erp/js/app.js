@@ -20,6 +20,11 @@ import { initFollowup } from './modules/followup.js';
 import { initAccount } from './modules/account.js';
 import { initTeam } from './modules/team.js';
 import { initAiAgents } from './modules/ai_agents.js';
+import { initEmails } from './modules/emails.js';
+import { initCashflow } from './modules/cashflow.js';
+import { initAutomations } from './modules/automations.js';
+import { initDemos } from './modules/demos.js';
+import { applyTranslations, setLanguage, t } from './services/translationService.js';
 
 // --- UTILS ---
 
@@ -111,6 +116,8 @@ async function startApp() {
         const loginView = document.getElementById('login-view');
         const appView = document.getElementById('app');
 
+        applyTranslations(); // Apply initial translations based on saved language
+
         if (user) {
             console.log('Premium Quasar: Session Verified for', user.email);
             const token = await user.getIdToken();
@@ -151,9 +158,13 @@ const routes = {
     '#leadhunter': initLeadHunter,
     '#coldcall': initColdCall,
     '#followup': initFollowup,
+    '#automations': initAutomations,
     '#account': initAccount,
     '#team': initTeam,
-    '#ai-agents': initAiAgents
+    '#ai-agents': initAiAgents,
+    '#emails': initEmails,
+    '#cashflow': initCashflow,
+    '#demos': initDemos
 };
 
 let activeBaseHash = '';
@@ -300,7 +311,40 @@ window.updateSidebarIcon = (collapsed) => {
     if (isCollapsed) {
         document.body.classList.add('sidebar-collapsed');
     }
+    // Set global language handler
+    window.erpSetLanguage = (lang) => {
+        setLanguage(lang);
+    };
 })();
+
+// Nav Group Toggle
+window.toggleNavGroup = (groupId) => {
+    const group = document.getElementById(groupId);
+    if (!group) return;
+
+    const isOpen = group.classList.contains('open');
+
+    // Close others? (Optional, but usually cleaner)
+    // document.querySelectorAll('.nav-group').forEach(g => g.classList.remove('open'));
+
+    if (!isOpen) {
+        group.classList.add('open');
+    } else {
+        group.classList.remove('open');
+    }
+};
+
+// Auto-expand group if active item is inside
+function autoExpandNavGroup() {
+    const hash = window.location.hash || '#dashboard';
+    const activeLink = document.querySelector(`.nav-item[href="${hash}"]`);
+    if (activeLink) {
+        const group = activeLink.closest('.nav-group');
+        if (group) {
+            group.classList.add('open');
+        }
+    }
+}
 
 // Toasts & Modals
 window.showToast = (message, type = 'normal') => {
@@ -369,4 +413,7 @@ window.handlePasswordReset = async () => {
 document.addEventListener('DOMContentLoaded', () => {
     initAuth();
     startApp();
+    autoExpandNavGroup();
 });
+
+window.addEventListener('hashchange', autoExpandNavGroup);

@@ -311,6 +311,30 @@ window.openProjectSettings = async () => {
 
                     <hr style="border:0; border-top:1px solid #333; margin:2rem 0;">
 
+                    <div class="text-h mb-3" style="font-size:1.1rem;">Email Settings (Resend.com)</div>
+                    <form id="resend-settings-form">
+                        <div class="form-group mb-3">
+                            <label class="form-label">API Key</label>
+                            <input type="password" id="proj-resend-key" class="form-input" value="${currentProject?.resendApiKey || ''}" placeholder="re_...">
+                        </div>
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                            <div class="form-group">
+                                <label class="form-label">Sender Name</label>
+                                <input type="text" id="proj-resend-name" class="form-input" value="${currentProject?.resendFromName || 'AI Assistant'}" placeholder="e.g. Quasar Team">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Sender Email</label>
+                                <input type="text" id="proj-resend-email" class="form-input" value="${currentProject?.resendFromEmail || ''}" placeholder="e.g. info@client.com">
+                            </div>
+                        </div>
+                        <div class="bg-darker p-3 rounded mt-2 text-xs text-muted" style="border:1px solid var(--border);">
+                             <span class="text-gold font-bold">Important:</span> Only verified domains in Resend can send to any recipient. Otherwise, you can only send to your own email.
+                        </div>
+                        <button type="submit" class="btn btn-secondary btn-block mt-3">Save Email Settings</button>
+                    </form>
+
+                    <hr style="border:0; border-top:1px solid #333; margin:2rem 0;">
+
                     <div class="text-h mb-3" style="font-size:1.1rem;">Client Portal Access</div>
                     
                     <!-- Invitation Section -->
@@ -466,6 +490,42 @@ window.openProjectSettings = async () => {
         };
         reader.readAsText(fileInput.files[0]);
     };
+
+    document.getElementById('resend-settings-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const settings = {
+            resendApiKey: document.getElementById('proj-resend-key').value.trim(),
+            resendFromName: document.getElementById('proj-resend-name').value.trim(),
+            resendFromEmail: document.getElementById('proj-resend-email').value.trim()
+        };
+
+        const btn = e.target.querySelector('button');
+        btn.disabled = true;
+        btn.innerText = "Saving...";
+
+        try {
+            const token = await getAuthToken();
+            const res = await fetch(`${API_BASE}/api/projects/${activeProjectId}/settings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(settings)
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                window.showToast("Email settings saved!", "success");
+                Object.assign(currentProject, settings); // Sync local state
+            } else {
+                throw new Error(data.error || "Failed to save settings");
+            }
+        } catch (err) {
+            console.error(err);
+            window.showToast(err.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "Save Email Settings";
+        }
+    };
 };
 
 window.openAgentModal = (agentJson = null) => {
@@ -482,21 +542,60 @@ window.openAgentModal = (agentJson = null) => {
         activeTab = tab;
         document.getElementById('tab-general').style.display = tab === 'general' ? 'block' : 'none';
         document.getElementById('tab-knowledge').style.display = tab === 'knowledge' ? 'block' : 'none';
+        document.getElementById('tab-memories').style.display = tab === 'memories' ? 'block' : 'none';
         document.getElementById('tab-tools').style.display = tab === 'tools' ? 'block' : 'none';
         const tabChat = document.getElementById('tab-chat');
         if (tabChat) tabChat.style.display = tab === 'chat' ? 'flex' : 'none';
 
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-        if (tab === 'general') document.querySelectorAll('.tab-btn')[0].classList.add('active');
-        if (tab === 'knowledge') document.querySelectorAll('.tab-btn')[1].classList.add('active');
-        if (tab === 'tools') document.querySelectorAll('.tab-btn')[2].classList.add('active');
+        if (tab === 'general') document.querySelector('.tab-btn[data-tab="general"]').classList.add('active');
+        if (tab === 'knowledge') document.querySelector('.tab-btn[data-tab="knowledge"]').classList.add('active');
+        if (tab === 'memories') {
+            document.querySelector('.tab-btn[data-tab="memories"]').classList.add('active');
+            window.agent_loadMemories();
+        }
+        if (tab === 'tools') document.querySelector('.tab-btn[data-tab="tools"]').classList.add('active');
         if (tab === 'chat') {
-            const btns = document.querySelectorAll('.tab-btn');
-            if (btns[3]) btns[3].classList.add('active');
+            document.querySelector('.tab-btn[data-tab="chat"]').classList.add('active');
+            window.agent_loadChatHistory();
         }
     };
 
+    const sessionId = `erp_session_${agent.id}`;
     let chatHistory = [];
+    let historyLoaded = false;
+
+    window.agent_loadChatHistory = async () => {
+        if (historyLoaded) return;
+        const container = document.getElementById('chat-messages');
+        container.innerHTML = '<div class="text-center text-xs text-muted py-3">Loading history...</div>';
+
+        try {
+            const sessionRef = doc(db, "conversations", sessionId);
+            const snap = await getDoc(sessionRef);
+            if (snap.exists()) {
+                const data = snap.data();
+                if (data.messages) {
+                    chatHistory = data.messages;
+                    container.innerHTML = '';
+                    chatHistory.forEach(m => {
+                        const div = document.createElement('div');
+                        div.className = m.role === 'user' ? 'chat-msg user' : 'chat-msg assistant';
+                        div.innerText = m.content || (m.role === 'assistant' ? "[Action Performed]" : "");
+                        if (div.innerText) container.appendChild(div);
+                    });
+                }
+            } else {
+                container.innerHTML = '<div class="chat-msg system">Hello! I am your AI agent. How can I help you today?</div>';
+            }
+            historyLoaded = true;
+        } catch (e) {
+            console.error("History Load Error:", e);
+            container.innerHTML = '<div class="text-danger text-xs text-center p-2">Failed to load history.</div>';
+        }
+        container.scrollTop = container.scrollHeight;
+    };
+
     window.agent_sendChatMessage = async () => {
         const input = document.getElementById('chat-input');
         const msg = input.value.trim();
@@ -527,7 +626,8 @@ window.openAgentModal = (agentJson = null) => {
                 body: JSON.stringify({
                     projectId: activeProjectId,
                     agentId: agent.id,
-                    messages: [...chatHistory, { role: "user", content: msg }]
+                    sessionId: sessionId,
+                    messages: [{ role: "user", content: msg }]
                 })
             });
             const json = await res.json();
@@ -545,14 +645,82 @@ window.openAgentModal = (agentJson = null) => {
         container.scrollTop = container.scrollHeight;
     };
 
+    window.agent_loadMemories = async () => {
+        const container = document.getElementById('memories-list');
+        container.innerHTML = '<div class="text-sm text-muted p-4">Loading long-term memories...</div>';
+        try {
+            const token = await getAuthToken();
+            const res = await fetch(`${API_BASE}/api/tools/test`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    toolName: 'search_memories',
+                    args: { query: '' },
+                    projectId: agent.projectId || activeProjectId
+                })
+            });
+            const json = await res.json();
+            if (json.success && json.result.success) {
+                const memories = json.result.memories;
+                if (!memories || memories.length === 0) {
+                    container.innerHTML = '<div class="text-center p-5 text-muted">No memories found for this project yet. Tell the agent to remember something!</div>';
+                } else {
+                    container.innerHTML = memories.map(m => `
+                        <div class="kb-item" style="display:flex; justify-content:space-between; align-items:center;">
+                            <div style="flex:1;">
+                                <div style="font-size:0.9rem;">${m.text}</div>
+                                <div style="font-size:0.7rem; color:var(--gold); margin-top:4px;">
+                                    ${(m.tags || []).map(t => `#${t}`).join(' ')} 
+                                    <span style="color:var(--text-muted); margin-left:10px;">• ${new Date(m.createdAt).toLocaleDateString()}</span>
+                                </div>
+                            </div>
+                            <button type="button" class="icon-btn text-danger" onclick="window.agent_deleteMemory('${m.id}')"><span class="material-icons" style="font-size:1.1rem;">delete</span></button>
+                        </div>
+                    `).join('');
+                }
+            } else {
+                container.innerHTML = '<div class="text-danger p-4">Failed to fetch memories.</div>';
+            }
+        } catch (e) {
+            console.error(e);
+            container.innerHTML = '<div class="text-danger p-4">Error loading memories.</div>';
+        }
+    };
+
+    window.agent_deleteMemory = async (memoryId) => {
+        if (!await erpConfirm("Delete this memory? The agent will forget this fact.")) return;
+        try {
+            const token = await getAuthToken();
+            const res = await fetch(`${API_BASE}/api/tools/test`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    toolName: 'delete_memory',
+                    args: { id: memoryId },
+                    projectId: agent.projectId || activeProjectId
+                })
+            });
+            const json = await res.json();
+            if (json.success && json.result.success) {
+                window.showToast("Memory removed.", "success");
+                window.agent_loadMemories();
+            } else {
+                throw new Error("Deletion failed");
+            }
+        } catch (e) {
+            console.error(e);
+            window.showToast("Failed to delete memory.", "error");
+        }
+    };
+
     window.agent_addKB = () => {
         knowledgeBase.push({ topic: '', content: '' });
         renderModal();
         setTimeout(() => window.agent_switchTab('knowledge'), 50);
     };
 
-    window.agent_removeKB = (index) => {
-        if (!confirm("Remove this document?")) return;
+    window.agent_removeKB = async (index) => {
+        if (!await erpConfirm("Remove this document?")) return;
         knowledgeBase.splice(index, 1);
         renderModal();
         setTimeout(() => window.agent_switchTab('knowledge'), 50);
@@ -845,7 +1013,23 @@ window.openAgentModal = (agentJson = null) => {
             btn.disabled = true;
 
             try {
-                // Update Firestore
+                // 1. Sync config to Vapi (if vapiId exists)
+                if (cfg.vapiId) {
+                    const token = await getAuthToken();
+                    await fetch(`${API_BASE}/api/vapi/update-agent-config/${cfg.vapiId}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify({
+                            name: cfg.title,
+                            provider: cfg.provider,
+                            model: cfg.model,
+                            firstMessageMode: cfg.firstMessageMode,
+                            firstMessage: cfg.firstMessage
+                        })
+                    });
+                }
+
+                // 2. Update Firestore
                 await updateDoc(doc(db, "ai_agents", id), {
                     name: cfg.title,
                     color: cfg.color,
@@ -988,10 +1172,11 @@ window.openAgentModal = (agentJson = null) => {
 
                     <!-- Tabs -->
                     <div style="display:flex; gap:20px; padding: 0 1.5rem; border-bottom:1px solid var(--border); margin-bottom:1.5rem;">
-                        <button class="tab-btn ${activeTab === 'general' ? 'active' : ''}" onclick="window.agent_switchTab('general')">General</button>
-                        <button class="tab-btn ${activeTab === 'knowledge' ? 'active' : ''}" onclick="window.agent_switchTab('knowledge')">Knowledge Base</button>
-                        <button class="tab-btn ${activeTab === 'tools' ? 'active' : ''}" onclick="window.agent_switchTab('tools')">Tools <span style="font-size:0.6rem; background:var(--gold); color:black; padding:1px 4px; border-radius:4px;">AUTO</span></button>
-                        ${isEdit ? `<button class="tab-btn ${activeTab === 'chat' ? 'active' : ''}" onclick="window.agent_switchTab('chat')">Chat Agent ⚡</button>` : ''}
+                        <button class="tab-btn ${activeTab === 'general' ? 'active' : ''}" data-tab="general" onclick="window.agent_switchTab('general')">General</button>
+                        <button class="tab-btn ${activeTab === 'knowledge' ? 'active' : ''}" data-tab="knowledge" onclick="window.agent_switchTab('knowledge')">Knowledge Base</button>
+                        <button class="tab-btn ${activeTab === 'memories' ? 'active' : ''}" data-tab="memories" onclick="window.agent_switchTab('memories')">Memories 🧠</button>
+                        <button class="tab-btn ${activeTab === 'tools' ? 'active' : ''}" data-tab="tools" onclick="window.agent_switchTab('tools')">Tools <span style="font-size:0.6rem; background:var(--gold); color:black; padding:1px 4px; border-radius:4px;">AUTO</span></button>
+                        ${isEdit ? `<button class="tab-btn ${activeTab === 'chat' ? 'active' : ''}" data-tab="chat" onclick="window.agent_switchTab('chat')">Chat Agent ⚡</button>` : ''}
                     </div>
 
                     <div class="crm-modal-body" style="padding-top:0;">
@@ -1051,6 +1236,20 @@ window.openAgentModal = (agentJson = null) => {
                                 <div class="alert alert-info mt-3" style="font-size:0.8rem; background:rgba(49, 204, 236, 0.1); padding:10px; border-radius:6px;">
                                     <span class="material-icons" style="font-size:1rem; vertical-align:text-bottom;">info</span>
                                     Tools are generated based on your Firestore collections.
+                                </div>
+                            </div>
+
+                            <!-- MEMORIES TAB -->
+                            <div id="tab-memories" style="display:${activeTab === 'memories' ? 'block' : 'none'};">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                                    <div>
+                                        <div class="text-sm font-bold text-gold">Long-Term Memory</div>
+                                        <div class="text-xs text-muted">Facts distilled by the agent during conversations.</div>
+                                    </div>
+                                    <button type="button" class="btn btn-sm" onclick="window.agent_loadMemories()"><span class="material-icons" style="font-size:1rem; vertical-align:middle;">refresh</span></button>
+                                </div>
+                                <div id="memories-list" style="max-height:400px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; background:var(--bg-dark);">
+                                    <div class="text-center p-4 text-muted">Loading memories...</div>
                                 </div>
                             </div>
 
@@ -1212,9 +1411,6 @@ function renderToolRow(key, title, desc, checked) {
 window.openToolTestModal = (toolName) => {
     // Defines generic args based on tool name for easy testing
     let defaultArgs = '{}';
-    if (toolName === 'createLead') defaultArgs = '{\n  "name": "John Tester",\n  "email": "test@example.com",\n  "phone": "1234567890"\n}';
-    if (toolName === 'checkAvailability') defaultArgs = '{\n  "date": "2026-02-01"\n}';
-    if (toolName === 'bookAppointment') defaultArgs = '{\n  "name": "John Tester",\n  "date": "2026-02-01",\n  "time": "14:00"\n}';
 
     const modalHtml = `
     <div class="crm-modal-overlay" id="tool-test-overlay">
@@ -1315,7 +1511,7 @@ window.testAgentLive = async (assistantId) => {
 
 // --- DELETE AGENT ---
 window.deleteAgent = async (id) => {
-    if (!confirm('Are you sure you want to delete this agent?')) return;
+    if (!await erpConfirm('Are you sure you want to delete this agent?')) return;
     try {
         // 1. Get Agent to find Vapi ID
         const agentRef = doc(db, "ai_agents", id);

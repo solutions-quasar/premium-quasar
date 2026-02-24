@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI ERP Dashboard</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+    <!-- Base Styles (Modeled after Quasar ERP) -->
+    <style>
+        :root {
+            --bg-body: #f4f7f6;
+            --bg-sidebar: #ffffff;
+            --bg-card: #ffffff;
+            --border: #e0e0e0;
+            --text-main: #333333;
+            --text-muted: #666666;
+            --color-primary: #dfa53a;
+            --color-secondary: #ffffff;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 260px;
+            background-color: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 20px 0;
+        }
+
+        .brand {
+            padding: 0 24px 30px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 20px;
+        }
+
+        .brand img {
+            width: 35px;
+            height: 35px;
+            object-fit: contain;
+        }
+
+        .brand span {
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: var(--color-primary);
+        }
+
+        .nav-link {
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: all 0.2s;
+            font-size: 0.95rem;
+            font-weight: 500;
+        }
+
+        .nav-link:hover,
+        .nav-link.active {
+            color: var(--color-primary);
+            background: rgba(255, 255, 255, 0.03);
+            border-left: 3px solid var(--color-primary);
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .topbar {
+            height: 70px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 40px;
+            background: var(--bg-body);
+        }
+
+        .page-content {
+            flex: 1;
+            padding: 40px;
+            overflow-y: auto;
+        }
+
+        /* Cards & Grid */
+        .grid-kpi {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+        }
+
+        .kpi-title {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        .kpi-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        /* Table */
+        .table-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .table-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            text-align: left;
+            padding: 15px 24px;
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            border-bottom: 1px solid var(--border);
+        }
+
+        td {
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border);
+            color: #d0d0d0;
+            font-size: 0.95rem;
+        }
+
+        tr:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: rgba(46, 204, 113, 0.1);
+            color: #2ecc71;
+            border: 1px solid rgba(46, 204, 113, 0.2);
+        }
+
+        .btn-primary {
+            background: var(--color-primary);
+            color: var(--color-secondary);
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: opacity 0.2s;
+            text-decoration: none;
+        }
+
+        .btn-primary:hover {
+            opacity: 0.9;
+        }
+
+        /* Loader */
+        #demo-loader {
+            position: fixed;
+            inset: 0;
+            background: var(--bg-body);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.5s;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            border-top-color: var(--color-primary);
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Banner */
+        .demo-mode-banner {
+            background: rgba(223, 165, 58, 0.1);
+            border-bottom: 1px solid rgba(223, 165, 58, 0.2);
+            color: #dfa53a;
+            padding: 8px;
+            text-align: center;
+            font-size: 0.85rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .demo-mode-banner a {
+            color: #dfa53a;
+            text-decoration: underline;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 4px;
+        }
+
+        /* FullCalendar Customizations */
+        .fc {
+            font-family: 'Inter', sans-serif;
+            height: 100%;
+        }
+
+        .fc-theme-standard td,
+        .fc-theme-standard th {
+            border-color: var(--border);
+        }
+
+        .fc-col-header-cell-cushion {
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            font-weight: 600;
+            padding: 10px 0;
+            text-decoration: none;
+        }
+
+        .fc-daygrid-day-number {
+            color: var(--text-main);
+            font-size: 0.9rem;
+            font-weight: 500;
+            text-decoration: none;
+        }
+
+        .fc .fc-button-primary {
+            background-color: var(--color-primary);
+            border-color: var(--color-primary);
+            color: var(--color-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 0.8rem;
+            padding: 6px 14px;
+            transition: opacity 0.2s;
+        }
+
+        .fc .fc-button-primary:hover {
+            opacity: 0.9;
+            background-color: var(--color-primary);
+            border-color: var(--color-primary);
+        }
+
+        .fc .fc-button-primary:not(:disabled):active,
+        .fc .fc-button-primary:not(:disabled).fc-button-active {
+            background-color: var(--text-main);
+            border-color: var(--text-main);
+            color: var(--bg-body);
+        }
+
+        .fc-event {
+            border-radius: 4px;
+            border: none;
+            padding: 3px 5px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            cursor: move;
+            /* Indicate draggable */
+        }
+
+        .fc-h-event {
+            background-color: rgba(223, 165, 58, 0.15);
+            color: var(--color-primary);
+            border: 1px solid rgba(223, 165, 58, 0.3);
+        }
+
+        .fc-day-today {
+            background: rgba(223, 165, 58, 0.03) !important;
+        }
+
+        .fc-toolbar-title {
+            color: var(--text-main);
+            font-weight: 600;
+            font-size: 1.25rem !important;
+        }
+    </style>
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js'></script>
+</head>
+
+<body>
+
+    <div id="demo-loader">
+        <div class="spinner"></div>
+        <div style="color: var(--text-muted); font-size: 0.9rem;">Initializing Secure ERP...</div>
+    </div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="brand">
+            <img src="" alt="Logo" class="demo-erp-logo" style="display: none;">
+            <span class="demo-erp-name">Quasar ERP</span>
+        </div>
+
+        <div
+            style="padding: 0 24px 10px; font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase;">
+            Workspace</div>
+        <a href="#" class="nav-link"><span class="material-icons">dashboard</span> Dashboard</a>
+        <a href="#" class="nav-link active" id="nav-crm"><span class="material-icons">people</span> CRM / Leads</a>
+        <a href="#" class="nav-link" id="nav-calendar"><span class="material-icons">event</span> Calendar</a>
+
+        <div
+            style="padding: 20px 24px 10px; font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase;">
+            AI Tools</div>
+        <a href="#" class="nav-link"><span class="material-icons">mic</span> Voice Agents</a>
+        <a href="#" class="nav-link"><span class="material-icons">smart_toy</span> Workflow Autopilot</a>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="demo-mode-banner">
+            <span class="material-icons" style="font-size: 16px;">info</span>
+            This is a mockup ERP environment linked to your demo template.
+            <a href="#" id="back-to-site" target="_blank">View Live Site -></a>
+        </div>
+
+        <header class="topbar">
+            <h2 style="font-size: 1.25rem; font-weight: 600;">Lead Management</h2>
+            <div style="display: flex; align-items: center; gap: 20px;">
+                <span class="material-icons text-muted">notifications</span>
+                <div
+                    style="width: 35px; height: 35px; border-radius: 50%; background: var(--border); display: flex; align-items: center; justify-content: center; font-weight: 600;">
+                    A</div>
+            </div>
+        </header>
+
+        <div class="page-content" style="display: flex; flex-direction: column;">
+
+            <div id="view-crm">
+
+                <!-- KPIs -->
+                <div class="grid-kpi">
+                    <div class="card" style="border-top: 3px solid var(--color-primary);">
+                        <div class="kpi-title">Mockup Appointments</div>
+                        <div class="kpi-value" id="kpi-appointments">0</div>
+                    </div>
+                    <div class="card">
+                        <div class="kpi-title">Conversion Rate</div>
+                        <div class="kpi-value">68%</div>
+                    </div>
+                    <div class="card">
+                        <div class="kpi-title">Pipeline Value</div>
+                        <div class="kpi-value">$24,500</div>
+                    </div>
+                </div>
+
+                <!-- Leads Table -->
+                <div class="table-container">
+                    <div class="table-header">
+                        <h3 style="font-size: 1.1rem; font-weight: 600;">Recent Website Leads</h3>
+                        <button class="btn-primary" onclick="alert('Demo Mode: Cannot add manually.')"><span
+                                class="material-icons">add</span> New Lead</button>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Contact</th>
+                                <th>Service Interest</th>
+                                <th>Date</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leads-tbody">
+                            <tr>
+                                <td colspan="5" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                                    <span class="material-icons"
+                                        style="font-size: 48px; opacity: 0.5;">hourglass_empty</span>
+                                    <div style="margin-top: 10px;">Loading bookings...</div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Calendar View -->
+            <div id="view-calendar" style="display: none; flex: 1; flex-direction: column;">
+                <div class="card"
+                    style="flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 20px;">
+                    <div id="calendar" style="flex: 1; min-height: 0;"></div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Firebase SDKs -->
+    <script type="module" src="erp.js"></script>
+
+</body>
+
+</html>

@@ -13,6 +13,7 @@ const { tools, handlers, dynamicHandler } = require('./vapi-tools');
 const googleAuth = require('./google-auth');
 const { saveCredential, verifyConnection, getApp } = require('./firebase-manager');
 const { discoverSchema } = require('./schema-discovery');
+const voiceAuth = require('./voice-auth');
 
 
 const PROD_URL = 'https://quasar-erp-b26d5.web.app';
@@ -32,10 +33,63 @@ const { admin, auth, db } = require('./firebase-admin'); // Shared Module
 app.use(cors({
     origin: '*', // Allow all for public widgets
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID']
 }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// --- Activity Logging & Correlation Middleware ---
+app.use(async (req, res, next) => {
+    // Generate Correlation ID
+    const requestId = req.headers['x-request-id'] || crypto.randomUUID();
+    req.requestId = requestId;
+    res.setHeader('X-Request-ID', requestId);
+
+    // Skip logging for non-API routes or preflights
+    if (!req.path.startsWith('/api') || req.method === 'OPTIONS') {
+        return next();
+    }
+
+    const projectId = req.query.projectId || 'main'; // Default to main if not provided
+
+    // Capture start time
+    const start = Date.now();
+
+    // Log after response finishes
+    res.on('finish', async () => {
+        try {
+            const duration = Date.now() - start;
+            const logEntry = {
+                timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                type: 'API_REQUEST',
+                source: 'Server',
+                method: req.method,
+                path: req.path,
+                status: res.statusCode,
+                duration: `${duration}ms`,
+                requestId: requestId,
+                projectId: projectId,
+                userId: req.user?.uid || 'anonymous',
+                userEmail: req.user?.email || null,
+                ip: req.ip
+            };
+
+            // Don't log full bodies for security/privacy, but can add filtered metadata if needed
+            // Only log errors if status >= 400
+            if (res.statusCode >= 400) {
+                logEntry.error = true;
+            }
+
+            // Persist to project-specific logs collection
+            const app = await getApp(projectId);
+            await app.firestore().collection('logs').add(logEntry);
+        } catch (err) {
+            console.error("[Logger Error]", err.message);
+        }
+    });
+
+    next();
+});
 
 // Serve Widget JS
 app.get('/chat-widget.js', (req, res) => {
@@ -136,7 +190,7 @@ app.post('/api/forgot-password', async (req, res) => {
         </html>
         `;
 
-        const fromEmail = process.env.EMAIL_FROM || 'onboarding@resend.dev';
+        const fromEmail = process.env.EMAIL_FROM || 'info@solutionsquasar.ca';
 
         if (!resend) throw new Error("Server Email Config Missing (Resend API Key)");
 
@@ -160,7 +214,7 @@ app.post('/api/forgot-password', async (req, res) => {
 
 // Public Contact Form Endpoint
 app.post('/api/contact', async (req, res) => {
-    const { name, company, contact_method, interest, message } = req.body;
+    const { name, company, contact_method, interest, message, lang } = req.body;
 
     // Basic validation
     if (!name || !contact_method) {
@@ -206,6 +260,21 @@ app.post('/api/contact', async (req, res) => {
 
         // 1b. Send Auto-Confirmation to Client (if email is provided)
         if (contact_method.includes('@')) {
+            const isFr = lang === 'fr';
+            const subject = isFr ? 'Nous avons bien reçu votre demande - Solutions Quasar' : 'We received your request - Solutions Quasar';
+
+            const title = isFr ? 'Demande Reçue' : 'Request Received';
+            const greeting = isFr ? `Bonjour ${name},` : `Hello ${name},`;
+            const p1 = isFr
+                ? `Merci d'avoir contacté Solutions Quasar. Nous avons bien reçu votre demande concernant <strong>${interest}</strong>.`
+                : `Thank you for reaching out to Solutions Quasar. We have received your inquiry regarding <strong>${interest}</strong>.`;
+            const p2 = isFr
+                ? `Notre équipe examine chaque demande avec attention. Nous vous recontacterons sous peu pour discuter de la façon dont nous pouvons élever votre présence numérique.`
+                : `Our team reviews every request carefully. We will get back to you shortly to discuss how we can elevate your digital presence.`;
+            const footer = isFr
+                ? `Si vous avez des questions urgentes, n'hésitez pas à répondre directement à cet email.`
+                : `If you have any urgent questions, feel free to reply to this email.`;
+
             const userHtml = `
             <div style="font-family: sans-serif; background-color: #0B0D10; color: #F0F2F5; padding: 40px 20px;">
                 <div style="max-width: 600px; margin: 0 auto; background-color: #15171C; border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1);">
@@ -213,12 +282,12 @@ app.post('/api/contact', async (req, res) => {
                         <h1 style="color: #DFA53A; margin: 0; font-size: 24px; letter-spacing: 2px;">SOLUTIONS QUASAR</h1>
                     </div>
                     <div style="padding: 30px;">
-                        <h2 style="color: #F0C468; margin-top: 0;">Request Received</h2>
-                        <p>Hello ${name},</p>
-                        <p>Thank you for reaching out to Solutions Quasar. We have received your inquiry regarding <strong>${interest}</strong>.</p>
-                        <p>Our team reviews every request carefully. We will get back to you shortly to discuss how we can elevate your digital presence.</p>
+                        <h2 style="color: #F0C468; margin-top: 0;">${title}</h2>
+                        <p>${greeting}</p>
+                        <p>${p1}</p>
+                        <p>${p2}</p>
                         <br>
-                        <p style="color: #A0A5B0; font-size: 14px;">If you have any urgent questions, feel free to reply to this email.</p>
+                        <p style="color: #A0A5B0; font-size: 14px;">${footer}</p>
                     </div>
                     <div style="background-color: #0B0D10; padding: 15px; text-align: center; color: #555; font-size: 12px;">
                         &copy; ${new Date().getFullYear()} Solutions Quasar Inc.
@@ -230,7 +299,7 @@ app.post('/api/contact', async (req, res) => {
                 await resend.emails.send({
                     from: 'Solutions Quasar <' + fromEmail + '>',
                     to: [contact_method],
-                    subject: 'We received your request - Solutions Quasar',
+                    subject: subject,
                     html: userHtml
                 });
                 console.log(`Confirmation sent to ${contact_method}`);
@@ -263,7 +332,7 @@ app.post('/api/contact', async (req, res) => {
         if (error.message && (error.message.includes('only send testing emails') || error.message.includes('verify a domain'))) {
             try {
                 const sandboxEmail = 'bensult78@gmail.com'; // Hardcoded dev email
-                const fallbackSender = 'onboarding@resend.dev';
+                const fallbackSender = 'info@solutionsquasar.ca';
 
                 console.log(`REDIRECTING contact form to sandbox: ${sandboxEmail}`);
 
@@ -296,6 +365,61 @@ app.post('/api/contact', async (req, res) => {
         }
 
         res.status(500).json({ success: false, error: "Failed to send email. Please try again later." });
+    }
+});
+
+// Generic Email Sending Endpoint (Used by Web Demos)
+app.post('/api/emails/send', async (req, res) => {
+    const { to, subject, html } = req.body;
+
+    if (!to || !subject || !html) {
+        return res.status(400).json({ success: false, error: "Missing required fields: to, subject, html" });
+    }
+
+    if (!resend) {
+        return res.status(500).json({ success: false, error: "Email service not configured. Please check server logs." });
+    }
+
+    try {
+        const fromEmail = process.env.EMAIL_FROM && !process.env.EMAIL_FROM.includes('resend.dev')
+            ? process.env.EMAIL_FROM
+            : 'info@solutionsquasar.ca';
+
+        const data = await resend.emails.send({
+            from: 'AI ERP Demo <' + fromEmail + '>',
+            to: [to],
+            subject: subject,
+            html: html
+        });
+
+        if (data.error) throw new Error(data.error.message);
+
+        res.json({ success: true, message: "Email sent successfully." });
+    } catch (error) {
+        console.error("API Email Send Error:", error);
+
+        // --- SANDBOX FALLBACK ---
+        if (error.message && (error.message.includes('only send testing emails') || error.message.includes('verify a domain'))) {
+            try {
+                const sandboxEmail = 'bensult78@gmail.com';
+                const fromEmail = 'info@solutionsquasar.ca';
+
+                console.log(`REDIRECTING API email to sandbox: ${sandboxEmail}`);
+
+                await resend.emails.send({
+                    from: 'AI ERP Demo <' + fromEmail + '>',
+                    to: [sandboxEmail],
+                    subject: `[SANDBOX] ${subject}`,
+                    html: `<p><strong>Original Destination:</strong> ${to}</p><hr>${html}`
+                });
+
+                return res.json({ success: true, message: "Email sent (Sandbox Mode)." });
+            } catch (retryError) {
+                console.error('API Email Sandbox Retry Failed:', retryError);
+            }
+        }
+
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
@@ -335,7 +459,7 @@ app.post('/api/send-email', verifyToken, async (req, res) => {
         if (error.message && (error.message.includes('only send testing emails') || error.message.includes('verify a domain'))) {
             try {
                 const sandboxEmail = 'bensult78@gmail.com';
-                const fallbackSender = 'onboarding@resend.dev'; // Force safe sender for sandbox
+                const fallbackSender = 'info@solutionsquasar.ca'; // Force safe sender for sandbox
 
                 console.log(`REDIRECTING email to sandbox: ${sandboxEmail} from ${fallbackSender}`);
 
@@ -350,7 +474,7 @@ app.post('/api/send-email', verifyToken, async (req, res) => {
 
                 return res.json({
                     success: true,
-                    message: `Sandbox Mode: Email redirected to ${sandboxEmail} (using onboarding@resend.dev)`
+                    message: `Sandbox Mode: Email redirected to ${sandboxEmail} (using info@solutionsquasar.ca)`
                 });
 
             } catch (retryError) {
@@ -635,7 +759,7 @@ app.post('/api/projects/:projectId/invite-client', verifyToken, async (req, res)
         </html>
         `;
 
-        const fromEmail = process.env.EMAIL_FROM || 'onboarding@resend.dev';
+        const fromEmail = process.env.EMAIL_FROM || 'info@solutionsquasar.ca';
         if (!resend) throw new Error("Email service not configured");
 
         await resend.emails.send({
@@ -781,7 +905,7 @@ app.post('/api/vapi/create-agent', verifyToken, async (req, res) => {
     }
 });
 
-// 3. Update Agent (Sync changes to Vapi)
+// 3. Update Agent (Sync tools/prompt to Vapi & preserve config)
 app.patch('/api/vapi/update-agent/:id', verifyToken, async (req, res) => {
     const { id } = req.params;
     const { name, prompt, model, tools: selectedTools, projectId } = req.body;
@@ -791,6 +915,19 @@ app.patch('/api/vapi/update-agent/:id', verifyToken, async (req, res) => {
     if (!projectId) return res.status(400).json({ success: false, error: 'projectId is required.' });
 
     try {
+        // 0. Fetch existing assistant to preserve Widget Customizer config
+        let existingModel = { provider: "openai", model: model || "gpt-3.5-turbo", messages: [] };
+        try {
+            const existingRes = await axios.get(`https://api.vapi.ai/assistant/${id}`, {
+                headers: { 'Authorization': `Bearer ${apiKey}` }
+            });
+            if (existingRes.data && existingRes.data.model) {
+                existingModel = existingRes.data.model;
+            }
+        } catch (e) {
+            console.warn("Could not fetch existing assistant config, proceeding with defaults.", e.message);
+        }
+
         // 1. Get Isolated DB & Discover Dynamic Tools
         const appInstance = await getApp(projectId);
         const db = appInstance.firestore();
@@ -801,13 +938,30 @@ app.patch('/api/vapi/update-agent/:id', verifyToken, async (req, res) => {
 
         // 3. Filter Enabled Tools
         const functionsToEnable = [];
+        let pinEnabled = false;
         if (selectedTools) {
             allPotentialTools.forEach(t => {
-                // Check if tool is enabled in the request (true/false)
-                if (selectedTools[t.function.name]) {
+                const name = t.function.name;
+                // Enable if explicitly true OR if missing (default true)
+                if (selectedTools[name] !== false) {
                     functionsToEnable.push(t);
+                    if (name === 'verify_voice_pin') pinEnabled = true;
                 }
             });
+        }
+
+        // 4. Update System Prompt & Enforce Security Instructions
+        let adjustedPrompt = prompt;
+        if (pinEnabled && !adjustedPrompt.includes('verify_voice_pin')) {
+            adjustedPrompt += "\n\nCRITICAL SECURITY RULE: You MUST verify the caller's identity using the `verify_voice_pin` tool BEFORE performing any sensitive operations (like accessing private data, changing settings, or booking appointments on their behalf). Simply ask the caller for their PIN if it hasn't been verified yet.";
+        }
+
+        let newMessages = existingModel.messages || [];
+        const sysMsgIndex = newMessages.findIndex(m => m.role === 'system');
+        if (sysMsgIndex >= 0) {
+            newMessages[sysMsgIndex].content = adjustedPrompt;
+        } else {
+            newMessages.unshift({ role: "system", content: adjustedPrompt });
         }
 
         // Determine Base URL
@@ -817,12 +971,10 @@ app.patch('/api/vapi/update-agent/:id', verifyToken, async (req, res) => {
         const updatePayload = {
             name: name,
             model: {
-                provider: "openai",
-                model: model || "gpt-3.5-turbo",
-                messages: [{ role: "system", content: prompt }],
+                ...existingModel, // Preserve provider, model, etc.
+                messages: newMessages,
                 tools: functionsToEnable.length > 0 ? functionsToEnable : undefined
             },
-            // IMPORTANT: Set Server Webhook URL for these tools to work
             serverUrl: callbackUrl
         };
 
@@ -834,6 +986,52 @@ app.patch('/api/vapi/update-agent/:id', verifyToken, async (req, res) => {
 
     } catch (error) {
         console.error("Vapi Update Error:", error.response?.data || error.message);
+        res.status(500).json({ success: false, error: error.response?.data?.message || error.message });
+    }
+});
+
+// 3b. Update Agent Config (Sync Widget Customizer to Vapi)
+app.patch('/api/vapi/update-agent-config/:id', verifyToken, async (req, res) => {
+    const { id } = req.params;
+    const { name, provider, model, firstMessageMode, firstMessage } = req.body;
+    const apiKey = process.env.VAPI_PRIVATE_KEY;
+
+    if (!apiKey) return res.status(500).json({ success: false, error: 'VAPI_PRIVATE_KEY not configured.' });
+
+    try {
+        // Fetch existing assistant to preserve tools and system prompt
+        let existingModel = { provider: "openai", model: "gpt-3.5-turbo", messages: [] };
+        try {
+            const existingRes = await axios.get(`https://api.vapi.ai/assistant/${id}`, {
+                headers: { 'Authorization': `Bearer ${apiKey}` }
+            });
+            if (existingRes.data && existingRes.data.model) {
+                existingModel = existingRes.data.model;
+            }
+        } catch (e) {
+            console.warn("Could not fetch existing assistant config.", e.message);
+        }
+
+        // Construct Update Payload
+        const updatePayload = {
+            name: name,
+            firstMessageMode: firstMessageMode,
+            firstMessage: firstMessage,
+            model: {
+                ...existingModel, // Preserve tools, messages
+                provider: provider || existingModel.provider,
+                model: model || existingModel.model
+            }
+        };
+
+        const response = await axios.patch(`https://api.vapi.ai/assistant/${id}`, updatePayload, {
+            headers: { 'Authorization': `Bearer ${apiKey}` }
+        });
+
+        res.json({ success: true, data: response.data });
+
+    } catch (error) {
+        console.error("Vapi Config Update Error:", error.response?.data || error.message);
         res.status(500).json({ success: false, error: error.response?.data?.message || error.message });
     }
 });
@@ -874,14 +1072,93 @@ app.post('/api/vapi/callback', async (req, res) => {
         const payload = req.body;
         const { projectId } = req.query; // MUST be present
 
+        // --- 0. BULLETPROOF SECURITY: Vapi Secret Check ---
+        const vapiSecret = req.headers['x-vapi-secret'];
+        if (process.env.VAPI_SECRET && vapiSecret !== process.env.VAPI_SECRET) {
+            console.warn(`[Security Check] BLOCKED: Missing or invalid X-Vapi-Secret from Project ${projectId}`);
+            return res.status(401).json({ error: "Unauthorized. Invalid handshake." });
+        }
+
         // SECURITY: Strict Isolation Check
         if (!projectId) {
             console.warn("BLOCKED: Vapi Callback missing projectId");
             return res.status(400).json({ error: "Missing projectId in webhook URL." });
         }
 
-        console.log(`[Vapi Webhook] Project: ${projectId}`);
-        // console.log("Vapi Webhook Payload:", JSON.stringify(payload, null, 2));
+        console.log(`[Vapi Webhook] Project: ${projectId} - Event: ${payload.message?.type || 'unknown'}`);
+
+        // --- 1. PRE-CALL SECURITY CHECK (Assistant Request) ---
+        // Vapi sends 'assistant-request' before starting the call.
+        // We can use this to block unauthorized numbers immediately.
+        if (payload.message?.type === 'assistant-request') {
+            const callerNumber = payload.message?.call?.customer?.number || payload.call?.customer?.number || payload.customer?.number || payload.call?.customerNumber;
+            const auth = await voiceAuth.verifyCaller(callerNumber, projectId);
+
+            if (!auth.authorized) {
+                console.warn(`[Vapi Security] Blocking incoming call from ${callerNumber}: ${auth.reason}`);
+                // Return a "Hanging Up" assistant configuration
+                return res.json({
+                    assistant: {
+                        name: "Security Guard",
+                        model: {
+                            provider: "openai",
+                            model: "gpt-4o-mini",
+                            messages: [{ role: "system", content: "Hang up immediately." }]
+                        },
+                        firstMessage: "Désolé, votre numéro n'est pas autorisé à contacter cet agent. Accès refusé.",
+                        endCallOnAssistantGreetingPossible: true,
+                        voice: { provider: "11labs", voiceId: "burt" }
+                    }
+                });
+            }
+            // If authorized, we MUST tell Vapi which assistant to connect to, 
+            // since the phone number no longer has a hardcoded assistant attached.
+            try {
+                // Find the active voice agent for this project in the CENTRAL management database
+                const agentsSnapshot = await db.collection('ai_agents')
+                    .where('projectId', '==', projectId)
+                    .where('active', '==', true)
+                    .limit(1)
+                    .get();
+
+                if (!agentsSnapshot.empty) {
+                    const agentData = agentsSnapshot.docs[0].data();
+                    if (agentData.vapiAssistantId) {
+                        console.log(`[Vapi Routing] Connecting call to Assistant: ${agentData.vapiAssistantId}`);
+                        return res.json({
+                            assistantId: agentData.vapiAssistantId
+                        });
+                    }
+                }
+
+                // Fallback: If no specific active agent is found, try to find ANY agent for this project with a Vapi ID.
+                const anyAgentSnapshot = await db.collection('ai_agents')
+                    .where('projectId', '==', projectId)
+                    .limit(5)
+                    .get();
+
+                if (!anyAgentSnapshot.empty) {
+                    // Loop to find the first one that has a Vapi ID
+                    for (const adoc of anyAgentSnapshot.docs) {
+                        const fallbackData = adoc.data();
+                        if (fallbackData.vapiAssistantId) {
+                            console.log(`[Vapi Routing] Connecting call to Assistant: ${fallbackData.vapiAssistantId}`);
+                            return res.json({
+                                assistantId: fallbackData.vapiAssistantId
+                            });
+                        }
+                    }
+                }
+                console.warn(`[Vapi Routing] No Vapi Assistant ID found for project ${projectId}. Call will likely fail.`);
+                return res.status(500).json({ error: "No voice assistant configured for this project." });
+
+            } catch (dbError) {
+                console.error(`[Vapi Routing] Error fetching assistant ID:`, dbError);
+                return res.status(500).json({ error: "Internal error routing the call." });
+            }
+        }
+
+        // --- 2. TOOL CALL SECURITY (Secondary Check) ---
 
         // Handle Function Calls
         // Vapi sends: { message: { type: "tool-calls", toolCalls: [...] } }
@@ -893,10 +1170,32 @@ app.post('/api/vapi/callback', async (req, res) => {
         if (toolCalls) {
             console.log(`Processing ${toolCalls.length} tool calls for ${projectId}...`);
             const results = [];
+
+            // Extract Caller Phone Number from Vapi Payload (Robust multi-path)
+            const callerNumber = payload.message?.call?.customer?.number || payload.call?.customer?.number || payload.customer?.number || payload.call?.customerNumber;
+            if (callerNumber) console.log(`[Vapi] Detected Caller ID for tool call: ${callerNumber}`);
+
             for (const call of toolCalls) {
                 const fnName = call.function.name;
                 let args = call.function.arguments;
                 if (typeof args === 'string') args = JSON.parse(args);
+
+                // Inject Caller Number for verification tools
+                if (fnName === 'verify_voice_pin') {
+                    args.phoneNumber = callerNumber;
+                }
+
+                // --- STRICT SECURITY CHECK ---
+                // 1. Double check phone number authorization for every tool call
+                const authStatus = await voiceAuth.verifyCaller(callerNumber, projectId);
+                if (!authStatus.authorized) {
+                    console.error(`[Security] Tool call blocked mid-conversation: ${fnName} - Reason: ${authStatus.reason}`);
+                    results.push({
+                        toolCallId: call.id,
+                        result: JSON.stringify({ error: "Access Denied. Your identity could not be verified." })
+                    });
+                    continue;
+                }
 
                 console.log(`[Vapi] Tool Call: ${fnName}`, args);
 
@@ -928,10 +1227,13 @@ app.post('/api/vapi/callback', async (req, res) => {
                     result = { error: "Access to this tool is disabled by the administrator." };
                 } else {
                     if (handlers[fnName]) {
-                        result = await handlers[fnName](args, projectId);
+                        result = await handlers[fnName](args, projectId, req.requestId);
                     } else {
-                        // Try dynamic handler (handles create_*, search_*)
-                        result = await dynamicHandler(fnName, args, projectId);
+                        // Try dynamic handler (handles create_*, search_*, update_*, send_email_*)
+                        result = await dynamicHandler(fnName, args, projectId, {
+                            resend,
+                            requestId: req.requestId
+                        });
                     }
                 }
                 // ----------------------------------------
@@ -984,6 +1286,26 @@ app.post('/api/projects/:id/credentials', verifyToken, async (req, res) => {
     }
 });
 
+// Update Project Settings (Generic)
+app.post('/api/projects/:id/settings', verifyToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const settings = req.body;
+
+        console.log(`Updating settings for Project ${id}:`, Object.keys(settings));
+
+        await db.collection('ai_projects').doc(id).update({
+            ...settings,
+            updatedAt: new Date().toISOString()
+        });
+
+        res.json({ success: true, message: "Project settings updated." });
+    } catch (e) {
+        console.error("Settings Update Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Verify Connection
 app.get('/api/projects/:id/verify', verifyToken, async (req, res) => {
     try {
@@ -1006,10 +1328,11 @@ app.post('/api/projects/:id/discover', verifyToken, async (req, res) => {
         const db = app.firestore();
 
         // 2. Run discovery
-        const tools = await discoverSchema(db);
+        const dynamicTools = await discoverSchema(db);
+        const { tools: staticTools } = require('./vapi-tools');
 
-        // 3. Return tool definitions
-        res.json({ success: true, tools });
+        // 3. Return combined tool definitions
+        res.json({ success: true, tools: [...staticTools, ...dynamicTools] });
 
     } catch (e) {
         console.error("Discovery Error:", e);
@@ -1017,12 +1340,15 @@ app.post('/api/projects/:id/discover', verifyToken, async (req, res) => {
     }
 });
 
-// Test Tool Execution
 app.post('/api/tools/test', verifyToken, async (req, res) => {
     try {
         const { toolName, args, projectId } = req.body;
+        console.log(`[Test Request] toolName: ${toolName}, projectId: ${projectId}`);
 
-        if (!handlers[toolName]) return res.status(400).json({ error: "Unknown Tool" });
+        if (!handlers[toolName]) {
+            console.warn(`[Test Error] Unknown Tool: ${toolName}. Available tools: ${Object.keys(handlers).join(', ')}`);
+            return res.status(400).json({ error: "Unknown Tool", available: Object.keys(handlers) });
+        }
         if (!projectId) return res.status(400).json({ error: "Missing Project ID" });
 
         console.log(`[Test] Running ${toolName} for ${projectId}`);
@@ -1031,6 +1357,7 @@ app.post('/api/tools/test', verifyToken, async (req, res) => {
         res.json({ success: true, result });
 
     } catch (e) {
+        console.error("Tool Execution Error:", e);
         res.status(500).json({ error: e.message });
     }
 });
@@ -1039,7 +1366,7 @@ app.post('/api/tools/test', verifyToken, async (req, res) => {
 // --- CHAT INTERFACE (PHASE 3) ---
 app.post('/api/chat', verifyToken, async (req, res) => {
     try {
-        const { projectId, agentId, messages } = req.body;
+        const { projectId, agentId, messages, sessionId } = req.body;
         if (!projectId || !agentId || !messages) return res.status(400).json({ error: "Missing required fields" });
 
         const apiKey = process.env.OPENAI_API_KEY;
@@ -1058,10 +1385,41 @@ app.post('/api/chat', verifyToken, async (req, res) => {
         const dynamicTools = await discoverSchema(tenantDb);
         const availableTools = [...tools, ...dynamicTools];
 
-        // 3. Prepare Messages
-        const systemMessage = { role: "system", content: agentData.prompt || "You are a helpful assistant." };
-        // Prepend system prompt to history (user messages usually come first in request if we are not careful)
-        const fullHistory = [systemMessage, ...messages];
+        // 3. Smart Context Injection: Fetch Relevant Memories
+        const lastUserMsg = messages[messages.length - 1]?.content || "";
+        let contextKnowledge = "";
+
+        if (lastUserMsg) {
+            try {
+                const memoryResults = await handlers.search_memories({ query: lastUserMsg }, projectId);
+                if (memoryResults.success && memoryResults.memories.length > 0) {
+                    contextKnowledge = "\n\nRELEVANT DISCOVERED MEMORIES:\n" +
+                        memoryResults.memories.map(m => `- ${m.text}`).join('\n');
+                    console.log(`[Chat] Injected ${memoryResults.memories.length} memories into prompt.`);
+                }
+            } catch (memErr) {
+                console.warn("Memory lookup failed for chat prompt:", memErr.message);
+            }
+        }
+
+        // 3b. Prepare Messages
+        const systemPrompt = (agentData.prompt || "You are a helpful assistant.") + contextKnowledge;
+        const systemMessage = { role: "system", content: systemPrompt };
+
+        // Load existing session history if requested and not provided in full
+        let sessionHistory = messages;
+        if (sessionId && messages.length <= 1) {
+            const sessionDoc = await db.collection('conversations').doc(sessionId).get();
+            if (sessionDoc.exists) {
+                const data = sessionDoc.data();
+                if (data.messages) {
+                    // Prepend old messages, keeping the new one at the end
+                    sessionHistory = [...data.messages.slice(-10), ...messages];
+                }
+            }
+        }
+
+        const fullHistory = [systemMessage, ...sessionHistory];
 
         // 4. OpenAI Loop (Handle Tool Calls)
         let keepGoing = true;
@@ -1082,7 +1440,7 @@ app.post('/api/chat', verifyToken, async (req, res) => {
             currentHistory.push(assistantMsg);
 
             if (assistantMsg.tool_calls) {
-                console.log(`[Chatbot] Executing ${assistantMsg.tool_calls.length} tools...`);
+                console.log(`[Chat] Executing ${assistantMsg.tool_calls.length} tools...`);
 
                 for (const toolCall of assistantMsg.tool_calls) {
                     const fnName = toolCall.function.name;
@@ -1090,23 +1448,19 @@ app.post('/api/chat', verifyToken, async (req, res) => {
                     let result = { error: "Tool not found" };
 
                     try {
-                        // --- SECURITY CHECK (CHATBOT) ---
                         if (agentData.tools && agentData.tools[fnName] === false) {
                             result = { error: "Access to this tool is disabled by the administrator." };
                         } else {
                             if (handlers[fnName]) {
                                 result = await handlers[fnName](fnArgs, projectId);
                             } else {
-                                // Unified Dynamic Handler
-                                result = await dynamicHandler(fnName, fnArgs, projectId);
+                                result = await dynamicHandler(fnName, fnArgs, projectId, { resend });
                             }
                         }
-                        // --------------------------------
                     } catch (err) {
                         result = { error: err.message };
                     }
 
-                    // Append Tool Output
                     currentHistory.push({
                         tool_call_id: toolCall.id,
                         role: "tool",
@@ -1120,10 +1474,69 @@ app.post('/api/chat', verifyToken, async (req, res) => {
             }
         }
 
+        // 5. Save History & Return
+        if (sessionId) {
+            const chatToSave = currentHistory.filter(m => m.role !== 'system');
+            const preview = finalResponse ? finalResponse.substring(0, 100) : "Tool interaction";
+
+            await db.collection('conversations').doc(sessionId).set({
+                agentId,
+                projectId,
+                agentName: agentData.name || 'AI Agent',
+                updatedAt: new Date().toISOString(),
+                messages: chatToSave.slice(-50), // Keep last 50
+                preview
+            }, { merge: true });
+        }
+
         res.json({ success: true, message: finalResponse, history: currentHistory });
 
     } catch (e) {
         console.error("Chat API Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- PUBLIC AGENT CONFIG ENDPOINT ---
+app.get('/api/public/agent/:agentId/config', async (req, res) => {
+    try {
+        const { agentId } = req.params;
+        const agentDoc = await db.collection('ai_agents').doc(agentId).get();
+        if (!agentDoc.exists) return res.status(404).json({ error: "Agent not found" });
+
+        const data = agentDoc.data();
+        res.json({
+            success: true,
+            config: {
+                title: data.name || data.welcomeMessage || 'AI Assistant',
+                primaryColor: data.color || '#dfa53a',
+                welcomeMsg: data.welcomeMessage || data.firstMessage || 'Hello!',
+                toggleIcon: data.toggleIcon || 'chat',
+                vapiId: data.vapiAssistantId || null
+            }
+        });
+    } catch (e) {
+        console.error("Public Config Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- PUBLIC HISTORY ENDPOINT ---
+app.get('/api/public/chat/history/:sessionId', async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        const sessionDoc = await db.collection('conversations').doc(sessionId).get();
+
+        if (!sessionDoc.exists) {
+            return res.json({ success: true, messages: [] });
+        }
+
+        const data = sessionDoc.data();
+        // Return last 10 messages for context
+        const history = (data.messages || []).slice(-10).filter(m => m.role !== 'system');
+        res.json({ success: true, messages: history });
+    } catch (e) {
+        console.error("Public History Error:", e);
         res.status(500).json({ error: e.message });
     }
 });
@@ -1155,8 +1568,38 @@ app.post('/api/public/chat/:agentId', async (req, res) => {
         const availableTools = [...tools, ...dynamicTools];
 
         // 3. Prepare Messages
-        const systemMessage = { role: "system", content: agentData.prompt || "You are a helpful assistant." };
-        const fullHistory = [systemMessage, ...messages];
+        const lastUserMsg = messages[messages.length - 1]?.content || "";
+        let contextKnowledge = "";
+
+        if (lastUserMsg) {
+            try {
+                const memoryResults = await handlers.search_memories({ query: lastUserMsg }, projectId);
+                if (memoryResults.success && memoryResults.memories.length > 0) {
+                    contextKnowledge = "\n\nRELEVANT DISCOVERED MEMORIES:\n" +
+                        memoryResults.memories.map(m => `- ${m.text}`).join('\n');
+                    console.log(`[Public Chat] Injected ${memoryResults.memories.length} memories into prompt for Agent ${agentId}.`);
+                }
+            } catch (memErr) {
+                console.warn("Memory lookup failed for public chat:", memErr.message);
+            }
+        }
+
+        const systemPrompt = (agentData.prompt || "You are a helpful assistant.") + contextKnowledge;
+        const systemMessage = { role: "system", content: systemPrompt };
+
+        // Load existing session history if requested and not provided in full
+        let sessionHistory = messages;
+        if (sessionId && messages.length <= 1) {
+            const sessionDoc = await db.collection('conversations').doc(sessionId).get();
+            if (sessionDoc.exists) {
+                const data = sessionDoc.data();
+                if (data.messages) {
+                    sessionHistory = [...data.messages.slice(-10), ...messages];
+                }
+            }
+        }
+
+        const fullHistory = [systemMessage, ...sessionHistory];
 
         // 4. OpenAI Loop (Handle Tool Calls)
         let currentHistory = fullHistory;
@@ -1189,7 +1632,7 @@ app.post('/api/public/chat/:agentId', async (req, res) => {
                             if (handlers[fnName]) {
                                 result = await handlers[fnName](fnArgs, projectId);
                             } else {
-                                result = await dynamicHandler(fnName, fnArgs, projectId);
+                                result = await dynamicHandler(fnName, fnArgs, projectId, { resend });
                             }
                         }
                     } catch (err) { result = { error: err.message }; }
@@ -1213,7 +1656,9 @@ app.post('/api/public/chat/:agentId', async (req, res) => {
                 updatedAt: new Date().toISOString(),
                 messages: currentHistory.map(m => ({
                     role: m.role,
+                    // Use a specific internal marker for messages that are just tool triggers
                     content: m.content || (m.tool_calls ? "Executed tools" : ""),
+                    tool_calls: m.tool_calls || null,
                     timestamp: new Date().toISOString()
                 })).slice(-50),
                 preview: lastMsg.content ? lastMsg.content.substring(0, 100) : "Conversation update"

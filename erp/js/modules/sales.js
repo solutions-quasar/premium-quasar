@@ -1,5 +1,7 @@
 import { db, auth } from '../firebase-config.js';
 import { collection, query, where, getDocs, getDoc, setDoc, updateDoc, deleteDoc, doc, addDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { t } from '../services/translationService.js';
+import { erpConfirm } from '../services/uiService.js';
 
 // Global State
 let currentTab = 'quotes'; // 'quotes' | 'invoices'
@@ -81,23 +83,23 @@ export async function initSales() {
     container.innerHTML = `
         <div class="top-actions" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
             <div class="text-h text-gold" style="font-size: 1.5rem; display:flex; align-items:center; gap:10px;">
-                <span class="material-icons" style="font-size: 1.8rem;">receipt_long</span> Sales & Billing
+                <span class="material-icons" style="font-size: 1.8rem;">receipt_long</span> <span data-i18n="sales_title">Sales & Billing</span>
             </div>
             <div style="display:flex; gap:10px;">
                 <button class="btn btn-primary" onclick="openSalesEditor('new')" style="display:flex; align-items:center; gap:5px;">
-                    <span class="material-icons">add</span> Create New
+                    <span class="material-icons">add</span> ${t('sales_new_quote')}
                 </button>
             </div>
         </div>
 
         <div class="tabs-container" style="display:flex; gap:1rem; margin-bottom:1.5rem; border-bottom: 1px solid var(--border);">
-            <button class="tab-btn ${currentTab === 'quotes' ? 'active' : ''}" id="tab-quotes" onclick="switchSalesTab('quotes')">Quotes</button>
-            <button class="tab-btn ${currentTab === 'invoices' ? 'active' : ''}" id="tab-invoices" onclick="switchSalesTab('invoices')">Invoices</button>
-            <button class="tab-btn ${currentTab === 'settings' ? 'active' : ''}" id="tab-settings" onclick="switchSalesTab('settings')">Settings</button>
+            <button class="tab-btn ${currentTab === 'quotes' ? 'active' : ''}" id="tab-quotes" onclick="switchSalesTab('quotes')">${t('sales_quotes')}</button>
+            <button class="tab-btn ${currentTab === 'invoices' ? 'active' : ''}" id="tab-invoices" onclick="switchSalesTab('invoices')">${t('sales_invoices')}</button>
+            <button class="tab-btn ${currentTab === 'settings' ? 'active' : ''}" id="tab-settings" onclick="switchSalesTab('settings')">${t('sales_settings')}</button>
         </div>
 
         <div id="sales-list-container">
-            <div class="text-center text-muted" style="padding: 3rem;">Loading...</div>
+            <div class="text-center text-muted" style="padding: 3rem;">${t('sales_loading')}</div>
         </div>
 
         <div id="sales-modal-host"></div>
@@ -227,7 +229,7 @@ window.addSnippet = async () => {
 }
 
 window.deleteSnippet = async (key) => {
-    if (!confirm('Delete this snippet?')) return;
+    if (!await erpConfirm('Delete this snippet?')) return;
     delete window.salesSettings.snippets[key];
     renderSalesSettings();
     await saveSalesSettingsFull();
@@ -241,7 +243,7 @@ window.saveSalesSettingsFull = async () => {
 
 async function loadSalesList() {
     const listContainer = document.getElementById('sales-list-container');
-    listContainer.innerHTML = '<div class="text-center text-muted" style="padding: 3rem; display:flex; flex-direction:column; align-items:center; gap:10px;"><span class="material-icons rotating">refresh</span> Loading...</div>';
+    listContainer.innerHTML = `<div class="text-center text-muted" style="padding: 3rem; display:flex; flex-direction:column; align-items:center; gap:10px;"><span class="material-icons rotating">refresh</span> ${t('sales_loading')}</div>`;
 
     try {
         const q = query(collection(db, currentTab), orderBy('createdAt', 'desc'));
@@ -252,7 +254,7 @@ async function loadSalesList() {
                 <div class="text-center text-muted" style="padding: 4rem; opacity: 0.6;">
                     <span class="material-icons" style="font-size: 3rem; margin-bottom: 1rem;">description</span>
                     <br>
-                    No ${currentTab} found. Create your first one!
+                    ${t('sales_no_items')}
                 </div>`;
             return;
         }
@@ -291,7 +293,7 @@ async function loadSalesList() {
 
     } catch (e) {
         console.error(e);
-        listContainer.innerHTML = `<div class="text-danger text-center p-4">Error loading data: ${e.message}</div>`;
+        listContainer.innerHTML = `<div class="text-danger text-center p-4">${t('sales_error_loading')}: ${e.message}</div>`;
     }
 }
 
@@ -466,7 +468,7 @@ window.openSalesEditor = (data) => {
                     <!-- Sidebar Header -->
                     <div style="padding: 1.5rem; border-bottom: 1px solid var(--border);">
                         <div class="text-xs text-gold uppercase tracking-widest font-bold mb-1">Configuration</div>
-                        <h2 class="text-h text-xl m-0">${isNew ? 'New' : 'Edit'} ${currentTab === 'quotes' ? 'Quote' : 'Invoice'}</h2>
+                        <h2 class="text-h text-xl m-0">${isNew ? t('sales_new_quote').split(' ')[0] : t('sales_edit')} ${currentTab === 'quotes' ? t('sales_quotes').slice(0, -1) : t('sales_invoices').slice(0, -1)}</h2>
                     </div>
 
                     <!-- Sidebar Content -->
@@ -474,10 +476,10 @@ window.openSalesEditor = (data) => {
                         
                         <!-- Client Section -->
                         <div>
-                             <div class="text-xs text-muted uppercase font-bold mb-3">Client Details</div>
+                             <div class="text-xs text-muted uppercase font-bold mb-3">${t('sales_doc_client')}</div>
                              
                              <div class="form-group" style="position:relative;">
-                                <label class="form-label text-xs">Contact Name</label>
+                                <label class="form-label text-xs">${t('sales_client')}</label>
                                 <input type="text" id="sales-client" class="form-input" value="${item.clientName}" placeholder="Search Client..." autocomplete="off">
                                 <span class="material-icons text-muted" style="position:absolute; right:12px; top:32px; font-size:16px; pointer-events:none;">search</span>
                                 <!-- Search Results -->
@@ -514,15 +516,15 @@ window.openSalesEditor = (data) => {
 
                         <!-- Settings Section -->
                         <div>
-                            <div class="text-xs text-muted uppercase font-bold mb-3">Document Settings</div>
+                            <div class="text-xs text-muted uppercase font-bold mb-3">${t('sales_doc_details')}</div>
                             
                             <div class="form-group">
-                                <label class="form-label text-xs">Number</label>
+                                <label class="form-label text-xs">${t('sales_number')}</label>
                                 <input type="text" id="sales-number" class="form-input font-mono" value="${item.number}">
                             </div>
 
                             <div class="form-group">
-                                <label class="form-label text-xs">Status</label>
+                                <label class="form-label text-xs">${t('sales_status')}</label>
                                 <select id="sales-status" class="form-input">
                                     <option value="Draft" ${item.status === 'Draft' ? 'selected' : ''}>Draft</option>
                                     <option value="Sent" ${item.status === 'Sent' ? 'selected' : ''}>Sent</option>
@@ -548,19 +550,19 @@ window.openSalesEditor = (data) => {
                         <div style="display:flex; gap:10px;">
                             ${!isNew ? `
                                 <button class="btn btn-sm" onclick="salesGeneratePDF()" title="Preview Document">
-                                    <span class="material-icons">visibility</span> Preview Document
+                                    <span class="material-icons">visibility</span> ${t('sales_pdf')}
                                 </button>
                                 ${currentTab === 'quotes' ? `
                                 <button class="btn btn-sm btn-primary" onclick="salesConvertToInvoice('${item.id}')" title="Convert to Invoice" style="background:var(--success); border:none; color:white;">
-                                    <span class="material-icons">transform</span> To Invoice
+                                    <span class="material-icons">transform</span> ${t('sales_convert')}
                                 </button>
                                 ` : ''}
                                 <button class="btn btn-sm" onclick="salesSendEmail()" title="Email">
-                                    <span class="material-icons">send</span> Email
+                                    <span class="material-icons">send</span> ${t('sales_send')}
                                 </button>
                                 ${currentTab === 'invoices' && item.status !== 'Paid' ? `
                                 <button class="btn btn-sm" onclick="salesGeneratePaymentLink('${item.id}', ${item.total}, '${item.clientName}', '${item.clientEmail}', '${item.number}')" style="background:var(--gold-dark); border:none; color:white;">
-                                    <span class="material-icons">credit_card</span> Payment Link
+                                    <span class="material-icons">credit_card</span> ${t('sales_pay_link')}
                                 </button>
                                 ` : ''}
                                 <div style="width:1px; background:var(--border); margin:0 5px;"></div>
@@ -581,10 +583,10 @@ window.openSalesEditor = (data) => {
                             <!-- Items Table Header -->
                             <div style="display: grid; grid-template-columns: 50px 4fr 1fr 1.5fr 1.5fr 40px; gap: 15px; padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 15px; color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; font-weight: bold;">
                                 <div>#</div>
-                                <div>Description</div>
-                                <div>Qty</div>
-                                <div style="text-align:right;">Price</div>
-                                <div style="text-align:right;">Total</div>
+                                <div>${t('sales_item_desc')}</div>
+                                <div>${t('sales_item_qty')}</div>
+                                <div style="text-align:right;">${t('sales_item_price')}</div>
+                                <div style="text-align:right;">${t('sales_item_total')}</div>
                                 <div></div>
                             </div>
 
@@ -592,34 +594,34 @@ window.openSalesEditor = (data) => {
                             <div id="sales-items-container" style="margin-bottom: 30px;"></div>
 
                             <button class="btn btn-secondary btn-sm" onclick="salesAddItem()" style="margin-bottom: 40px;">
-                                + Add Line Item
+                                + ${t('sales_add_item')}
                             </button>
 
                             <!-- Footer Section (Notes & Totals) -->
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px; border-top: 1px solid var(--border); padding-top: 30px;">
                                 <div>
-                                    <label class="form-label text-xs uppercase font-bold text-muted">Internal Notes</label>
-                                    <textarea id="sales-notes" class="form-input" rows="4" placeholder="Private internal notes...">${item.notes || ''}</textarea>
+                                    <label class="form-label text-xs uppercase font-bold text-muted">${t('sales_doc_notes')}</label>
+                                    <textarea id="sales-notes" class="form-input" rows="4" placeholder="${t('sales_doc_notes')}...">${item.notes || ''}</textarea>
                                 </div>
                                 <div style="text-align: right;">
                                     <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:1.1rem;">
-                                        <span class="text-muted">Subtotal</span>
+                                        <span class="text-muted">${t('sales_subtotal')}</span>
                                         <span class="text-white" id="sales-subtotal-display">$0.00</span>
                                     </div>
                                     <div id="sales-taxes-container" style="margin-bottom:10px;">
                                         <!-- Taxes will be rendered here -->
                                     </div>
                                     <div style="text-align:right; margin-bottom:10px;">
-                                        <button class="btn btn-sm btn-secondary" onclick="salesAddTax()">+ Add Tax</button>
+                                        <button class="btn btn-sm btn-secondary" onclick="salesAddTax()">+ ${t('sales_add_tax')}</button>
                                     </div>
                                     <div style="display:flex; justify-content:space-between; margin-bottom:20px; font-size:1.5rem; font-weight:bold; color:var(--gold); border-top: 1px solid var(--border); padding-top: 10px;">
-                                        <span>Total</span>
+                                        <span>${t('sales_grand_total')}</span>
                                         <span id="sales-total-display">$0.00</span>
                                     </div>
                                     
                                     <button class="btn btn-primary btn-block btn-lg" onclick="salesSaveItem('${item.id || ''}')">
                                         <span class="material-icons" style="margin-right:8px;">check</span> 
-                                        Save & Finish
+                                        ${t('sales_save')}
                                     </button>
                                 </div>
                             </div>
@@ -764,22 +766,22 @@ window.renderSalesItems = (shouldFocusIndex = -1, focusField = '') => {
             <div style="display:grid; grid-template-columns: 50px 4fr 1fr 1.5fr 1.5fr 40px; gap:10px; align-items:start; margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid rgba(255,255,255,0.1);">
                 <div style="padding-top:32px; color:var(--text-muted); font-size:0.9rem; font-weight:bold; text-align:center;">${index + 1}</div>
                 <div class="form-group" style="margin:0; position:relative;">
-                    <label class="form-label text-xs">Description</label>
+                    <label class="form-label text-xs">${t('sales_item_desc')}</label>
                     <textarea class="form-input item-desc-input" data-index="${index}" rows="2" style="font-family:inherit; min-height:60px;" oninput="updateLineItem(${index}, 'desc', this.value, false)">${line.desc}</textarea>
                     <button class="btn btn-sm" onclick="injectSnippet(${index})" title="Insert Snippet" style="position:absolute; right:5px; top:28px; padding:2px 8px; font-size:10px; background:var(--bg-card); border:1px solid var(--border);">
                         <span class="material-icons" style="font-size:14px;">auto_fix_high</span>
                     </button>
                 </div>
                 <div class="form-group" style="margin:0;">
-                    <label class="form-label text-xs">Qty</label>
+                    <label class="form-label text-xs">${t('sales_item_qty')}</label>
                     <input type="number" class="form-input item-qty-input" data-index="${index}" value="${line.qty}" step="1" oninput="updateLineItem(${index}, 'qty', this.value, true)">
                 </div>
                 <div class="form-group" style="margin:0;">
-                     <label class="form-label text-xs">Price ($)</label>
+                     <label class="form-label text-xs">${t('sales_item_price')} ($)</label>
                     <input type="number" class="form-input item-price-input" data-index="${index}" value="${line.price}" step="0.01" oninput="updateLineItem(${index}, 'price', this.value, true)">
                 </div>
                  <div class="form-group" style="margin:0; text-align:right;">
-                    <label class="form-label text-xs">Total</label>
+                    <label class="form-label text-xs">${t('sales_item_total')}</label>
                     <div style="padding:12px 0; color:var(--text-main); font-weight:bold;" id="total-${index}">$${lineTotal.toFixed(2)}</div>
                 </div>
                 <button class="icon-btn text-danger" onclick="removeSalesItem(${index})" style="margin-bottom:5px; margin-top: 25px;">
@@ -897,7 +899,7 @@ window.removeSalesItem = (index) => {
 }
 
 window.salesDeleteItem = async (id) => {
-    if (!id || !confirm('Are you sure you want to delete this?')) return;
+    if (!id || !await erpConfirm('Are you sure you want to delete this?')) return;
     try {
         await deleteDoc(doc(db, currentTab, id));
         document.getElementById('sales-modal-host').innerHTML = '';
@@ -1003,7 +1005,7 @@ window.salesGeneratePDF = () => {
 }
 
 window.salesConvertToInvoice = async (quoteId) => {
-    if (!confirm("Create a new Invoice from this Quote?")) return;
+    if (!await erpConfirm("Create a new Invoice from this Quote?")) return;
 
     try {
         const quoteSnap = await getDoc(doc(db, 'quotes', quoteId));
