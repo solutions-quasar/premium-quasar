@@ -788,22 +788,36 @@ cite {
     .hero-split {
         flex-direction: column;
         height: 100vh;
-    }
-
-    .hero-text {
-        width: 100%;
-        padding: var(--spacing-md) var(--spacing-sm);
-        /* Reduced padding */
-    }
-
-    .hero-content {
-        padding: 30px;
+        position: relative;
     }
 
     .hero-image {
+        position: absolute;
+        top: 0;
+        left: 0;
         width: 100%;
-        flex: 1;
-        /* Inherit flex height for stacked default */
+        height: 100%;
+        z-index: 1;
+    }
+
+    .hero-text {
+        position: relative;
+        z-index: 2;
+        width: 100%;
+        height: 100%;
+        padding: var(--spacing-md) var(--spacing-sm);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background: transparent;
+    }
+
+    .hero-split:not(.theme-full) .hero-content {
+        background: rgba(255, 255, 255, 0.9);
+        padding: 30px;
+        border-radius: var(--radius-card);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
     }
 
     .hero-split.theme-full .hero-image {

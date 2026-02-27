@@ -83,10 +83,19 @@ function applyServiceData(data, index) {
     document.title = `${service.title} | ${data.clinicName || 'Premium Clinic'}`;
 
     const titleEl = document.getElementById('service-detail-title');
+    const priceEl = document.getElementById('service-detail-price');
     const imgEl = document.getElementById('service-detail-image');
     const descEl = document.getElementById('service-detail-description');
 
     if (titleEl) titleEl.textContent = service.title;
+    if (priceEl) {
+        if (service.price) {
+            priceEl.textContent = service.price;
+            priceEl.style.display = 'block';
+        } else {
+            priceEl.style.display = 'none';
+        }
+    }
     if (imgEl) imgEl.src = service.image;
 
     if (descEl && service.description) {

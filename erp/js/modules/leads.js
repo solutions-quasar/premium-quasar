@@ -565,7 +565,14 @@ window.openLeadDetail = async (data) => {
                                 <div class="text-h truncate" style="font-size:1.15rem; margin:0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(lead.business_name)}">${escapeHtml(lead.business_name)}</div>
                                 
                                 <div style="display:flex; gap:8px; align-items:center; flex-shrink: 0;">
-                                <span class="badge status-${lead.status.toLowerCase()}" style="font-size:0.7rem; padding: 2px 6px;">${escapeHtml(lead.status)}</span>
+                                <select id="edit-lead-status" class="badge status-${lead.status ? lead.status.toLowerCase() : 'new'}" style="font-size:0.7rem; padding: 2px 20px 2px 6px; font-weight:bold; border: 1px solid rgba(255,255,255,0.2); appearance: menulist; cursor:pointer;" onchange="this.className='badge status-'+this.value.toLowerCase();">
+                                    <option value="NEW" ${lead.status === 'NEW' ? 'selected' : ''}>NEW</option>
+                                    <option value="INTERESTED" ${lead.status === 'INTERESTED' ? 'selected' : ''}>INTERESTED</option>
+                                    <option value="CALLBACK" ${lead.status === 'CALLBACK' ? 'selected' : ''}>CALLBACK</option>
+                                    <option value="NOT_INTERESTED" ${lead.status === 'NOT_INTERESTED' ? 'selected' : ''}>NOT INTERESTED</option>
+                                    <option value="CLIENT" ${lead.status === 'CLIENT' ? 'selected' : ''}>CLIENT</option>
+                                    <option value="REJECTED" ${lead.status === 'REJECTED' ? 'selected' : ''}>REJECTED</option>
+                                </select>
                                 ${lead.google_page_rank ? `<span class="badge" style="background:rgba(255,255,255,0.05); color:var(--text-muted); border:1px solid var(--border); font-size:0.7rem; padding: 2px 6px;">Page ${lead.google_page_rank}</span>` : ''}
                                 <a href="${googleSearchUrl}" target="_blank" class="text-xs text-gold hover-underline" style="display:flex; align-items:center; gap:3px;">
                                     <span class="material-icons" style="font-size:13px;">open_in_new</span> ${t('leads_verify_rank')}
@@ -1908,8 +1915,9 @@ window.saveLeadDetails = async (leadId) => {
         const dm_email = getVal('edit-dm-email');
         const dm_phone = getVal('edit-dm-phone');
 
-        // NEW: Capture Assigned Agent
+        // NEW: Capture Assigned Agent and Status
         const assigned_agent_id = getVal('edit-assigned-agent');
+        const status = getVal('edit-lead-status');
 
         if (!business_name) {
             showToast("Business Name is required.", "error");
@@ -1929,6 +1937,7 @@ window.saveLeadDetails = async (leadId) => {
             dm_email,
             dm_phone,
             assigned_agent_id, // Add to payload
+            status: status || 'NEW', // Add status to payload
             pain_signals: Array.from(document.querySelectorAll('#sidebar-pain-selector .pain-chip.selected')).map(el => el.dataset.value),
             updated_at: new Date().toISOString()
         };

@@ -78,10 +78,16 @@ function applyDemoData(data) {
         });
     }
     if (data.heroImage) {
-        document.querySelectorAll('.demo-hero-image').forEach(img => img.src = data.heroImage);
+        document.querySelectorAll('.demo-hero-image').forEach(img => {
+            img.src = data.heroImage;
+            img.style.display = 'block';
+        });
     }
     if (data.aboutImage) {
-        document.querySelectorAll('.demo-about-image').forEach(img => img.src = data.aboutImage);
+        document.querySelectorAll('.demo-about-image').forEach(img => {
+            img.src = data.aboutImage;
+            img.style.display = 'block';
+        });
     }
 
     // 5. Update Contact Info & Copy

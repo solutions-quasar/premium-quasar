@@ -197,11 +197,11 @@ window.openDemoModal = (existingDemo = null) => {
                                 </div>
                                 <div class="form-group mb-4">
                                     <label class="form-label text-xs uppercase text-muted tracking-wider">Clinic Name *</label>
-                                    <input type="text" id="demo-name" class="form-input" required placeholder="e.g. Premium Clinic" value="${existingDemo?.clinicName || ''}">
+                                    <input type="text" id="demo-name" class="form-input" placeholder="e.g. Premium Clinic" value="${existingDemo?.clinicName || ''}">
                                 </div>
                                 <div class="form-group mb-0">
                                     <label class="form-label text-xs uppercase text-muted tracking-wider">Template Theme *</label>
-                                    <select id="demo-theme" class="form-input" required style="background: var(--bg-dark); border: 1px solid var(--border); color: var(--text-main);">
+                                    <select id="demo-theme" class="form-input" style="background: var(--bg-dark); border: 1px solid var(--border); color: var(--text-main);">
                                         <option value="full" ${existingDemo?.theme === 'full' ? 'selected' : ''}>Theme 1: Full-width Hero</option>
                                         <option value="split" ${existingDemo?.theme === 'split' ? 'selected' : ''}>Theme 2: 50/50 Split Hero</option>
                                     </select>
@@ -217,14 +217,14 @@ window.openDemoModal = (existingDemo = null) => {
                                         <label class="form-label text-xs uppercase text-muted tracking-wider">Primary Color</label>
                                         <div style="display: flex; gap: 10px;">
                                             <input type="color" id="demo-color-primary-picker" value="${existingDemo?.primaryColor || '#B5A18C'}" style="height: 42px; width: 42px; padding:0; background: none; border: 1px solid var(--border); border-radius: 4px; cursor: pointer;">
-                                            <input type="text" id="demo-color-primary" class="form-input" required value="${existingDemo?.primaryColor || '#B5A18C'}" placeholder="#HEX">
+                                            <input type="text" id="demo-color-primary" class="form-input" value="${existingDemo?.primaryColor || '#B5A18C'}" placeholder="#HEX">
                                         </div>
                                     </div>
                                     <div class="form-group">
                                         <label class="form-label text-xs uppercase text-muted tracking-wider">Secondary Color</label>
                                         <div style="display: flex; gap: 10px;">
                                             <input type="color" id="demo-color-secondary-picker" value="${existingDemo?.secondaryColor || '#1A1A1A'}" style="height: 42px; width: 42px; padding:0; background: none; border: 1px solid var(--border); border-radius: 4px; cursor: pointer;">
-                                            <input type="text" id="demo-color-secondary" class="form-input" required value="${existingDemo?.secondaryColor || '#1A1A1A'}" placeholder="#HEX">
+                                            <input type="text" id="demo-color-secondary" class="form-input" value="${existingDemo?.secondaryColor || '#1A1A1A'}" placeholder="#HEX">
                                         </div>
                                     </div>
                                 </div>
@@ -232,7 +232,7 @@ window.openDemoModal = (existingDemo = null) => {
                                     <label class="form-label text-xs uppercase text-muted tracking-wider">Background Color</label>
                                     <div style="display: flex; gap: 10px;">
                                         <input type="color" id="demo-color-bg-picker" value="${existingDemo?.bgColor || '#F9F8F6'}" style="height: 42px; width: 42px; padding:0; background: none; border: 1px solid var(--border); border-radius: 4px; cursor: pointer;">
-                                        <input type="text" id="demo-color-bg" class="form-input" required value="${existingDemo?.bgColor || '#F9F8F6'}" placeholder="#HEX">
+                                        <input type="text" id="demo-color-bg" class="form-input" value="${existingDemo?.bgColor || '#F9F8F6'}" placeholder="#HEX">
                                     </div>
                                 </div>
                                 <div class="form-group mt-4">
@@ -272,11 +272,11 @@ window.openDemoModal = (existingDemo = null) => {
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                                     <div class="form-group">
                                         <label class="form-label text-xs uppercase text-muted tracking-wider">Phone</label>
-                                        <input type="text" id="demo-phone" class="form-input" required placeholder="+1..." value="${existingDemo?.phone || ''}">
+                                        <input type="text" id="demo-phone" class="form-input" placeholder="+1..." value="${existingDemo?.phone || ''}">
                                     </div>
                                     <div class="form-group">
                                         <label class="form-label text-xs uppercase text-muted tracking-wider">Address</label>
-                                        <input type="text" id="demo-address" class="form-input" required placeholder="Street, City" value="${existingDemo?.address || ''}">
+                                        <input type="text" id="demo-address" class="form-input" placeholder="Street, City" value="${existingDemo?.address || ''}">
                                     </div>
                                 </div>
                             </div>
@@ -292,21 +292,21 @@ window.openDemoModal = (existingDemo = null) => {
                                 </div>
                                 <div class="form-group mb-4">
                                     <label class="form-label text-xs uppercase text-muted tracking-wider">Hero Headline</label>
-                                    <input type="text" id="demo-hero-headline" class="form-input" required placeholder="Elevate your beauty..." value="${existingDemo?.heroHeadline || ''}">
+                                    <input type="text" id="demo-hero-headline" class="form-input" placeholder="Elevate your beauty..." value="${existingDemo?.heroHeadline || ''}">
                                 </div>
                                 <div class="form-group mb-4">
                                     <label class="form-label text-xs uppercase text-muted tracking-wider">Hero Sub-headline</label>
-                                    <textarea id="demo-hero-subhead" class="form-input" rows="2" required placeholder="Description...">${existingDemo?.heroSubhead || ''}</textarea>
+                                    <textarea id="demo-hero-subhead" class="form-input" rows="2" placeholder="Description...">${existingDemo?.heroSubhead || ''}</textarea>
                                 </div>
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                                     <div class="form-group">
                                         <label class="form-label text-xs uppercase text-muted tracking-wider">CTA Text</label>
-                                        <input type="text" id="demo-hero-cta" class="form-input" required placeholder="Book Now" value="${existingDemo?.heroCta || ''}">
+                                        <input type="text" id="demo-hero-cta" class="form-input" placeholder="Book Now" value="${existingDemo?.heroCta || ''}">
                                     </div>
                                     <div class="form-group">
                                         <label class="form-label text-xs uppercase text-muted tracking-wider">Hero Image URL</label>
                                         <div style="display:flex; gap:10px;">
-                                            <input type="url" id="demo-hero-image" class="form-input" required placeholder="https://..." value="${existingDemo?.heroImage || ''}" style="flex:1;">
+                                            <input type="url" id="demo-hero-image" class="form-input" placeholder="https://..." value="${existingDemo?.heroImage || ''}" style="flex:1;">
                                             <button type="button" class="btn btn-secondary" onclick="triggerImageUpload(this)"><span class="material-icons">upload</span></button>
                                         </div>
                                     </div>
@@ -314,13 +314,13 @@ window.openDemoModal = (existingDemo = null) => {
                                 <div class="form-group mt-4">
                                     <label class="form-label text-xs uppercase text-muted tracking-wider">About Section Image</label>
                                     <div style="display:flex; gap:10px;">
-                                        <input type="url" id="demo-about-image" class="form-input" required placeholder="https://..." value="${existingDemo?.aboutImage || ''}" style="flex:1;">
+                                        <input type="url" id="demo-about-image" class="form-input" placeholder="https://..." value="${existingDemo?.aboutImage || ''}" style="flex:1;">
                                         <button type="button" class="btn btn-secondary" onclick="triggerImageUpload(this)"><span class="material-icons">upload</span></button>
                                     </div>
                                 </div>
                                 <div class="form-group mt-4">
                                     <label class="form-label text-xs uppercase text-muted tracking-wider">About Section Text</label>
-                                    <textarea id="demo-about-text" class="form-input" rows="4" required placeholder="About us description... (New lines create new paragraphs)">${existingDemo?.aboutText || ''}</textarea>
+                                    <textarea id="demo-about-text" class="form-input" rows="4" placeholder="About us description... (New lines create new paragraphs)">${existingDemo?.aboutText || ''}</textarea>
                                 </div>
                             </div>
 
@@ -334,11 +334,15 @@ window.openDemoModal = (existingDemo = null) => {
                                     </button>
                                 </div>
                                 <div id="services-list-container" style="display:flex; flex-direction:column; gap:10px; max-height: 200px; overflow-y: auto; padding-right: 5px;">
-                                    ${(existingDemo?.services || [{ title: '', image: '' }]).map((s, idx) => `
-                                        <div class="service-row" style="background: rgba(0,0,0,0.2); padding:15px; border-radius:8px; position:relative; border: 1px solid var(--border);">
-                                            <input type="text" class="form-input service-title-input mb-2" placeholder="Service Name" value="${s.title}" required>
+                                    ${(existingDemo?.services || [{ title: '', description: '', price: '', image: '' }]).map((s, idx) => `
+                                        <div class="service-row" style="background: rgba(0,0,0,0.2); padding:15px; border-radius:8px; position:relative; border: 1px solid var(--border); margin-bottom:10px;">
                                             <div style="display:flex; gap:10px;">
-                                                <input type="url" class="form-input service-img-input" placeholder="Image URL" value="${s.image}" style="flex:1;" required>
+                                                <input type="text" class="form-input service-title-input mb-2" placeholder="Service Name" value="${s.title}" style="flex:2;">
+                                                <input type="text" class="form-input service-price-input mb-2" placeholder="Price (e.g. $199)" value="${s.price || ''}" style="flex:1;">
+                                            </div>
+                                            <textarea class="form-input service-desc-input mb-2" rows="3" placeholder="Service Detailed Description (for inner page)">${s.description || ''}</textarea>
+                                            <div style="display:flex; gap:10px;">
+                                                <input type="url" class="form-input service-img-input" placeholder="Image URL" value="${s.image}" style="flex:1;">
                                                 <button type="button" class="btn btn-secondary" onclick="triggerImageUpload(this)"><span class="material-icons" style="font-size:18px;">upload</span></button>
                                             </div>
                                             <button type="button" class="icon-btn text-danger" onclick="this.parentElement.remove()" style="position:absolute; top:8px; right:8px;"><span class="material-icons">close</span></button>
@@ -359,11 +363,11 @@ window.openDemoModal = (existingDemo = null) => {
                                 <div id="reviews-list-container" style="display:flex; flex-direction:column; gap:15px; max-height: 350px; overflow-y: auto; padding-right: 5px;">
                                     ${(existingDemo?.reviews || []).map((r) => `
                                         <div class="review-row" style="background: rgba(0,0,0,0.2); padding:15px; border-radius:8px; position:relative; border: 1px solid var(--border);">
-                                            <textarea class="form-input review-quote-input mb-2" rows="2" placeholder="Patient Quote (e.g., 'Amazing service!')" required>${r.quote}</textarea>
+                                            <textarea class="form-input review-quote-input mb-2" rows="2" placeholder="Patient Quote (e.g., 'Amazing service!')">${r.quote}</textarea>
                                             <div style="display:grid; grid-template-columns: 1fr 1fr 80px; gap:10px;">
-                                                <input type="text" class="form-input review-author-input" placeholder="Author Name" value="${r.author}" required>
+                                                <input type="text" class="form-input review-author-input" placeholder="Author Name" value="${r.author}">
                                                 <input type="text" class="form-input review-role-input" placeholder="Role / Location" value="${r.role}">
-                                                <input type="number" class="form-input review-rating-input" placeholder="Stars" value="${r.rating || 5}" min="1" max="5" required>
+                                                <input type="number" class="form-input review-rating-input" placeholder="Stars" value="${r.rating || 5}" min="1" max="5">
                                             </div>
                                             <button type="button" class="icon-btn text-danger" onclick="this.parentElement.remove()" style="position:absolute; top:8px; right:8px;"><span class="material-icons">close</span></button>
                                         </div>
@@ -384,7 +388,7 @@ window.openDemoModal = (existingDemo = null) => {
                                     ${(existingDemo?.gallery || []).map((imgUrl) => `
                                         <div class="gallery-row" style="background: rgba(0,0,0,0.2); padding:15px; border-radius:8px; position:relative; border: 1px solid var(--border);">
                                             <div style="display:flex; gap:10px;">
-                                                <input type="url" class="form-input gallery-img-input" placeholder="Image URL" value="${imgUrl}" style="flex:1;" required>
+                                                <input type="url" class="form-input gallery-img-input" placeholder="Image URL" value="${imgUrl}" style="flex:1;">
                                                 <button type="button" class="btn btn-secondary" onclick="triggerImageUpload(this)"><span class="material-icons" style="font-size:18px;">upload</span></button>
                                             </div>
                                             <button type="button" class="icon-btn text-danger" onclick="this.parentElement.remove()" style="position:absolute; top:8px; right:8px;"><span class="material-icons">close</span></button>
@@ -431,10 +435,13 @@ window.addServiceFieldRow = () => {
     row.className = 'service-row';
     row.style.cssText = 'background: rgba(0,0,0,0.2); padding:15px; border-radius:8px; position:relative; border: 1px solid var(--border); margin-bottom:10px;';
     row.innerHTML = `
-        <input type="text" class="form-input service-title-input mb-2" placeholder="Service Name" required>
-        <textarea class="form-input service-desc-input mb-2" rows="3" placeholder="Service Detailed Description (for inner page)" required></textarea>
         <div style="display:flex; gap:10px;">
-            <input type="url" class="form-input service-img-input" placeholder="Image URL" style="flex:1;" required>
+            <input type="text" class="form-input service-title-input mb-2" placeholder="Service Name" style="flex:2;">
+            <input type="text" class="form-input service-price-input mb-2" placeholder="Price (e.g. $199)" style="flex:1;">
+        </div>
+        <textarea class="form-input service-desc-input mb-2" rows="3" placeholder="Service Detailed Description (for inner page)"></textarea>
+        <div style="display:flex; gap:10px;">
+            <input type="url" class="form-input service-img-input" placeholder="Image URL" style="flex:1;">
             <button type="button" class="btn btn-secondary" onclick="triggerImageUpload(this)"><span class="material-icons" style="font-size:18px;">upload</span></button>
         </div>
         <button type="button" class="icon-btn text-danger" onclick="this.parentElement.remove()" style="position:absolute; top:8px; right:8px;"><span class="material-icons">close</span></button>
@@ -449,11 +456,11 @@ window.addReviewFieldRow = () => {
     row.className = 'review-row';
     row.style.cssText = 'background: rgba(0,0,0,0.2); padding:15px; border-radius:8px; position:relative; border: 1px solid var(--border); margin-bottom:15px;';
     row.innerHTML = `
-        <textarea class="form-input review-quote-input mb-2" rows="2" placeholder="Patient Quote (e.g., 'Amazing service!')" required></textarea>
+        <textarea class="form-input review-quote-input mb-2" rows="2" placeholder="Patient Quote (e.g., 'Amazing service!')"></textarea>
         <div style="display:grid; grid-template-columns: 1fr 1fr 80px; gap:10px;">
-            <input type="text" class="form-input review-author-input" placeholder="Author Name" required>
+            <input type="text" class="form-input review-author-input" placeholder="Author Name">
             <input type="text" class="form-input review-role-input" placeholder="Role / Location">
-            <input type="number" class="form-input review-rating-input" placeholder="Stars" value="5" min="1" max="5" required>
+            <input type="number" class="form-input review-rating-input" placeholder="Stars" value="5" min="1" max="5">
         </div>
         <button type="button" class="icon-btn text-danger" onclick="this.parentElement.remove()" style="position:absolute; top:8px; right:8px;"><span class="material-icons">close</span></button>
     `;
@@ -468,7 +475,7 @@ window.addGalleryFieldRow = () => {
     row.style.cssText = 'background: rgba(0,0,0,0.2); padding:15px; border-radius:8px; position:relative; border: 1px solid var(--border); margin-bottom:10px;';
     row.innerHTML = `
         <div style="display:flex; gap:10px;">
-            <input type="url" class="form-input gallery-img-input" placeholder="Image URL" style="flex:1;" required>
+            <input type="url" class="form-input gallery-img-input" placeholder="Image URL" style="flex:1;">
             <button type="button" class="btn btn-secondary" onclick="triggerImageUpload(this)"><span class="material-icons" style="font-size:18px;">upload</span></button>
         </div>
         <button type="button" class="icon-btn text-danger" onclick="this.parentElement.remove()" style="position:absolute; top:8px; right:8px;"><span class="material-icons">close</span></button>
@@ -488,6 +495,7 @@ window.handleDemoSubmit = async (e) => {
         const services = Array.from(document.querySelectorAll('.service-row')).map(row => ({
             id: row.querySelector('.service-title-input').value.toLowerCase().replace(/[^a-z0-9]/g, '-'),
             title: row.querySelector('.service-title-input').value,
+            price: row.querySelector('.service-price-input') ? row.querySelector('.service-price-input').value : '',
             description: row.querySelector('.service-desc-input').value,
             image: row.querySelector('.service-img-input').value
         })).filter(s => s.title.trim() !== '');

@@ -424,7 +424,7 @@ app.post('/api/emails/send', async (req, res) => {
 });
 
 app.post('/api/send-email', verifyToken, async (req, res) => {
-    const { to, subject, body } = req.body;
+    const { to, subject, body, attachments } = req.body;
 
     if (!resend) {
         return res.status(500).json({ success: false, message: 'Server Email Config Missing (Resend API Key)' });
@@ -439,12 +439,21 @@ app.post('/api/send-email', verifyToken, async (req, res) => {
     console.log(`Attempting to send email FROM: ${fromEmail} TO: ${to}`);
 
     try {
-        const data = await resend.emails.send({
+        const payload = {
             from: 'Premium Quasar <' + fromEmail + '>',
             to: [to],
             subject: subject,
-            html: body.replace(/\n/g, '<br>')
-        });
+            html: body // Frontend sends full HTML now
+        };
+
+        if (attachments && Array.isArray(attachments)) {
+            payload.attachments = attachments.map(att => ({
+                filename: att.filename,
+                content: att.content // Base64 string
+            }));
+        }
+
+        const data = await resend.emails.send(payload);
 
         if (data.error) throw new Error(data.error.message);
 

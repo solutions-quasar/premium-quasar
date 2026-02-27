@@ -306,18 +306,21 @@ body.sidebar-collapsed .drawer-footer .btn {
 .nav-group-header {
     display: flex;
     align-items: center;
-    padding: 0.8rem 1.5rem 0.8rem 1.3rem;
-    /* Slightly reduced left padding to align with nav-items */
-    color: var(--text-muted);
+    padding: 10px;
+    gap: 1rem;
+    color: var(--text-main);
     cursor: pointer;
-    transition: all 0.2s;
-    font-size: 0.95rem;
+    transition: all 0.2s ease;
+    font-size: 1rem;
     user-select: none;
+    border-left: 3px solid transparent;
+    border-radius: 4px;
+    width: 100%;
 }
 
 .nav-group-header:hover {
     color: var(--text-main);
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--bg-card-hover);
 }
 
 .nav-group-header .material-icons:first-child {
@@ -1605,7 +1608,7 @@ body.sidebar-collapsed .drawer-footer .btn {
     height: 100vh;
     background: rgba(0, 0, 0, 0.7);
     backdrop-filter: blur(4px);
-    z-index: 9999;
+    z-index: 15000;
     display: flex;
     align-items: center;
     justify-content: center;
