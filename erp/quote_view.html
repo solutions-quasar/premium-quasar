@@ -276,9 +276,45 @@
 
             const data = JSON.parse(dataStr);
             const isQuote = data.type === 'quotes';
+            const lang = data.lang || 'en';
+
+            const strings = {
+                en: {
+                    quote: 'QUOTE',
+                    invoice: 'INVOICE',
+                    date: 'DATE',
+                    billTo: 'BILL TO',
+                    from: 'FROM',
+                    desc: 'Description',
+                    qty: 'Qty',
+                    price: 'Price',
+                    total: 'Total',
+                    paymentInstructions: 'PAYMENT INSTRUCTIONS',
+                    notes: 'NOTES',
+                    subtotal: 'Subtotal',
+                    tax: 'Tax'
+                },
+                fr: {
+                    quote: 'DEVIS',
+                    invoice: 'FACTURE',
+                    date: 'DATE',
+                    billTo: 'FACTURÉ À',
+                    from: 'DE',
+                    desc: 'Description',
+                    qty: 'Qté',
+                    price: 'Prix',
+                    total: 'Total',
+                    paymentInstructions: 'INSTRUCTIONS DE PAIEMENT',
+                    notes: 'NOTES',
+                    subtotal: 'Sous-total',
+                    tax: 'Taxe'
+                }
+            };
+
+            const t = strings[lang] || strings['en'];
 
             // Calc Integers
-            const dateStr = new Date(data.date || Date.now()).toLocaleDateString();
+            const dateStr = new Date(data.date || Date.now()).toLocaleDateString(lang === 'fr' ? 'fr-FR' : 'en-US');
 
             let itemsHtml = '';
             data.items.forEach(item => {
@@ -295,6 +331,7 @@
 
             // Taxes
             let taxHtml = '';
+            let taxIdsHtml = '';
             let subtotal = 0;
             data.items.forEach(i => subtotal += (parseFloat(i.qty) * parseFloat(i.price)));
 
@@ -303,16 +340,19 @@
                     const amt = subtotal * (parseFloat(t.rate) / 100);
                     taxHtml += `
                         <div class="total-row">
-                            <span>${t.name} (${t.rate}%)</span>
+                            <span>${t.name || t.tax} (${t.rate}%)</span>
                             <span>$${amt.toFixed(2)}</span>
                         </div>
                     `;
+                    if (t.number) {
+                        taxIdsHtml += `<div>${t.name || t.tax}: ${t.number}</div>`;
+                    }
                 });
             } else if (data.taxRate) {
                 const amt = subtotal * (data.taxRate / 100);
                 taxHtml += `
                     <div class="total-row">
-                        <span>Tax (${data.taxRate}%)</span>
+                        <span>${t.tax} (${data.taxRate}%)</span>
                         <span>$${amt.toFixed(2)}</span>
                     </div>
                 `;
@@ -325,10 +365,10 @@
                          <div style="font-weight:900; font-size:1.5rem; color:#DFA53A; letter-spacing:-1px;">QUASAR</div>
                     </div>
                     <div class="meta">
-                        <h1>${isQuote ? 'QUOTE' : 'INVOICE'}</h1>
+                        <h1>${isQuote ? t.quote : t.invoice}</h1>
                         <p style="font-size:1.1rem; color:#777;">#${data.number}</p>
                         <div style="margin-top:10px;">
-                            <div class="meta-label">DATE</div>
+                            <div class="meta-label">${t.date}</div>
                             <div style="font-weight:600;">${dateStr}</div>
                         </div>
                     </div>
@@ -336,7 +376,7 @@
 
                 <div class="client-section">
                     <div class="bill-to">
-                        <div class="meta-label" style="margin-bottom:8px;">BILL TO</div>
+                        <div class="meta-label" style="margin-bottom:8px;">${t.billTo}</div>
                         <div style="font-weight:700; font-size:1.1rem; color:#111; margin-bottom:5px;">${data.clientName}</div>
                         ${data.clientCompany ? `<p>${data.clientCompany}</p>` : ''}
                         ${data.clientAddress ? `<p>${data.clientAddress}</p>` : ''}
@@ -345,21 +385,21 @@
                         ${data.clientPhone ? `<p>${data.clientPhone}</p>` : ''}
                     </div>
                     <div class="from" style="margin-left:auto; text-align:right;">
-                        <div class="meta-label" style="margin-bottom:8px;">FROM</div>
+                        <div class="meta-label" style="margin-bottom:8px;">${t.from}</div>
                         <div style="font-weight:700; font-size:1.1rem; color:#111; margin-bottom:5px;">Solutions Quasar Inc.</div>
-                        <p>Experts en Solutions Web</p>
-                        <p>admin@solutionsquasar.com</p>
-                         ${data.taxId ? `<p>Tax ID: ${data.taxId}</p>` : ''}
+                        <p>131 rue Montambault</p>
+                        <p>Deschambault QC, G0A 1S0</p>
+                        <p>info@solutionsquasar.ca</p>
                     </div>
                 </div>
 
                 <table>
                     <thead>
                         <tr>
-                            <th>Description</th>
-                            <th style="text-align:center;">Qty</th>
-                            <th style="text-align:right;">Price</th>
-                            <th style="text-align:right;">Total</th>
+                            <th>${t.desc}</th>
+                            <th style="text-align:center;">${t.qty}</th>
+                            <th style="text-align:right;">${t.price}</th>
+                            <th style="text-align:right;">${t.total}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -369,18 +409,19 @@
 
                 <div class="footer">
                     <div class="payment-info">
-                        <div class="meta-label" style="margin-bottom:10px;">PAYMENT INSTRUCTIONS</div>
-                        <div class="notes">${data.paymentInfo || 'Please make checks payable to Premium Quasar Inc.'}</div>
-                        ${data.notes ? `<div class="meta-label" style="margin-top:20px; margin-bottom:10px;">NOTES</div><div class="notes">${data.notes}</div>` : ''}
+                        <div class="meta-label" style="margin-bottom:10px;">${t.paymentInstructions}</div>
+                        <div class="notes">${data.paymentInfo || 'Please make checks payable to Solutions Quasar Inc.'}</div>
+                        ${(!isQuote && taxIdsHtml) ? `<div style="margin-top:10px; font-size:0.8rem; color:#777; font-weight:600;">${taxIdsHtml}</div>` : ''}
+                        ${data.notes ? `<div class="meta-label" style="margin-top:20px; margin-bottom:10px;">${t.notes}</div><div class="notes">${data.notes}</div>` : ''}
                     </div>
                     <div class="totals">
                         <div class="total-row">
-                            <span>Subtotal</span>
+                            <span>${t.subtotal}</span>
                             <span>$${subtotal.toFixed(2)}</span>
                         </div>
                         ${taxHtml}
                         <div class="grand-total">
-                            <span>Total</span>
+                            <span>${t.total}</span>
                             <span>$${parseFloat(data.total).toFixed(2)}</span>
                         </div>
                     </div>

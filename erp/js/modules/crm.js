@@ -1,5 +1,5 @@
 import { db } from '../firebase-config.js';
-import { collection, query, orderBy, getDocs, addDoc, where, doc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { collection, query, orderBy, getDocs, addDoc, where, doc, updateDoc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { t } from '../services/translationService.js';
 
 // --- INIT ---
@@ -252,6 +252,17 @@ window.openCRMDetail = async (json) => {
                                 </select>
                             </div>
 
+                            <div class="form-group mb-4">
+                                <label class="form-label text-xs uppercase text-muted tracking-wider">Default Tax Province</label>
+                                <select id="edit-tax-province" class="form-input" style="background:var(--bg-dark); border:1px solid var(--border); color:var(--text-main);">
+                                    <option value="">${t('sales_select_placeholder') || 'None (Follow Address)'}</option>
+                                    ${(window.salesSettings?.taxRules || []).map(r => `
+                                        <option value="${r.province}" ${client.defaultTaxProvince === r.province ? 'selected' : ''}>${r.province}</option>
+                                    `).join('')}
+                                </select>
+                                <div class="text-xs text-muted mt-1" style="font-style:italic;">Automatically applies taxes for this province in Invoices/Quotes.</div>
+                            </div>
+
                              <button class="btn btn-primary btn-block" style="margin-top:20px; font-weight:bold; letter-spacing:1px;" id="btn-save-client" onclick="saveClientChanges('${client.id}')">
                                 <span class="material-icons" style="font-size:18px;">save</span> ${t('btn_save').toUpperCase()}
                             </button>
@@ -359,6 +370,16 @@ window.openNewClientModal = () => {
                         </select>
                     </div>
 
+                    <div class="form-group">
+                        <label class="form-label text-xs uppercase text-muted tracking-wider">Default Tax Province</label>
+                        <select id="new-client-tax-province" class="form-input" style="background:var(--bg-dark); border:1px solid var(--border); color:var(--text-main);">
+                            <option value="">None (Follow Address)</option>
+                            ${(window.salesSettings?.taxRules || []).map(r => `
+                                <option value="${r.province}">${r.province}</option>
+                            `).join('')}
+                        </select>
+                    </div>
+
                     <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 15px;">
                         <button type="button" class="btn btn-secondary" onclick="document.getElementById('crm-modal-host').innerHTML=''">Cancel</button>
                         <button type="submit" class="btn btn-primary" id="btn-save-new-client">
@@ -378,6 +399,7 @@ window.handleNewClientSubmit = async (e) => {
     const email = document.getElementById('new-client-email').value;
     const phone = document.getElementById('new-client-phone').value;
     const status = document.getElementById('new-client-status').value;
+    const defaultTaxProvince = document.getElementById('new-client-tax-province').value;
 
     const btn = document.getElementById('btn-save-new-client');
     btn.disabled = true;
@@ -385,7 +407,7 @@ window.handleNewClientSubmit = async (e) => {
 
     try {
         await addDoc(collection(db, "clients"), {
-            name, company, email, phone, status,
+            name, company, email, phone, status, defaultTaxProvince,
             createdAt: new Date().toISOString()
         });
         window.showToast(t('crm_add_success'), "success");
@@ -422,6 +444,7 @@ window.saveClientChanges = async (id) => {
     const city = document.getElementById('edit-city').value;
     const state = document.getElementById('edit-state').value;
     const status = document.getElementById('edit-status').value;
+    const defaultTaxProvince = document.getElementById('edit-tax-province').value;
 
     const btn = document.getElementById('btn-save-client');
     const originalHtml = btn.innerHTML;
@@ -430,7 +453,7 @@ window.saveClientChanges = async (id) => {
 
     try {
         await updateDoc(doc(db, "clients", id), {
-            name, company, email, phone, address, city, state, status,
+            name, company, email, phone, address, city, state, status, defaultTaxProvince,
             updatedAt: new Date().toISOString()
         });
         window.showToast(t('crm_save_success'), "success");

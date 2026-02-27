@@ -127,7 +127,8 @@ export async function initSales() {
 window.salesSettings = {
     snippets: {},
     paymentInfo: '',
-    taxId: ''
+    taxId: '', // Legacy, kept for fallback
+    taxRules: [] // [{ province: 'Quebec', taxes: [{name: 'TPS', rate: 5.0, number: '...'}] }]
 };
 
 window.switchSalesTab = (tab) => {
@@ -146,56 +147,128 @@ async function loadSalesSettings() {
     try {
         const docSnap = await getDoc(doc(db, 'settings', 'sales'));
         if (docSnap.exists()) {
-            window.salesSettings = docSnap.data();
+            const data = docSnap.data();
+            window.salesSettings = {
+                ...window.salesSettings,
+                ...data,
+                taxRules: data.taxRules || []
+            };
 
-            // Ensure snippets are populated if empty or missing
-            // We use spread to ensure we don't overwrite if they partially exist (though simple check is better)
-            // If the user has NO snippets, we load defaults.
+            // Ensure snippets are populated
             if (!window.salesSettings.snippets || Object.keys(window.salesSettings.snippets).length === 0) {
                 window.salesSettings.snippets = { ...SALES_SNIPPETS_DEFAULT };
             }
         } else {
             // Defaults
             window.salesSettings.snippets = { ...SALES_SNIPPETS_DEFAULT };
-            window.salesSettings.paymentInfo = "Please make checks payable to Premium Quasar Inc.";
+            window.salesSettings.paymentInfo = "Please make checks payable to Solutions Quasar Inc.";
+            window.salesSettings.taxRules = [];
         }
     } catch (e) {
         console.error("Error loading settings", e);
     }
 }
 
+// Map province name/code to tax rule
+window.applyProvinceTaxes = (locationString, forceProvince = null) => {
+    if (!window.salesSettings || !window.salesSettings.taxRules) return;
+
+    const rules = window.salesSettings.taxRules;
+
+    let matchedRule = null;
+
+    if (forceProvince) {
+        matchedRule = rules.find(r => r.province === forceProvince);
+    }
+
+    if (!matchedRule) {
+        const loc = (locationString || '').toLowerCase();
+        // 1. Find exact or partial match for province
+        matchedRule = rules.find(r => r.province && loc.includes(r.province.toLowerCase()));
+
+        // 2. Fallback to "Default" if nothing matches
+        if (!matchedRule) {
+            matchedRule = rules.find(r => r.province && (r.province.toLowerCase() === 'default' || r.province.toLowerCase() === 'standard'));
+        }
+    }
+
+    if (matchedRule) {
+        window.currentSalesTaxes = matchedRule.taxes.map(t => ({ ...t }));
+
+        // Sync the dropdown in the UI if it exists
+        const select = document.getElementById('sales-tax-province');
+        if (select) select.value = matchedRule.province;
+
+        if (typeof renderSalesTaxes === 'function') renderSalesTaxes();
+        if (typeof updateTotalDisplay === 'function') updateTotalDisplay();
+        window.showToast(`Applied tax rules for ${matchedRule.province}`, "info");
+    }
+};
+
 function renderSalesSettings() {
     const container = document.getElementById('sales-list-container');
     container.innerHTML = `
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; max-width:1000px; margin:0 auto;">
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; max-width:1200px; margin:0 auto; padding-bottom: 50px;">
             
-            <!-- Default Settings -->
-            <div class="card">
-                <h3 class="text-gold" style="margin-top:0;">Invoice Defaults</h3>
-                <div class="form-group">
-                    <label class="form-label">Payment Instructions / Footer Text</label>
-                    <textarea id="setting-payment" class="form-input" rows="4" onchange="saveSalesSettings()">${window.salesSettings.paymentInfo || ''}</textarea>
+            <!-- Left Column: Basics & Taxes -->
+            <div style="display:flex; flex-direction:column; gap:20px;">
+                <!-- Default Settings -->
+                <div class="card">
+                    <h3 class="text-gold" style="margin-top:0;">Invoice Defaults</h3>
+                    <div class="form-group">
+                        <label class="form-label">Payment Instructions / Footer Text</label>
+                        <textarea id="setting-payment" class="form-input" rows="4" onchange="saveSalesSettings()">${window.salesSettings.paymentInfo || ''}</textarea>
+                    </div>
                 </div>
-                 <div class="form-group">
-                    <label class="form-label">Tax ID / Business Number</label>
-                    <input type="text" id="setting-tax" class="form-input" value="${window.salesSettings.taxId || ''}" onchange="saveSalesSettings()">
+
+                <!-- Tax Rules Manager -->
+                <div class="card">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                        <h3 class="text-gold" style="margin:0;">Tax Rules by Province</h3>
+                        <button class="btn btn-sm" onclick="addTaxRule()">+ Add Province</button>
+                    </div>
+                    <div id="tax-rules-list" style="display:flex; flex-direction:column; gap:15px;">
+                        ${(window.salesSettings.taxRules || []).map((rule, rIdx) => `
+                            <div style="background:var(--bg-dark); padding:15px; border-radius:8px; border:1px solid var(--border);">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                                    <input type="text" class="form-input" style="font-weight:bold; width:60%;" value="${rule.province}" placeholder="Province name (e.g. Quebec)" onchange="updateTaxRule(${rIdx}, 'province', this.value)">
+                                    <button class="text-danger icon-btn" onclick="deleteTaxRule(${rIdx})"><span class="material-icons">delete</span></button>
+                                </div>
+                                <div style="display:flex; flex-direction:column; gap:8px; padding-left:10px; border-left:2px solid var(--gold);">
+                                    ${rule.taxes.map((t, tIdx) => `
+                                        <div style="display:grid; grid-template-columns: 2fr 1.5fr 3fr 30px; gap:8px; align-items:center;">
+                                            <input type="text" class="form-input text-xs" value="${t.name}" placeholder="Tax Name" onchange="updateTaxRuleDetail(${rIdx}, ${tIdx}, 'name', this.value)">
+                                            <div style="display:flex; align-items:center; gap:3px;">
+                                                <input type="number" class="form-input text-xs" value="${t.rate}" step="0.001" style="text-align:right;" onchange="updateTaxRuleDetail(${rIdx}, ${tIdx}, 'rate', this.value)">
+                                                <span class="text-muted text-xs">%</span>
+                                            </div>
+                                            <input type="text" class="form-input text-xs" value="${t.number || ''}" placeholder="Tax ID / No." onchange="updateTaxRuleDetail(${rIdx}, ${tIdx}, 'number', this.value)">
+                                            <button class="text-danger icon-btn" onclick="deleteTaxRuleDetail(${rIdx}, ${tIdx})"><span class="material-icons" style="font-size:16px;">close</span></button>
+                                        </div>
+                                    `).join('')}
+                                    <button class="btn btn-xs" style="align-self:flex-start; margin-top:5px; font-size:10px;" onclick="addTaxRuleDetail(${rIdx})">+ Add Tax</button>
+                                </div>
+                            </div>
+                        `).join('')}
+                        ${(!window.salesSettings.taxRules?.length) ? '<div class="text-muted text-center text-xs">No tax rules defined. Add one to enable auto-taxing.</div>' : ''}
+                    </div>
                 </div>
             </div>
 
-            <!-- Snippets Manager -->
+            <!-- Right Column: Snippets -->
             <div class="card" style="display: flex; flex-direction: column;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
                     <h3 class="text-gold" style="margin:0;">Snippets Library</h3>
                     <button class="btn btn-sm" onclick="addSnippet()">+ Add New</button>
                 </div>
-                <div id="snippets-list" style="flex: 1; max-height:500px; overflow-y:auto; display:flex; flex-direction:column; gap:10px;">
+                <div id="snippets-list" style="flex: 1; max-height:800px; overflow-y:auto; display:flex; flex-direction:column; gap:10px;">
                     ${Object.entries(window.salesSettings.snippets || {}).map(([key, val]) => `
-                        <div style="background:var(--bg-dark); padding:10px; border-radius:4px; border:1px solid var(--border);">
+                        <div style="background:var(--bg-dark); padding:12px; border-radius:4px; border:1px solid var(--border);">
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
                                 <div style="font-weight:bold;">${key}</div>
                                 <button class="text-danger icon-btn" onclick="deleteSnippet('${key}')"><span class="material-icons" style="font-size:16px;">delete</span></button>
                             </div>
-                            <div style="font-size:12px; color:var(--text-muted); white-space:pre-wrap;">${val.substring(0, 100)}${val.length > 100 ? '...' : ''}</div>
+                            <div style="font-size:12px; color:var(--text-muted); white-space:pre-wrap;">${val.substring(0, 150)}${val.length > 150 ? '...' : ''}</div>
                         </div>
                     `).join('')}
                 </div>
@@ -205,15 +278,57 @@ function renderSalesSettings() {
 }
 
 window.saveSalesSettings = async () => {
-    window.salesSettings.paymentInfo = document.getElementById('setting-payment').value;
-    window.salesSettings.taxId = document.getElementById('setting-tax').value;
+    // Only pick basic values here if they exist in DOM
+    const payInput = document.getElementById('setting-payment');
+    if (payInput) window.salesSettings.paymentInfo = payInput.value;
 
     try {
         await setDoc(doc(db, 'settings', 'sales'), window.salesSettings);
         window.showToast("Settings Saved", "success");
     } catch (e) {
         console.error(e);
+        window.showToast("Error saving settings", "error");
     }
+};
+
+// --- Tax Rule Handlers ---
+window.addTaxRule = () => {
+    window.salesSettings.taxRules.unshift({
+        province: '',
+        taxes: [{ name: 'TPS', rate: 5.0, number: '' }]
+    });
+    renderSalesSettings();
+    saveSalesSettings();
+};
+
+window.deleteTaxRule = (index) => {
+    window.salesSettings.taxRules.splice(index, 1);
+    renderSalesSettings();
+    saveSalesSettings();
+};
+
+window.updateTaxRule = (index, field, value) => {
+    window.salesSettings.taxRules[index][field] = value;
+    saveSalesSettings();
+};
+
+window.addTaxRuleDetail = (ruleIndex) => {
+    window.salesSettings.taxRules[ruleIndex].taxes.push({ name: '', rate: 0, number: '' });
+    renderSalesSettings();
+    saveSalesSettings();
+};
+
+window.deleteTaxRuleDetail = (ruleIndex, taxIndex) => {
+    window.salesSettings.taxRules[ruleIndex].taxes.splice(taxIndex, 1);
+    renderSalesSettings();
+    saveSalesSettings();
+};
+
+window.updateTaxRuleDetail = (ruleIndex, taxIndex, field, value) => {
+    let finalVal = value;
+    if (field === 'rate') finalVal = parseFloat(value) || 0;
+    window.salesSettings.taxRules[ruleIndex].taxes[taxIndex][field] = finalVal;
+    saveSalesSettings();
 };
 
 window.addSnippet = async () => {
@@ -455,15 +570,23 @@ window.openSalesEditor = (data) => {
         };
     }
 
-    const host = document.getElementById('sales-modal-host');
+    let host = document.getElementById('global-sales-modal-host');
+    if (!host) {
+        host = document.createElement('div');
+        host.id = 'global-sales-modal-host';
+        document.body.appendChild(host);
+    }
+
+    // Store globally for easy access by toolbar functions
+    window.currentSalesItemData = item;
 
     // Split View Layout
     host.innerHTML = `
         <div style="position: fixed; inset: 0; z-index: 10000; background: var(--bg-dark); display: flex; align-items: center; justify-content: center;">
-            <div style="width: 100vw; height: 100vh; background: var(--bg-dark); display: flex; overflow: hidden;">
+            <div style="width: 100vw; height: 100vh; background: var(--bg-dark); display: flex; overflow: hidden; gap: 12px;">
                 
                 <!-- LEFT SIDEBAR: Client & Settings -->
-                <div style="width: 350px; background: var(--bg-card); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0;">
+                <div style="width: 350px; background: var(--bg-card); display: flex; flex-direction: column; flex-shrink: 0; border-radius: 0 12px 12px 0; border-right: none;">
                     
                     <!-- Sidebar Header -->
                     <div style="padding: 1.5rem; border-bottom: 1px solid var(--border);">
@@ -480,35 +603,45 @@ window.openSalesEditor = (data) => {
                              
                              <div class="form-group" style="position:relative;">
                                 <label class="form-label text-xs">${t('sales_client')}</label>
-                                <input type="text" id="sales-client" class="form-input" value="${item.clientName}" placeholder="Search Client..." autocomplete="off">
+                                <input type="text" id="sales-client" class="form-input" value="${item.clientName}" placeholder="${t('sales_doc_search_client')}" autocomplete="off">
                                 <span class="material-icons text-muted" style="position:absolute; right:12px; top:32px; font-size:16px; pointer-events:none;">search</span>
                                 <!-- Search Results -->
                                 <div id="sales-client-search-results" style="display:none; position:absolute; top:calc(100% + 5px); left:0; width:100%; background:var(--bg-card); border:1px solid var(--border); border-radius:4px; max-height:200px; overflow-y:auto; z-index:100; box-shadow:0 10px 30px rgba(0,0,0,0.5);"></div>
                             </div>
                             
                             <div class="form-group">
-                                <label class="form-label text-xs">Company</label>
+                                <label class="form-label text-xs">${t('sales_doc_company')}</label>
                                 <input type="text" id="sales-company" class="form-input" value="${item.clientCompany || ''}" placeholder="Company Name">
                             </div>
 
                             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
                                 <div class="form-group">
-                                    <label class="form-label text-xs">Email</label>
+                                    <label class="form-label text-xs">${t('sales_doc_email')}</label>
                                     <input type="text" id="sales-email" class="form-input" value="${item.clientEmail || ''}">
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label text-xs">Phone</label>
+                                    <label class="form-label text-xs">${t('sales_doc_phone')}</label>
                                     <input type="text" id="sales-phone" class="form-input" value="${item.clientPhone || ''}">
                                 </div>
                             </div>
 
                              <div class="form-group">
-                                <label class="form-label text-xs">Address</label>
-                                <input type="text" id="sales-address" class="form-input" value="${item.clientAddress || ''}" placeholder="Street Address">
+                                <label class="form-label text-xs">${t('sales_doc_address')}</label>
+                                <input type="text" id="sales-address" class="form-input" value="${item.clientAddress || ''}" placeholder="${t('sales_doc_street_address')}">
                             </div>
                              <div class="form-group">
-                                <label class="form-label text-xs">City/State/Zip</label>
-                                <input type="text" id="sales-city" class="form-input" value="${item.clientCity || ''}" placeholder="Location">
+                                <label class="form-label text-xs">${t('sales_doc_city')}</label>
+                                <input type="text" id="sales-city" class="form-input" value="${item.clientCity || ''}" placeholder="${t('sales_doc_location')}">
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label text-xs">${t('sales_tax_rule')}</label>
+                                <select id="sales-tax-province" class="form-input" style="background:var(--bg-dark); border:1px solid var(--border); color:var(--text-main);">
+                                    <option value="">${t('sales_select_placeholder')}</option>
+                                    ${(window.salesSettings?.taxRules || []).map(r => `
+                                        <option value="${r.province}">${r.province}</option>
+                                    `).join('')}
+                                </select>
                             </div>
                         </div>
 
@@ -526,11 +659,11 @@ window.openSalesEditor = (data) => {
                             <div class="form-group">
                                 <label class="form-label text-xs">${t('sales_status')}</label>
                                 <select id="sales-status" class="form-input">
-                                    <option value="Draft" ${item.status === 'Draft' ? 'selected' : ''}>Draft</option>
-                                    <option value="Sent" ${item.status === 'Sent' ? 'selected' : ''}>Sent</option>
-                                    <option value="Accepted" ${item.status === 'Accepted' ? 'selected' : ''}>Accepted</option>
-                                    <option value="Paid" ${item.status === 'Paid' ? 'selected' : ''}>Paid</option>
-                                    <option value="Rejected" ${item.status === 'Rejected' ? 'selected' : ''}>Rejected</option>
+                                    <option value="Draft" ${item.status === 'Draft' ? 'selected' : ''}>${t('sales_status_draft')}</option>
+                                    <option value="Sent" ${item.status === 'Sent' ? 'selected' : ''}>${t('sales_status_sent')}</option>
+                                    <option value="Accepted" ${item.status === 'Accepted' ? 'selected' : ''}>${t('sales_status_accepted')}</option>
+                                    <option value="Paid" ${item.status === 'Paid' ? 'selected' : ''}>${t('sales_status_paid')}</option>
+                                    <option value="Rejected" ${item.status === 'Rejected' ? 'selected' : ''}>${t('sales_status_rejected')}</option>
                                 </select>
                             </div>
                         </div>
@@ -539,10 +672,10 @@ window.openSalesEditor = (data) => {
                 </div>
 
                 <!-- RIGHT MAIN: Editor Area -->
-                <div style="flex: 1; display: flex; flex-direction: column; background: var(--bg-dark);">
+                <div style="flex: 1; display: flex; flex-direction: column; background: var(--bg-dark); padding-right: 12px;">
                     
                     <!-- Top Toolbar -->
-                    <div style="padding: 1rem 2rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg-dark);">
+                    <div style="padding: 1rem 2rem 1rem 0; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg-dark);">
                         <div class="text-muted text-sm">
                             <span class="material-icons" style="font-size:16px; vertical-align:middle; margin-right:5px;">calendar_today</span>
                             ${new Date().toLocaleDateString()}
@@ -553,31 +686,45 @@ window.openSalesEditor = (data) => {
                                     <span class="material-icons">visibility</span> ${t('sales_pdf')}
                                 </button>
                                 ${currentTab === 'quotes' ? `
-                                <button class="btn btn-sm btn-primary" onclick="salesConvertToInvoice('${item.id}')" title="Convert to Invoice" style="background:var(--success); border:none; color:white;">
-                                    <span class="material-icons">transform</span> ${t('sales_convert')}
-                                </button>
+                                <div style="display:flex; flex-direction:column; align-items:center;">
+                                    <button class="btn btn-sm btn-primary" onclick="salesConvertToInvoice('${item.id}')" title="Convert to Invoice" style="background:var(--success); border:none; color:white;">
+                                        <span class="material-icons">transform</span> ${t('sales_convert')}
+                                    </button>
+                                    <span style="font-size: 0.65rem; color: var(--text-muted); margin-top: 4px;">${t('sales_convert_hint')}</span>
+                                </div>
                                 ` : ''}
-                                <button class="btn btn-sm" onclick="salesSendEmail()" title="Email">
-                                    <span class="material-icons">send</span> ${t('sales_send')}
-                                </button>
+                                <div style="display:flex; flex-direction:column; align-items:center; position:relative;">
+                                    <button class="btn btn-sm btn-email" onclick="salesSendEmail(event)" title="Email">
+                                        <span class="material-icons">send</span> ${t('sales_send')}
+                                    </button>
+                                    <div class="email-status-text" style="font-size: 0.65rem; color: var(--text-muted); margin-top: 4px; text-align: center; line-height: 1.1;">
+                                        ${item.lastEmailedAt ? `<span style="color:var(--success)">${t('sales_last_sent')}</span><br>${new Date(item.lastEmailedAt).toLocaleDateString()} ${new Date(item.lastEmailedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+                                    </div>
+                                </div>
                                 ${currentTab === 'invoices' && item.status !== 'Paid' ? `
-                                <button class="btn btn-sm" onclick="salesGeneratePaymentLink('${item.id}', ${item.total}, '${item.clientName}', '${item.clientEmail}', '${item.number}')" style="background:var(--gold-dark); border:none; color:white;">
-                                    <span class="material-icons">credit_card</span> ${t('sales_pay_link')}
-                                </button>
+                                ${item.paymentLink ? `
+                                    <button class="btn btn-sm" onclick="salesGeneratePaymentLink('${item.id}', ${item.total}, '${item.clientName}', '${item.clientEmail}', '${item.number}')" style="background:transparent; border:1px solid var(--success); color:var(--success);" title="Link already generated">
+                                        <span class="material-icons">check_circle</span> ${t('sales_link_generated')}
+                                    </button>
+                                ` : `
+                                    <button class="btn btn-sm" onclick="salesGeneratePaymentLink('${item.id}', ${item.total}, '${item.clientName}', '${item.clientEmail}', '${item.number}')" style="background:var(--gold-dark); border:none; color:white;">
+                                        <span class="material-icons">credit_card</span> ${t('sales_pay_link')}
+                                    </button>
+                                `}
                                 ` : ''}
                                 <div style="width:1px; background:var(--border); margin:0 5px;"></div>
                                 <button class="btn btn-sm text-danger" onclick="salesDeleteItem('${item.id}')">
                                     <span class="material-icons">delete</span>
                                 </button>
                             ` : ''}
-                            <button class="icon-btn" onclick="document.getElementById('sales-modal-host').innerHTML=''">
+                            <button class="icon-btn" onclick="document.getElementById('global-sales-modal-host').innerHTML=''">
                                 <span class="material-icons">close</span>
                             </button>
                         </div>
                     </div>
 
                     <!-- Items Editor (Scrollable) -->
-                    <div style="flex: 1; overflow-y: auto; padding: 2rem 0;">
+                    <div style="flex: 1; overflow-y: auto; padding: 2rem 0; padding-bottom: 120px; position: relative;">
                         
                         <div style="width: 100%; margin: 0 auto;">
                             <!-- Items Table Header -->
@@ -619,10 +766,16 @@ window.openSalesEditor = (data) => {
                                         <span id="sales-total-display">$0.00</span>
                                     </div>
                                     
-                                    <button class="btn btn-primary btn-block btn-lg" onclick="salesSaveItem('${item.id || ''}')">
-                                        <span class="material-icons" style="margin-right:8px;">check</span> 
-                                        ${t('sales_save')}
-                                    </button>
+                                    <div style="position: fixed; bottom: 30px; right: 30px; display: flex; gap: 15px; z-index: 10001;">
+                                        <button class="btn btn-secondary" onclick="document.getElementById('global-sales-modal-host').innerHTML=''" style="padding: 10px 30px; border-radius: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); display:flex; align-items:center;">
+                                            <span class="material-icons" style="margin-right:8px;">close</span> 
+                                            ${t('btn_cancel') || (localStorage.getItem('erp_lang') === 'fr' ? 'Fermer' : 'Close')}
+                                        </button>
+                                        <button class="btn btn-primary" onclick="salesSaveItem('${item.id || ''}')" style="padding: 15px 40px; border-radius: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); display:flex; align-items:center; font-size: 1.1rem; background: var(--gold); color: black;">
+                                            <span class="material-icons" style="margin-right:8px;">save</span> 
+                                            ${t('sales_save')}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -705,6 +858,14 @@ window.openSalesEditor = (data) => {
                     if (c.zip) loc += ` ${c.zip}`;
                     document.getElementById('sales-city').value = loc;
                     resultsContainer.style.display = 'none';
+
+                    // Dynamic Tax Trigger
+                    const taxProvince = c.defaultTaxProvince || loc || c.state || c.city || '';
+                    if (c.defaultTaxProvince) {
+                        applyProvinceTaxes('', c.defaultTaxProvince);
+                    } else {
+                        applyProvinceTaxes(taxProvince);
+                    }
                 };
                 resultsContainer.appendChild(div);
             });
@@ -721,10 +882,27 @@ window.openSalesEditor = (data) => {
         }
     });
 
+    const cityInput = document.getElementById('sales-city');
+    if (cityInput) {
+        cityInput.addEventListener('change', (e) => {
+            applyProvinceTaxes(e.target.value);
+        });
+    }
+
+    // Manual Tax Rule Change
+    const taxRuleInput = document.getElementById('sales-tax-province');
+    if (taxRuleInput) {
+        taxRuleInput.addEventListener('change', (e) => {
+            if (e.target.value) {
+                applyProvinceTaxes('', e.target.value);
+            }
+        });
+    }
+
     // Escape key to close
     document.addEventListener('keydown', function closeOnEsc(e) {
         if (e.key === 'Escape') {
-            document.getElementById('sales-modal-host').innerHTML = '';
+            document.getElementById('global-sales-modal-host').innerHTML = '';
             document.removeEventListener('keydown', closeOnEsc);
         }
     });
@@ -818,15 +996,18 @@ window.renderSalesTaxes = () => {
     window.currentSalesTaxes.forEach((tax, index) => {
         const amount = subtotal * (parseFloat(tax.rate) / 100);
         html += `
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; font-size:1rem;">
-                <div style="display:flex; align-items:center; gap:5px; flex:1; justify-content:flex-end;">
-                    <input type="text" class="form-input" value="${tax.name}" placeholder="Name" style="width:60px; padding:4px 8px; font-size:0.9rem; text-align:right;" oninput="updateTaxLine(${index}, 'name', this.value)">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px; font-size:1rem; flex-direction:column; background:rgba(255,255,255,0.03); padding:8px; border-radius:4px;">
+                <div style="display:flex; align-items:center; gap:8px; width:100%;">
+                    <input type="text" class="form-input" value="${tax.name}" placeholder="Tax (e.g. TPS)" style="flex:2; padding:4px 8px; font-size:0.9rem;" oninput="updateTaxLine(${index}, 'name', this.value)">
                     <input type="number" class="form-input" value="${tax.rate}" style="width:70px; padding:4px 8px; font-size:0.9rem; text-align:right;" step="0.001" oninput="updateTaxLine(${index}, 'rate', this.value)">
                     <span class="text-muted" style="font-size:0.8rem;">%</span>
+                    <div style="width:80px; text-align:right; font-weight:bold; color:var(--gold);">
+                        $${amount.toFixed(2)}
+                    </div>
+                     <button class="icon-btn text-danger" onclick="removeSalesTax(${index})" style="padding:0;"><span class="material-icons" style="font-size:16px;">close</span></button>
                 </div>
-                <div style="width:100px; text-align:right; display:flex; align-items:center; justify-content:flex-end; gap:10px;">
-                    <span class="text-muted">$${amount.toFixed(2)}</span>
-                    <button class="icon-btn text-danger" onclick="removeSalesTax(${index})" style="padding:0;"><span class="material-icons" style="font-size:16px;">close</span></button>
+                <div style="width:100%; margin-top:5px;">
+                    <input type="text" class="form-input" value="${tax.number || ''}" placeholder="Tax Number / ID" style="width:100%; padding:2px 8px; font-size:0.8rem; background:transparent; border:none; border-bottom:1px solid var(--border);" oninput="updateTaxLine(${index}, 'number', this.value)">
                 </div>
             </div>
         `;
@@ -902,7 +1083,7 @@ window.salesDeleteItem = async (id) => {
     if (!id || !await erpConfirm('Are you sure you want to delete this?')) return;
     try {
         await deleteDoc(doc(db, currentTab, id));
-        document.getElementById('sales-modal-host').innerHTML = '';
+        document.getElementById('global-sales-modal-host').innerHTML = '';
         loadSalesList();
         window.showToast(`${currentTab === 'quotes' ? 'Quote' : 'Invoice'} deleted`, 'normal');
     } catch (e) {
@@ -958,7 +1139,7 @@ window.salesSaveItem = async (id) => {
             payload.createdAt = new Date().toISOString();
             await addDoc(collection(db, currentTab), payload);
         }
-        document.getElementById('sales-modal-host').innerHTML = '';
+        document.getElementById('global-sales-modal-host').innerHTML = '';
         window.showToast('Saved Successfully', 'success');
         loadSalesList();
     } catch (e) {
@@ -967,11 +1148,343 @@ window.salesSaveItem = async (id) => {
     }
 }
 
-window.salesSendEmail = () => {
+window.salesSendEmail = async (event) => {
+    const item = window.currentSalesItemData;
+    if (!item || !item.id) {
+        return window.showToast("Please save the document first before sending.", "error");
+    }
+
+    // Validation for Payment Link on Invoices
+    if (currentTab === 'invoices' && item.status !== 'Paid' && !item.paymentLink) {
+        const proceed = await erpConfirm("You haven't generated a Payment Link for this Invoice yet. Are you sure you want to email it without a payment link?");
+        if (!proceed) return;
+    }
+
     const email = document.getElementById('sales-email').value;
-    const subject = `${currentTab === 'quotes' ? 'Quote' : 'Invoice'} #${document.getElementById('sales-number').value}`;
-    const body = `Hi,\n\nPlease find attached the ${currentTab === 'quotes' ? 'quote' : 'invoice'} for your review.\n\nThank you.`;
-    window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    if (!email) {
+        return window.showToast("Please provide a client email address.", "error");
+    }
+
+    // UI Feedback
+    const btn = event ? event.target.closest('button') : null;
+    let originalHtml = '';
+    if (btn) {
+        originalHtml = btn.innerHTML;
+        btn.innerHTML = '<span class="material-icons rotating">refresh</span> Sending...';
+        btn.disabled = true;
+    }
+
+    window.showToast("Preparing email...", "info");
+
+    const subject = `${currentTab === 'quotes' ? 'Quote' : 'Invoice'} #${document.getElementById('sales-number').value} - Solutions Quasar Inc.`;
+    const docTypeLabel = currentTab === 'quotes' ? 'Quote' : 'Invoice';
+    const isQuote = currentTab === 'quotes';
+    // For quotes: show subtotal (before tax). For invoices: show grand total.
+    const displayAmount = isQuote ? (item.subtotal || 0) : (item.total || 0);
+    const amountStr = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(displayAmount);
+    const lang = localStorage.getItem('erp_lang') || 'en';
+
+    // Translations for email
+    const copy = {
+        en: {
+            title: `Your ${docTypeLabel} is ready`,
+            greeting: `Hello ${item.clientName},`,
+            body: isQuote ? `Please find the estimate for your project below. A PDF copy is also attached.` : `Please find your invoice summary below. A PDF copy is also attached.`,
+            amount: isQuote ? 'Estimated Subtotal' : 'Amount Due',
+            plusTax: isQuote ? '+ applicable taxes' : '',
+            viewBtn: 'View Document',
+            payBtn: 'Pay Online Securely',
+            footer: 'If you have any questions, simply reply to this email.'
+        },
+        fr: {
+            title: `Votre ${docTypeLabel === 'Quote' ? 'Devis' : 'Facture'} est ${docTypeLabel === 'Quote' ? 'prêt' : 'prête'}`,
+            greeting: `Bonjour ${item.clientName},`,
+            body: isQuote ? `Veuillez trouver l'estimation de votre projet ci-dessous. Une copie PDF est également jointe.` : `Veuillez trouver le résumé de votre facture ci-dessous. Une copie PDF est également jointe.`,
+            amount: isQuote ? 'Sous-total Estimé' : 'Montant Dû',
+            plusTax: isQuote ? '+ taxes applicables' : '',
+            viewBtn: 'Voir le document',
+            payBtn: 'Payer en ligne',
+            footer: 'Si vous avez des questions, répondez simplement à cet email.'
+        }
+    }[lang];
+
+    // Build the beautiful Quasar HTML Email (Aggressive Inline Styles for Gmail support)
+    const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>${subject}</title>
+    </head>
+    <body style="margin: 0; padding: 0; background-color: #0B0D10; color: #F0F2F5; font-family: 'Helvetica Neue', Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #0B0D10; width: 100%; margin: 0; padding: 20px 0;">
+            <tr>
+                <td align="center">
+                    <!-- Main Container -->
+                    <table width="600" cellpadding="0" cellspacing="0" border="0" style="background-color: #15171C; border-radius: 12px; border: 1px solid #2d3139; overflow: hidden; max-width: 600px; width: 100%; margin: 0 auto;">
+                        
+                        <!-- Header -->
+                        <tr>
+                            <td align="center" style="background-color: #0B0D10; padding: 20px; border-bottom: 2px solid #DFA53A;">
+                                <h1 style="color: #DFA53A; margin: 0; font-size: 24px; font-weight: bold;">Solutions Quasar Inc.</h1>
+                                <p style="color: #888888; font-size: 13px; margin: 5px 0 0 0;">131 rue Montambault, Deschambault QC, G0A 1S0</p>
+                            </td>
+                        </tr>
+                        
+                        <!-- Content -->
+                        <tr>
+                            <td align="center" style="padding: 20px 30px; background-color: #15171C;">
+                                <h2 style="margin: 0 0 10px 0; color: #F0F2F5; font-size: 20px; font-weight: normal;">${copy.title}</h2>
+                                <p style="color: #A0A5B0; font-size: 16px; margin: 0 0 10px 0;">${copy.greeting}</p>
+                                <p style="color: #A0A5B0; line-height: 1.5; margin: 0 0 20px 0;">${copy.body}</p>
+                                
+                                <!-- Amount Box -->
+                                <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                                    <tr>
+                                        <td align="center">
+                                            <div style="margin: 15px auto; padding: 20px; border-radius: 8px; border: 1px solid rgba(223, 165, 58, 0.3); background-color: rgba(223, 165, 58, 0.05); max-width: 300px;">
+                                                <div style="font-size: 12px; color: #A0A5B0; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">${copy.amount}</div>
+                                                <div style="font-size: 32px; color: #DFA53A; font-weight: bold; line-height: 1;">${amountStr}</div>
+                                                ${copy.plusTax ? `<div style="font-size: 11px; color: #A0A5B0; margin-top: 8px; font-style: italic;">${copy.plusTax}</div>` : ''}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </table>
+
+                                <!-- Action Button & Footer -->
+                                <div style="margin-top: 25px;">
+                                    ${(!isQuote && item.paymentLink) ? `
+                                        <a href="${item.paymentLink}" style="display: inline-block; background-color: #DFA53A; color: #000000; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">${copy.payBtn}</a>
+                                        <br><br>
+                                    ` : ''}
+                                    <p style="color: #888888; font-size: 14px; margin: 0;">${copy.footer}</p>
+                                </div>
+                            </td>
+                        </tr>
+                        
+                        <!-- Footer -->
+                        <tr>
+                            <td align="center" style="padding: 15px; background-color: #0B0D10; color: #888888; font-size: 12px; border-top: 1px solid #2d3139;">
+                                &copy; ${new Date().getFullYear()} Solutions Quasar Inc. All rights reserved.
+                            </td>
+                        </tr>
+                        
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </body>
+    </html>
+    `;
+
+    try {
+        // --- Generate PDF Document in Background ---
+        let base64Pdf = null;
+        if (typeof html2pdf !== 'undefined') {
+            window.showToast("Generating PDF attachment...", "info");
+
+            // Build temporary DOM element containing a simplified invoice view
+            const buildTempDocument = () => {
+                const salesItems = window.currentSalesItems || [];
+                const salesTaxes = window.currentSalesTaxes || [];
+                const subtotal = salesItems.reduce((sum, i) => sum + ((parseFloat(i.qty) || 0) * (parseFloat(i.price) || 0)), 0);
+
+                // Build tax rows + collect tax IDs
+                let taxRowsHtml = '';
+                let taxIdsHtml = '';
+                salesTaxes.forEach(tx => {
+                    const amt = subtotal * ((parseFloat(tx.rate) || 0) / 100);
+                    taxRowsHtml += `
+                        <tr>
+                            <td style="padding:4px 0; color:#666;">${tx.name || tx.tax} (${tx.rate}%)</td>
+                            <td style="padding:4px 0; text-align:right;">$${amt.toFixed(2)}</td>
+                        </tr>`;
+                    if (tx.number) {
+                        taxIdsHtml += `<div>${tx.name || tx.tax}: ${tx.number}</div>`;
+                    }
+                });
+
+                const paymentInfo = item.paymentInfo || window.salesSettings?.paymentInfo || 'Please make checks payable to Solutions Quasar Inc.';
+                const notes = item.notes ? `<div style="margin-top:12px;"><strong style="font-size:11px;text-transform:uppercase;color:#555;">Notes</strong><div style="font-size:12px;color:#444;margin-top:4px;">${item.notes}</div></div>` : '';
+
+                const wrapper = document.createElement('div');
+                wrapper.innerHTML = `
+                <div style="padding:15px 25px; font-family:Helvetica,Arial,sans-serif; color:#111; background:#fff; width:800px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:20px; border-bottom:2px solid #111; padding-bottom:10px;">
+                        <div>
+                            <h1 style="color:#DFA53A; margin:0;">Solutions Quasar Inc.</h1>
+                            <p style="color:#777; font-size:12px; margin:5px 0 0 0;">131 rue Montambault, Deschambault QC, G0A 1S0</p>
+                            <p style="color:#555; font-size:11px; margin:2px 0 0 0;">info@solutionsquasar.ca</p>
+                        </div>
+                        <div style="text-align:right;">
+                            <h2 style="margin:0; text-transform:uppercase;">${docTypeLabel}</h2>
+                            <h3 style="margin:5px 0 0 0; color:#555;">#${document.getElementById('sales-number').value}</h3>
+                        </div>
+                    </div>
+                    
+                    <div style="display:flex; justify-content:space-between; margin-bottom:25px;">
+                        <div>
+                            <h4 style="margin:0 0 5px 0; color:#555; text-transform:uppercase; font-size:12px;">Bill To</h4>
+                            <strong>${item.clientName}</strong><br>
+                            ${item.clientCompany ? item.clientCompany + '<br>' : ''}
+                            ${item.clientAddress || ''}<br>
+                            ${item.clientCity || ''}
+                        </div>
+                        <div style="text-align:right;">
+                            <h4 style="margin:0 0 5px 0; color:#555; text-transform:uppercase; font-size:12px;">Date</h4>
+                            <strong>${new Date().toLocaleDateString()}</strong>
+                        </div>
+                    </div>
+
+                    <table style="width:100%; border-collapse:collapse; margin-bottom:25px;">
+                        <thead>
+                            <tr>
+                                <th style="text-align:left; padding:8px 10px; border-bottom:2px solid #111; text-transform:uppercase; font-size:12px;">Description</th>
+                                <th style="text-align:right; padding:8px 10px; border-bottom:2px solid #111; text-transform:uppercase; font-size:12px;">Qty</th>
+                                <th style="text-align:right; padding:8px 10px; border-bottom:2px solid #111; text-transform:uppercase; font-size:12px;">Price</th>
+                                <th style="text-align:right; padding:8px 10px; border-bottom:2px solid #111; text-transform:uppercase; font-size:12px;">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${salesItems.map(i => `
+                            <tr>
+                                <td style="padding:10px; border-bottom:1px solid #eee;">
+                                    <strong>${i.desc || ''}</strong>
+                                    ${i.notes ? `<div style="font-size:12px; color:#666; margin-top:5px;">${i.notes}</div>` : ''}
+                                </td>
+                                <td style="padding:10px; border-bottom:1px solid #eee; text-align:right;">${i.qty}</td>
+                                <td style="padding:10px; border-bottom:1px solid #eee; text-align:right;">$${parseFloat(i.price).toFixed(2)}</td>
+                                <td style="padding:10px; border-bottom:1px solid #eee; text-align:right; font-weight:bold;">$${((parseFloat(i.qty) || 0) * (parseFloat(i.price) || 0)).toFixed(2)}</td>
+                            </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+
+                    <div style="display:flex; justify-content:space-between; gap:20px;">
+                        <div style="flex:1; font-size:12px; color:#555; border-top:2px solid #111; padding-top:12px;">
+                            <strong style="font-size:11px; text-transform:uppercase;">Payment Instructions</strong>
+                            <div style="margin-top:6px;">${paymentInfo}</div>
+                            ${(!isQuote && taxIdsHtml) ? `<div style="margin-top:8px; font-size:11px; color:#777; font-weight:600;">${taxIdsHtml}</div>` : ''}
+                            ${notes}
+                        </div>
+                        <div style="width:280px;">
+                            <table style="width:100%;">
+                                <tr>
+                                    <td style="padding:4px 0; color:#666;">Subtotal</td>
+                                    <td style="padding:4px 0; text-align:right;">$${subtotal.toFixed(2)}</td>
+                                </tr>
+                                ${taxRowsHtml}
+                                <tr>
+                                    <td style="padding:10px 0; font-weight:bold; font-size:18px; border-top:2px solid #111;">Grand Total</td>
+                                    <td style="padding:10px 0; text-align:right; font-weight:bold; font-size:18px; border-top:2px solid #111; color:#DFA53A;">${amountStr}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                `;
+                return wrapper;
+            };
+
+            const element = buildTempDocument();
+            const opt = {
+                margin: 0,
+                filename: `${docTypeLabel.toLowerCase()}_${document.getElementById('sales-number').value}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true },
+                jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+            };
+
+            // Generate the base64 string
+            const pdfBase64DataUri = await html2pdf().set(opt).from(element).outputPdf('datauristring');
+
+            // html2pdf outputPdf('datauristring') returns "data:application/pdf;filename=generated.pdf;base64,JVBERi..."
+            // We need to strip the prefix for Resend
+            if (pdfBase64DataUri && pdfBase64DataUri.includes('base64,')) {
+                base64Pdf = pdfBase64DataUri.split('base64,')[1];
+            } else {
+                console.error("Failed to parse base64 from html2pdf output", pdfBase64DataUri);
+            }
+        } else {
+            console.warn("html2pdf library missing. Sending email without attachment.");
+        }
+
+        window.showToast("Dispatching email via backend...", "info");
+
+        // --- Send Email ---
+        const token = localStorage.getItem('authToken');
+
+        const fetchPayload = {
+            to: email,
+            subject: subject,
+            body: htmlContent
+        };
+
+        if (base64Pdf) {
+            fetchPayload.attachments = [{
+                filename: `${docTypeLabel}_${document.getElementById('sales-number').value}.pdf`,
+                content: base64Pdf
+            }];
+        }
+
+        const response = await fetch(`${API_BASE}/api/send-email`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(fetchPayload)
+        });
+
+        const data = await response.json();
+
+        if (btn) {
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+        }
+
+        if (data.success) {
+            window.showToast("Email sent successfully to client.", "success");
+
+            const nowIso = new Date().toISOString();
+
+            // Update Firestore Last Emailed Date
+            try {
+                await updateDoc(doc(db, currentTab, item.id), {
+                    lastEmailedAt: nowIso,
+                    updatedAt: nowIso
+                });
+                item.lastEmailedAt = nowIso; // Update local state for immediate re-render if needed
+
+                // Immediately update the visual clue under the button without reloading modal
+                if (btn && btn.nextElementSibling && btn.nextElementSibling.classList.contains('email-status-text')) {
+                    const statusText = btn.nextElementSibling;
+                    const lang = localStorage.getItem('erp_lang') || 'en';
+                    const prefix = lang === 'fr' ? 'Dernier envoi:' : 'Last sent:';
+                    const dateStr = new Date(nowIso).toLocaleDateString() + ' ' + new Date(nowIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    statusText.innerHTML = `<span style="color:var(--success)">${prefix}</span><br>${dateStr}`;
+                }
+            } catch (err) {
+                console.error("Failed to update lastEmailedAt tracking", err);
+            }
+
+            // Mark as Sent if it was a draft
+            if (item.status === 'Draft') {
+                document.getElementById('sales-status').value = 'Sent';
+                if (item.id) window.salesSaveItem(item.id); // Auto-save status
+            }
+        } else {
+            throw new Error(data.error || data.message || "Failed to send email");
+        }
+    } catch (e) {
+        console.error(e);
+        if (btn) {
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+        }
+        window.showToast(e.message, "error");
+    }
 }
 
 // --- NEW PDF STRATEGY ---
@@ -994,7 +1507,9 @@ window.salesGeneratePDF = () => {
         // Calculate totals dynamically to be safe
         total: document.getElementById('sales-total-display').innerText.replace(/[^0-9.-]+/g, ""),
         paymentInfo: window.salesSettings.paymentInfo,
-        taxId: window.salesSettings.taxId
+        // Pass all tax rules and specific matched numbers if any
+        taxRules: window.salesSettings.taxRules,
+        lang: localStorage.getItem('erp_lang') || 'en' // Pass the selected language
     };
 
     // 2. Save to LocalStorage
@@ -1027,7 +1542,7 @@ window.salesConvertToInvoice = async (quoteId) => {
         const invRef = await addDoc(collection(db, 'invoices'), invoiceData);
 
         // Close Modal and Switch Tab
-        document.getElementById('sales-modal-host').innerHTML = '';
+        document.getElementById('global-sales-modal-host').innerHTML = '';
         window.switchSalesTab('invoices'); // Switch to Invoices tab
 
         // Optional: Open the new invoice
@@ -1067,9 +1582,21 @@ window.salesGeneratePaymentLink = async (invoiceId, amount, clientName, clientEm
         btn.disabled = false;
 
         if (data.success && data.url) {
+            // Save link to firestore
+            await updateDoc(doc(db, 'invoices', invoiceId), {
+                paymentLink: data.url,
+                updatedAt: new Date().toISOString()
+            });
+
+            // Visually update the button without having to close/reopen modal
+            btn.style.cssText = "background:transparent; border:1px solid var(--success); color:var(--success);";
+            btn.innerHTML = '<span class="material-icons">check_circle</span> LINK GENERATED';
+            btn.title = "Link already generated";
+            btn.disabled = false;
+
             // Open in new tab
             window.open(data.url, '_blank');
-            window.showToast("Checkout link opened", "success");
+            window.showToast("Checkout link saved and opened", "success");
         } else {
             throw new Error(data.error || "Failed to generate link");
         }
