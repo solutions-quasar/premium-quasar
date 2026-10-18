@@ -476,7 +476,7 @@ const CONFIG = {
         caseStudies: { en: "Case Studies", fr: "Études de Cas" },
         careers: { en: "Careers", fr: "Carrières" },
         privacy: { en: "Privacy Policy", fr: "Politique de Confidentialité" },
-        terms: { en: "Terms", fr: "Conditions" },
+        terms: { en: "Terms of Service", fr: "Conditions d'Utilisation" },
         sitemap: { en: "Sitemap", fr: "Plan du Site" },
         rights: { en: "All Rights Reserved.", fr: "Tous Droits Réservés." },
         designedBy: { en: "Designed by Solutions Quasar Inc.", fr: "Conçu par Solutions Quasar Inc." }
@@ -548,28 +548,95 @@ const CONFIG = {
             ]
         }
     },
-    privacy: {
-        title: { en: "Privacy Policy", fr: "Politique de Confidentialité" },
-        updated: { en: "Last updated: December 30, 2025", fr: "Dernière mise à jour : 30 Décembre 2025" },
-        sections: [
-            {
-                title: { en: "1. Introduction", fr: "1. Introduction" },
-                content: { en: "Solutions Quasar Inc. (\"we,\" \"us,\" or \"our\") respects your privacy. This Privacy Policy explains how we collect, use, and share information about you when you visit our website.", fr: "Solutions Quasar Inc. (« nous », « notre » ou « nos ») respecte votre vie privée. Cette politique de confidentialité explique comment nous recueillons, utilisons et partageons les informations vous concernant lorsque vous visitez notre site web." }
-            },
-            {
-                title: { en: "2. Information We Collect", fr: "2. Informations Que Nous Collectons" },
-                content: { en: "We may collect personal information that you voluntarily provide to us when you fill out a contact form, such as your name, email address, and phone number.", fr: "Nous pouvons collecter des informations personnelles que vous nous fournissez volontairement lorsque vous remplissez un formulaire de contact, comme votre nom, adresse e-mail et numéro de téléphone." }
-            },
-            {
-                title: { en: "3. How We Use Your Information", fr: "3. Comment Nous Utilisons Vos Informations" },
-                content: { en: "We use the information we collect to reply to your inquiries, provide services, and improve our website.", fr: "Nous utilisons les informations que nous collectons pour répondre à vos demandes, fournir des services et améliorer notre site web." }
-            },
-            {
-                title: { en: "4. Contact Us", fr: "4. Contactez-nous" },
-                content: { en: "If you have any questions about this Privacy Policy, please contact us at info@solutionsquasar.ca", fr: "Si vous avez des questions concernant cette politique de confidentialité, veuillez nous contacter à info@solutionsquasar.ca" }
-            }
-        ],
-        cta: { en: "Return to Home", fr: "Retour à l'Accueil" }
+    terms: {
+        badge: { en: "Legal & Terms of Service", fr: "Mentions Légales & Conditions Générales" },
+        title: { en: "Terms of Service", fr: "Conditions d'Utilisation" },
+        updated: { en: "Last updated: October 2026", fr: "Dernière mise à jour : Octobre 2026" },
+
+        intro_title: { en: "1. Acceptance of Terms", fr: "1. Acceptation des Conditions" },
+        intro_p1: {
+            en: "These Terms of Service (\"Terms\") govern the access to and use of websites, digital portals, software platforms, and professional engineering services provided by Solutions Quasar Inc. (\"Solutions Quasar,\" \"we,\" \"us,\" or \"our\"), a Canadian corporation. By accessing our website (solutionsquasar.ca), contracting our services, or logging into any client portal or enterprise system, you (\"Client\" or \"User\") agree to be bound by these Terms in full. If you do not accept these terms, you must refrain from using our systems and services.",
+            fr: "Les présentes conditions générales d'utilisation (« Conditions ») régissent l'accès et l'utilisation des sites web, portails numériques, plateformes logicielles et services d'ingénierie fournis par Solutions Quasar Inc. (« Solutions Quasar », « nous », « notre » ou « nos »), une société par actions canadienne. En accédant à notre site web (solutionsquasar.ca), en souscrivant à nos services ou en vous connectant à un portail client ou système d'entreprise, vous (« Client » ou « Utilisateur ») convenez d'être lié sans réserve par ces Conditions. Si vous n'acceptez pas l'ensemble de ces termes, vous devez cesser toute utilisation de nos services et systèmes."
+        },
+
+        services_title: { en: "2. Scope of Services & Deliverables", fr: "2. Portée des Services & Livrables" },
+        services_p1: {
+            en: "Solutions Quasar provides ultra-premium digital architecture, web application engineering, custom SaaS/ERP development, cloud infrastructure deployment, workflow automation, and specialized technical consulting. Specific deliverables, project milestones, performance metrics, and completion timelines are defined in written Statements of Work (SOW), service proposals, or enterprise contracts mutually agreed upon.",
+            fr: "Solutions Quasar offre des services d'architecture numérique ultra-premium, de développement d'applications web, de conception SaaS/ERP sur mesure, de déploiement d'infrastructures infonuagiques, d'automatisation de flux de travail et de conseil technologique. Les livrables spécifiques, jalons de projet, métriques de performance et échéanciers sont stipulés dans les devis, propositions de services ou contrats d'entreprise mutuellement convenus."
+        },
+
+        ip_title: { en: "3. Intellectual Property & Ownership", fr: "3. Propriété Intellectuelle & Droits" },
+        ip_p1: {
+            en: "Client Deliverables: Upon receipt of full and final payment for the designated engagement, the Client holds all ownership rights, title, and interest in the bespoke custom deliverables, user interfaces, and custom source code explicitly developed for their project.",
+            fr: "Livrables Clients : Dès réception du paiement intégral et définitif pour le mandat concerné, le Client détient tous les droits de propriété, titres et intérêts sur les livrables personnalisés, interfaces graphiques et code source sur mesure conçus spécifiquement pour son projet."
+        },
+        ip_p2: {
+            en: "Solutions Quasar Frameworks: Solutions Quasar retains all proprietary rights, trademarks, copyrights, and trade secrets in its pre-existing core software libraries, reusable modules, enterprise scaffolding, boilerplate architectures, and development toolchains. When integrated into client deliverables, Solutions Quasar grants the Client a perpetual, irrevocable, non-exclusive, royalty-free commercial license to run and operate such components within their deliverable.",
+            fr: "Cadres & Outils Solutions Quasar : Solutions Quasar conserve l'entière propriété intellectuelle, marques de commerce, droits d'auteur et secrets d'affaires relatifs à ses bibliothèques logicielles fondamentales préexistantes, modules réutilisables, squelettes d'architecture et outillages techniques. Lorsqu'ils sont intégrés dans les livrables du client, Solutions Quasar lui accorde une licence commerciale perpétuelle, irrévocable, non exclusive et libre de redevances pour exploiter ces éléments au sein de son livrable."
+        },
+
+        payment_title: { en: "4. Fees, Billing & Payment Terms", fr: "4. Honoraires, Facturation & Modalités de Paiement" },
+        payment_p1: {
+            en: "Project billing terms, deposit schedules, retainer arrangements, and milestone disbursements are detailed in the applicable agreement. All payments are securely processed through enterprise payment gateways (e.g., Stripe) in Canadian Dollars (CAD) or US Dollars (USD) as specified. Invoices are due upon receipt or within 15 calendar days unless otherwise stated. Unpaid balances past 30 days may accrue late interest at 1.5% per month (19.56% annually) and may result in temporary suspension of hosting or active engineering support.",
+            fr: "Les modalités de facturation, acomptes initiaux, forfaits de maintenance et déboursements par jalon sont détaillés dans l'accord applicable. Tous les paiements sont traités de manière sécurisée via des passerelles de paiement d'entreprise certifiées (ex. Stripe) en dollars canadiens (CAD) ou américains (USD) selon l'entente. Les factures sont payables sur réception ou dans un délai de 15 jours calendrier sauf indication contraire. Les soldes impayés au-delà de 30 jours peuvent porter intérêt au taux de 1,5 % par mois (19,56 % par an) et entraîner la suspension temporaire de l'hébergement ou du soutien technique."
+        },
+
+        sms_title: { en: "5. Mobile & SMS Communications (A2P 10DLC Compliance)", fr: "5. Communications Mobiles & SMS (Conformité A2P 10DLC)" },
+        sms_p1: {
+            en: "Consent & Purpose: By providing your phone number to Solutions Quasar Inc. through our contact forms, service agreements, or client portals, you explicitly consent to receive transactional, operational, and customer support SMS text messages directly related to your inquiries, account security, appointment verifications, and project status updates.",
+            fr: "Consentement & Finalité : En fournissant votre numéro de téléphone à Solutions Quasar Inc. par le biais de nos formulaires, ententes de service ou portails clients, vous consentez expressément à recevoir des messages texte SMS transactionnels, opérationnels et de support client directement liés à vos demandes, à la sécurité de vos comptes, aux confirmations de rendez-vous et au suivi de vos projets."
+        },
+        sms_p2: {
+            en: "Cadence & Rates: Message frequency varies depending on your project milestones, account activity, and support inquiries. Message and data rates may apply depending on your mobile carrier and mobile service plan.",
+            fr: "Fréquence & Tarifs : La fréquence d'envoi varie selon l'activité de vos projets, les demandes d'assistance et les alertes de sécurité. Les tarifs standard de messagerie et de données de votre opérateur de téléphonie mobile peuvent s'appliquer."
+        },
+        sms_p3: {
+            en: "Opt-Out & Assistance: You can cancel SMS notifications at any time. Reply STOP, CANCEL, or UNSUBSCRIBE to any text message to immediately discontinue mobile messages. For assistance, reply HELP or contact our team directly at info@solutionsquasar.ca or +1 506 233 7006. Wireless carriers are not liable for delayed or undelivered messages. We do not sell or share mobile contact numbers with third parties for promotional purposes.",
+            fr: "Désabonnement & Assistance : Vous pouvez annuler les notifications SMS à tout moment. Répondez STOP, ARRET ou UNSUBSCRIBE à n'importe quel message pour vous désabonner immédiatement. Pour obtenir de l'aide, répondez HELP ou AIDE, ou écrivez-nous à info@solutionsquasar.ca ou par téléphone au +1 506 233 7006. Les opérateurs sans fil ne sont pas responsables des messages retardés ou non livrés. Nous ne vendons ni ne partageons jamais vos numéros mobiles avec des tiers à des fins promotionnelles."
+        },
+
+        acceptable_title: { en: "6. User Conduct & Prohibited Uses", fr: "6. Conduite de l'Utilisateur & Usages Interdits" },
+        acceptable_p1: {
+            en: "Users and clients agree to use our systems exclusively for lawful business purposes. You agree not to: (a) engage in unauthorized vulnerability scanning, penetration testing, or reverse engineering of Solutions Quasar infrastructure; (b) upload, transmit, or introduce malicious payloads, viruses, or automated scrapers; (c) attempt unauthorized privilege escalation or bypass security access controls; or (d) misuse our communication networks to distribute unsolicited messages or spam.",
+            fr: "Les utilisateurs et clients conviennent d'utiliser nos systèmes exclusivement à des fins professionnelles légitimes. Vous vous engagez à ne pas : (a) effectuer d'analyse de vulnérabilité non autorisée, de test d'intrusion ou de rétro-ingénierie sur l'infrastructure de Solutions Quasar ; (b) téléverser, propager ou introduire des logiciels malveillants, virus ou robots d'extraction non autorisés ; (c) tenter d'élever des privilèges d'accès ou de contourner les contrôles de sécurité ; ou (d) détourner nos canaux de communication pour diffuser des courriels ou messages non sollicités (spam)."
+        },
+
+        liability_title: { en: "7. Warranties & Limitation of Liability", fr: "7. Garanties & Limitation de Responsabilité" },
+        liability_p1: {
+            en: "Professional Standard: We design, engineer, and deploy digital assets adhering to top-tier industry standards for performance, code hygiene, and security.",
+            fr: "Norme Professionnelle : Nous concevons, développons et déployons les actifs numériques selon les standards les plus rigoureux de l'industrie en matière de performance, de qualité de code et de cybersécurité."
+        },
+        liability_p2: {
+            en: "Disclaimer & Cap: To the maximum extent permitted by applicable law, Solutions Quasar Inc. provides its platforms \"as is\" and \"as available.\" Solutions Quasar shall not be liable for any indirect, punitive, incidental, special, or consequential damages (including lost profits, loss of data, business interruption, or downtime caused by upstream telecom or cloud provider outages such as Google Cloud, Telnyx, or Stripe). In any event, our total aggregate liability arising out of or related to these Terms shall not exceed the total fees paid by the client to Solutions Quasar during the three (3) months preceding the incident giving rise to liability.",
+            fr: "Exclusion & Plafond : Dans toute la mesure permise par la loi applicable, Solutions Quasar Inc. fournit ses plateformes « telles quelles » et « selon leur disponibilité ». Solutions Quasar ne peut être tenue responsable de tout dommage indirect, punitif, accessoire, spécial ou consécutif (y compris la perte de profits, la perte de données, l'interruption d'activité ou les pannes réseau imputables aux fournisseurs tiers tels que Google Cloud, Telnyx ou Stripe). En tout état de cause, notre responsabilité globale découlant des présentes Conditions ne pourra excéder le montant total des honoraires payés par le client à Solutions Quasar au cours des trois (3) mois précédant l'événement ouvrant droit à réparation."
+        },
+
+        confidentiality_title: { en: "8. Confidentiality & Non-Disclosure", fr: "8. Confidentialité & Non-Divulgation" },
+        confidentiality_p1: {
+            en: "Both parties agree to hold in strict confidence all proprietary, commercial, financial, and technical information disclosed during the engagement. Confidential information shall not be revealed to third parties without prior written consent, except to employees, subcontractors, or legal/financial advisors bound by equivalent confidentiality obligations. Personal information handling is strictly governed by our Privacy Policy.",
+            fr: "Les deux parties s'engagent à préserver la stricte confidentialité de toutes les informations commerciales, financières, stratégiques et techniques divulguées dans le cadre de leur relation d'affaires. Ces informations ne seront divulguées à aucun tiers sans accord écrit préalable, à l'exception des employés, sous-traitants ou conseillers juridiques/financiers liés par des obligations de confidentialité équivalentes. La gestion des renseignements personnels est régie par notre Politique de Confidentialité."
+        },
+
+        termination_title: { en: "9. Term & Termination", fr: "9. Durée & Résiliation" },
+        termination_p1: {
+            en: "Agreements may be terminated by either party according to the terms specified in the mutual service contract or upon thirty (30) days' written notice for continuous monthly retainers. Upon termination, the client shall promptly pay all outstanding fees for work performed up to the termination date. Solutions Quasar shall deliver all completed client-owned assets and provide customary transition assistance.",
+            fr: "Les ententes peuvent être résiliées par l'une ou l'autre des parties conformément aux stipulations du contrat de service spécifique ou avec un préavis écrit de trente (30) jours pour les forfaits mensuels récurrents. En cas de résiliation, le client réglera sans délai les honoraires dus pour les prestations réalisées jusqu'à la date d'effet. Solutions Quasar remettra l'ensemble des livrables finalisés appartenant au client et assurera la transition d'usage."
+        },
+
+        governing_title: { en: "10. Governing Law & Dispute Resolution", fr: "10. Droit Applicable & Résolution des Différends" },
+        governing_p1: {
+            en: "These Terms and all related contractual relationships shall be governed by, and construed in accordance with, the laws of the Province of Québec and the federal laws of Canada applicable therein, without regard to conflict of law principles. The parties agree to submit any unresolved dispute arising from these Terms to the exclusive jurisdiction of the competent courts sitting in the judicial district of Montreal or Quebec City, Canada.",
+            fr: "Les présentes Conditions et toutes relations contractuelles s'y rapportant sont régies et interprétées conformément aux lois de la province de Québec et aux lois fédérales du Canada qui y sont applicables, sans égard aux principes de conflit de lois. Les parties conviennent de soumettre tout différend découlant des présentes à la compétence exclusive des tribunaux du district judiciaire de Montréal ou de Québec, Canada."
+        },
+
+        contact_title: { en: "11. Contact Information", fr: "11. Coordonnées & Questions" },
+        contact_p1: {
+            en: "If you have any questions or require legal clarification regarding these Terms of Service, please contact Solutions Quasar Inc., Quebec & New Brunswick, Canada. Email: info@solutionsquasar.ca | Tel: +1 506 233 7006.",
+            fr: "Pour toute question ou demande d'éclaircissement juridique concernant ces conditions d'utilisation, veuillez contacter Solutions Quasar Inc., Québec & Nouveau-Brunswick, Canada. Courriel : info@solutionsquasar.ca | Tél : +1 506 233 7006."
+        },
+
+        cta: { en: "← Return to Home", fr: "← Retour à l'Accueil" },
+        privacy_link: { en: "Privacy Policy", fr: "Politique de Confidentialité" }
     }
 };
 
@@ -1021,6 +1088,7 @@ function renderSite() {
                     <li><a href="${getLinkHref('#reviews')}">${t(CONFIG.footer.caseStudies)}</a></li>
                     <li><a href="#">${t(CONFIG.footer.careers)}</a></li>
                     <li><a href="privacy.html">${t(CONFIG.footer.privacy)}</a></li>
+                    <li><a href="terms.html">${t(CONFIG.footer.terms)}</a></li>
                 </ul>
             </div>
 
@@ -1038,7 +1106,7 @@ function renderSite() {
         <div class="footer-bottom">
             <div class="footer-cred">&copy; ${new Date().getFullYear()} ${CONFIG.business.name} • ${t(CONFIG.footer.rights)}</div>
             <div class="footer-links">
-                <a href="privacy.html">${t(CONFIG.footer.privacy)}</a> &nbsp;•&nbsp; <a href="/erp/" class="text-muted" style="text-decoration:none; opacity:0.5; font-size:0.8rem;">ERP Login</a> &nbsp;•&nbsp; <span style="opacity:0.5">${t(CONFIG.footer.designedBy)}</span>
+                <a href="privacy.html">${t(CONFIG.footer.privacy)}</a> &nbsp;•&nbsp; <a href="terms.html">${t(CONFIG.footer.terms)}</a> &nbsp;•&nbsp; <a href="/erp/" class="text-muted" style="text-decoration:none; opacity:0.5; font-size:0.8rem;">ERP Login</a> &nbsp;•&nbsp; <span style="opacity:0.5">${t(CONFIG.footer.designedBy)}</span>
             </div>
         </div>
     `;
