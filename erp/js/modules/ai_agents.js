@@ -1,5 +1,5 @@
 import { db, auth } from '../firebase-config.js';
-import { collection, query, where, getDocs, getDoc, addDoc, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { collection, query, where, orderBy, limit, onSnapshot, getDocs, getDoc, addDoc, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 // --- CONFIG ---
 const API_BASE = window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1')
@@ -57,6 +57,35 @@ export async function initAiAgents() {
     `;
 
     renderProjectList();
+
+    // --- DEEP LINKING SUPPORT ---
+    const hash = window.location.hash;
+    const params = new URLSearchParams(hash.includes('?') ? hash.split('?')[1] : '');
+    const urlProjectId = params.get('projectId');
+    const urlAgentId = params.get('agentId');
+
+    if (urlProjectId) {
+        try {
+            const projSnap = await getDoc(doc(db, "ai_projects", urlProjectId));
+            if (projSnap.exists()) {
+                const projData = { id: projSnap.id, ...projSnap.data() };
+                const projJson = encodeURIComponent(JSON.stringify(projData)).replace(/'/g, "%27");
+
+                setTimeout(async () => {
+                    await window.selectProject(urlProjectId, projJson);
+
+                    if (urlAgentId) {
+                        const agentSnap = await getDoc(doc(db, "ai_agents", urlAgentId));
+                        if (agentSnap.exists()) {
+                            const agentData = { id: agentSnap.id, ...agentSnap.data() };
+                            const agentJson = encodeURIComponent(JSON.stringify(agentData)).replace(/'/g, "%27");
+                            window.openAgentModal(agentJson);
+                        }
+                    }
+                }, 300);
+            }
+        } catch (e) { console.error("[DeepLink] Error:", e); }
+    }
 }
 
 // --- PROJECT LOGIC ---
@@ -105,6 +134,11 @@ async function renderProjectList() {
 window.selectProject = async (id, json) => {
     activeProjectId = id;
     currentProject = JSON.parse(decodeURIComponent(json));
+
+    // Update hash for deep linking using replaceState to avoid triggering hashchange loops
+    const newUrl = `${window.location.pathname}${window.location.search}#ai-agents?projectId=${id}`;
+    if (window.history.replaceState) window.history.replaceState(null, '', newUrl);
+
     renderProjectList();
 
     // Verify Backend Connection
@@ -538,14 +572,32 @@ window.openAgentModal = (agentJson = null) => {
     let activeTab = 'general';
 
     // Assign global helpers
+    window.agent_closeModal = () => {
+        const modalHost = document.getElementById('ai-modal-host');
+        if (modalHost) modalHost.innerHTML = '';
+        if (activeProjectId) {
+            const newUrl = `${window.location.pathname}${window.location.search}#ai-agents?projectId=${activeProjectId}`;
+            if (window.history.replaceState) window.history.replaceState(null, '', newUrl);
+        }
+    };
+
+    if (agent && agent.id) {
+        const newUrl = `${window.location.pathname}${window.location.search}#ai-agents?projectId=${activeProjectId}&agentId=${agent.id}`;
+        if (window.history.replaceState) window.history.replaceState(null, '', newUrl);
+    }
+
     window.agent_switchTab = (tab) => {
         activeTab = tab;
         document.getElementById('tab-general').style.display = tab === 'general' ? 'block' : 'none';
         document.getElementById('tab-knowledge').style.display = tab === 'knowledge' ? 'block' : 'none';
         document.getElementById('tab-memories').style.display = tab === 'memories' ? 'block' : 'none';
         document.getElementById('tab-tools').style.display = tab === 'tools' ? 'block' : 'none';
+        const tabPricing = document.getElementById('tab-pricing');
+        if (tabPricing) tabPricing.style.display = tab === 'pricing' ? 'block' : 'none';
         const tabChat = document.getElementById('tab-chat');
         if (tabChat) tabChat.style.display = tab === 'chat' ? 'flex' : 'none';
+        const tabLogs = document.getElementById('tab-logs');
+        if (tabLogs) tabLogs.style.display = tab === 'logs' ? 'block' : 'none';
 
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
         if (tab === 'general') document.querySelector('.tab-btn[data-tab="general"]').classList.add('active');
@@ -555,13 +607,22 @@ window.openAgentModal = (agentJson = null) => {
             window.agent_loadMemories();
         }
         if (tab === 'tools') document.querySelector('.tab-btn[data-tab="tools"]').classList.add('active');
+        if (tab === 'pricing') {
+            const btn = document.querySelector('.tab-btn[data-tab="pricing"]');
+            if (btn) btn.classList.add('active');
+            if (window.agent_loadBillingLogs) window.agent_loadBillingLogs();
+        }
         if (tab === 'chat') {
             document.querySelector('.tab-btn[data-tab="chat"]').classList.add('active');
             window.agent_loadChatHistory();
         }
+        if (tab === 'logs') {
+            document.querySelector('.tab-btn[data-tab="logs"]').classList.add('active');
+            window.agent_loadLogs();
+        }
     };
 
-    const sessionId = `erp_session_${agent.id}`;
+    const sessionId = agent ? `erp_session_${agent.id}` : `erp_session_new_${Date.now()}`;
     let chatHistory = [];
     let historyLoaded = false;
 
@@ -625,7 +686,7 @@ window.openAgentModal = (agentJson = null) => {
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
                     projectId: activeProjectId,
-                    agentId: agent.id,
+                    agentId: agent?.id,
                     sessionId: sessionId,
                     messages: [{ role: "user", content: msg }]
                 })
@@ -656,7 +717,7 @@ window.openAgentModal = (agentJson = null) => {
                 body: JSON.stringify({
                     toolName: 'search_memories',
                     args: { query: '' },
-                    projectId: agent.projectId || activeProjectId
+                    projectId: agent?.projectId || activeProjectId
                 })
             });
             const json = await res.json();
@@ -697,7 +758,7 @@ window.openAgentModal = (agentJson = null) => {
                 body: JSON.stringify({
                     toolName: 'delete_memory',
                     args: { id: memoryId },
-                    projectId: agent.projectId || activeProjectId
+                    projectId: agent?.projectId || activeProjectId
                 })
             });
             const json = await res.json();
@@ -710,6 +771,157 @@ window.openAgentModal = (agentJson = null) => {
         } catch (e) {
             console.error(e);
             window.showToast("Failed to delete memory.", "error");
+        }
+    };
+
+    window.agent_loadBillingLogs = async () => {
+        const listContainer = document.getElementById('billing-logs-list');
+        const revContainer = document.getElementById('bill-month-rev');
+        const expContainer = document.getElementById('bill-month-exp');
+        if (!listContainer) return;
+
+        // 1. Setup Month Dropdown options if empty
+        const monthSelect = document.getElementById('bill-month-select');
+        if (monthSelect && monthSelect.options.length === 0) {
+            const today = new Date();
+            for (let i = 0; i < 6; i++) {
+                const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+                const val = d.toISOString().slice(0, 7); // YYYY-MM
+                const text = d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                const opt = document.createElement('option'); opt.value = val; opt.innerText = text;
+                monthSelect.appendChild(opt);
+            }
+            monthSelect.onchange = () => window.agent_loadBillingLogs();
+            const searchInput = document.getElementById('bill-search-input');
+            if (searchInput) searchInput.oninput = () => window.agent_loadBillingLogs();
+        }
+
+        const selectedMonth = monthSelect ? monthSelect.value : new Date().toISOString().slice(0, 7);
+        listContainer.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Loading logs...</td></tr>';
+
+        try {
+            console.log(`[Billing Expansion] Loading aggregates for ${selectedMonth}`);
+
+            // 2. Fetch Aggregates from agent_usage for calculating Totals
+            const usageSnap = await getDocs(query(
+                collection(db, "agent_usage"),
+                where("agentId", "==", agent.id)
+            ));
+            let totalMsg = 0;
+            usageSnap.forEach(doc => {
+                if (doc.id.includes(selectedMonth)) {
+                    totalMsg += doc.data().count || 0;
+                }
+            });
+
+            const priceMsg = parseFloat(document.getElementById('ag-price-msg')?.value || agent?.pricing?.pricePerMessage || 0.05);
+            const priceMonth = parseFloat(document.getElementById('ag-price-month')?.value || agent?.pricing?.pricePerMonth || 49);
+
+            if (revContainer) revContainer.innerHTML = `$${(totalMsg * priceMsg + (totalMsg > 0 ? priceMonth : 0)).toFixed(2)}`;
+            if (expContainer) expContainer.innerHTML = `$${(totalMsg * 0.0003).toFixed(4)}`;
+
+            // 3. Setup LOGS Live Stream with in-memory filter
+            const q = query(
+                collection(db, "agent_billing_logs"),
+                where("agentId", "==", agent.id),
+                orderBy("timestamp", "desc"),
+                limit(15)
+            );
+
+            onSnapshot(q, (snapshot) => {
+                const searchInput = document.getElementById('bill-search-input');
+                const filterTerm = searchInput ? searchInput.value.toLowerCase() : "";
+
+                let html = '';
+                snapshot.forEach(doc => {
+                    const d = doc.data();
+                    const time = d.timestamp ? new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A';
+                    const rowText = `${d.message || ''} ${d.senderId || ''}`.toLowerCase();
+                    if (filterTerm && !rowText.includes(filterTerm)) return; // Filter client-side
+
+                    const sourceIcon = d.source === 'instagram'
+                        ? '<span class="material-icons" style="font-size:1rem; vertical-align:middle; color:#E1306C;" title="Instagram">smart_display</span>'
+                        : (d.source === 'facebook'
+                            ? '<span class="material-icons" style="font-size:1rem; vertical-align:middle; color:#1877F2;" title="Facebook">facebook</span>'
+                            : '');
+
+                    html += `
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.05); font-size:0.8rem;">
+                            <td style="padding:10px 0;">${time}</td>
+                            <td>${sourceIcon} <span style="font-family:monospace; color:var(--text-muted);">${d.senderId ? d.senderId.slice(-6) : '-'}</span></td>
+                            <td class="text-truncate" style="max-width:140px;" title="${d.message || ''}">${d.message || '-'}</td>
+                            <td style="color:var(--gold); font-weight:600;">$${d.cost !== undefined ? d.cost.toFixed(2) : priceMsg.toFixed(2)}</td>
+                        </tr>`;
+                });
+                listContainer.innerHTML = html || '<tr><td colspan="4" class="text-center text-muted">No matching logs.</td></tr>';
+            });
+
+        } catch (e) { console.error("[Billing Expansion] Error:", e); }
+    };
+
+    window.agent_loadLogs = async () => {
+        const container = document.getElementById('logs-container');
+        if (!container) return;
+
+        // Unsubscribe from previous listener to avoid stacking socket streams
+        if (window.agent_logsUnsubscribe) {
+            try { window.agent_logsUnsubscribe(); } catch (e) { }
+            window.agent_logsUnsubscribe = null;
+        }
+
+        container.innerHTML = '<div class="text-sm text-muted p-4">Connecting to live logs stream...</div>';
+        try {
+            const targetProjectId = agent?.projectId || activeProjectId;
+
+            // Modular Firestore v9+ Query Syntax
+            const q = query(
+                collection(db, "logs"),
+                where("projectId", "==", targetProjectId),
+                orderBy("timestamp", "desc"),
+                limit(50)
+            );
+
+            window.agent_logsUnsubscribe = onSnapshot(q, (snapshot) => {
+                if (snapshot.empty) {
+                    container.innerHTML = '<div class="text-center p-5 text-muted">No server execution logs found yet.</div>';
+                    return;
+                }
+
+                const logs = [];
+                snapshot.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
+
+                container.innerHTML = logs.map(l => {
+                    const isError = l.result === 'Error' || (l.data && (l.data.error || l.data.status === 'Error'));
+                    const dataPretty = l.data ? `<pre style="margin:5px 0 0 0; font-size:0.75rem; background:#222; padding:8px; border-radius:4px; max-height:150px; overflow:auto; border:1px solid #444;">${JSON.stringify(l.data, null, 2)}</pre>` : "";
+                    const resultPretty = l.message ? `<div style="color:${isError ? 'var(--danger)' : 'var(--gold)'}; font-size:0.75rem; margin-top:4px; font-style:italic;">${l.message}</div>` : "";
+                    const actionName = l.action || 'Log';
+
+                    // Handle Firestore Timestamp formatting
+                    const tsRaw = l.timestamp;
+                    const dateObj = tsRaw?.toDate ? tsRaw.toDate() : (tsRaw ? new Date(tsRaw) : new Date());
+
+                    return `
+                        <div style="padding:10px; border-bottom:1px solid #333; font-family:monospace;">
+                            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 4px;">
+                                <div>
+                                    <span style="color:var(--gold); font-weight:bold;">[${actionName}]</span>
+                                    <span style="color:${isError ? 'var(--danger)' : 'var(--success)'}; margin-left:8px; font-size:0.75rem; border:1px solid ${isError ? 'rgba(220,53,69,0.3)' : 'rgba(40,167,69,0.3)'}; padding:1px 4px; border-radius:3px;">${l.result || 'OK'}</span>
+                                </div>
+                                <span style="font-size:0.7rem; color:var(--text-muted);">${dateObj.toLocaleTimeString()}</span>
+                            </div>
+                            ${dataPretty}
+                            ${resultPretty}
+                        </div>
+                    `;
+                }).join('');
+            }, err => {
+                console.error("Logs Stream Error:", err);
+                container.innerHTML = `<div class="text-danger p-4">Stream Error: ${err.message}</div>`;
+            });
+
+        } catch (e) {
+            console.error("Live logs init error:", e);
+            container.innerHTML = '<div class="text-danger p-4">Error loading live logs.</div>';
         }
     };
 
@@ -1115,6 +1327,10 @@ window.openAgentModal = (agentJson = null) => {
     let availableTools = [];
     const loadTools = async () => {
         const toolsContainer = document.getElementById('tools-container');
+        if (!toolsContainer) {
+            console.warn("[loadTools] tools-container not found yet.");
+            return;
+        }
         toolsContainer.innerHTML = '<div class="text-sm text-muted">Scanning project schema...</div>';
 
         try {
@@ -1162,12 +1378,12 @@ window.openAgentModal = (agentJson = null) => {
 
     const renderModal = () => {
         host.innerHTML = `
-            <div class="crm-modal-overlay" onclick="document.getElementById('ai-modal-host').innerHTML=''">
+            <div class="crm-modal-overlay" onclick="window.agent_closeModal()">
                 <div class="crm-modal-content" style="width: 95vw; height: 95vh; max-width: none; max-height: none; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
                     
                     <div class="crm-modal-header" style="border-bottom:none; padding-bottom:0;">
                         <div class="text-h">${isEdit ? 'Edit Agent' : 'New Agent'}</div>
-                        <button class="icon-btn" onclick="document.getElementById('ai-modal-host').innerHTML=''"><span class="material-icons">close</span></button>
+                        <button class="icon-btn" onclick="window.agent_closeModal()"><span class="material-icons">close</span></button>
                     </div>
 
                     <!-- Tabs -->
@@ -1176,7 +1392,9 @@ window.openAgentModal = (agentJson = null) => {
                         <button class="tab-btn ${activeTab === 'knowledge' ? 'active' : ''}" data-tab="knowledge" onclick="window.agent_switchTab('knowledge')">Knowledge Base</button>
                         <button class="tab-btn ${activeTab === 'memories' ? 'active' : ''}" data-tab="memories" onclick="window.agent_switchTab('memories')">Memories 🧠</button>
                         <button class="tab-btn ${activeTab === 'tools' ? 'active' : ''}" data-tab="tools" onclick="window.agent_switchTab('tools')">Tools <span style="font-size:0.6rem; background:var(--gold); color:black; padding:1px 4px; border-radius:4px;">AUTO</span></button>
+                        <button class="tab-btn ${activeTab === 'pricing' ? 'active' : ''}" data-tab="pricing" onclick="window.agent_switchTab('pricing')">Pricing 💰</button>
                         ${isEdit ? `<button class="tab-btn ${activeTab === 'chat' ? 'active' : ''}" data-tab="chat" onclick="window.agent_switchTab('chat')">Chat Agent ⚡</button>` : ''}
+                        ${isEdit ? `<button class="tab-btn ${activeTab === 'logs' ? 'active' : ''}" data-tab="logs" onclick="window.agent_switchTab('logs')">Server Logs 📋</button>` : ''}
                     </div>
 
                     <div class="crm-modal-body" style="padding-top:0;">
@@ -1190,10 +1408,9 @@ window.openAgentModal = (agentJson = null) => {
                                         <input type="text" id="ag-name" class="form-input" value="${agent?.name || ''}" required placeholder="Virtual Assistant">
                                     </div>
                                     <div class="form-group">
-                                        <label class="form-label">Type</label>
-                                        <select id="ag-type" class="form-input">
-                                            <option value="Vapi Voice Agent" selected>Vapi Voice Agent</option>
-                                        </select>
+                                        <label class="form-label">Max Messages Per User / Day</label>
+                                        <input type="number" id="ag-max-messages" class="form-input" value="${agent?.maxMessagesPerDay || 50}" required placeholder="50">
+                                        <div class="text-xs text-muted mt-1">Prevents flood abuse on this Agent.</div>
                                     </div>
                                 </div>
 
@@ -1208,6 +1425,35 @@ window.openAgentModal = (agentJson = null) => {
                                         Set Active (Live)
                                     </label>
                                 </div>
+                                <div class="form-group mt-2">
+                                     <label class="form-label-checkbox" style="color:var(--gold);">
+                                        <input type="checkbox" id="ag-voice-enabled" class="custom-checkbox" ${agent?.vapiAssistantId ? 'checked' : ''}> 
+                                        🎙️ Enable Voice Assistant (Vapi Add-on)
+                                    </label>
+                                </div>
+
+                                <hr style="border-top:1px solid rgba(255,255,255,0.05); margin: 1.5rem 0;">
+                                <div class="text-sm font-bold mb-3 text-gold">Meta Integrations (Facebook & Instagram)</div>
+                                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:15px;">
+                                    <div class="form-group">
+                                        <label class="form-label">Facebook Page ID</label>
+                                        <input type="text" id="ag-fb-page-id" class="form-input" value="${agent?.facebookPageId || ''}" placeholder="1029384756">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Facebook Access Token</label>
+                                        <input type="password" id="ag-fb-token" class="form-input" value="${agent?.facebookAccessToken ? '••••••••••••••••' : ''}" placeholder="${agent?.facebookAccessToken ? '•••••••• Connected' : 'Enter New Token...'}">
+                                    </div>
+                                </div>
+                                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:1.5rem;">
+                                    <div class="form-group">
+                                        <label class="form-label">Instagram Account ID</label>
+                                        <input type="text" id="ag-ig-account-id" class="form-input" value="${agent?.instagramAccountId || ''}" placeholder="178414...">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Instagram Access Token</label>
+                                        <input type="password" id="ag-ig-token" class="form-input" value="${agent?.instagramAccessToken ? '••••••••••••••••' : ''}" placeholder="${agent?.instagramAccessToken ? '•••••••• Connected' : 'Enter New Token...'}">
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- KNOWLEDGE TAB -->
@@ -1219,6 +1465,75 @@ window.openAgentModal = (agentJson = null) => {
                                 
                                 <div id="kb-list">
                                     ${knowledgeBase.length === 0 ? `<div class="text-center text-muted" style="padding:2rem;">No knowledge documents yet.</div>` : ''}
+                                </div>
+                            </div>
+
+                            <!-- PRICING TAB -->
+                            <div id="tab-pricing" style="display:${activeTab === 'pricing' ? 'block' : 'none'};">
+                                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+                                    <div class="form-group">
+                                        <label class="form-label">Price Per Message ($)</label>
+                                        <input type="number" step="0.01" id="ag-price-msg" class="form-input" value="${agent?.pricing?.pricePerMessage || '0.05'}" required>
+                                        <div class="text-xs text-muted mt-1">What you charge the client per AI reply.</div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Base Monthly Subscription ($)</label>
+                                        <input type="number" step="1" id="ag-price-month" class="form-input" value="${agent?.pricing?.pricePerMonth || '49'}" required>
+                                        <div class="text-xs text-muted mt-1">Flat maintenance fee per month.</div>
+                                    </div>
+                                </div>
+
+                                <div style="background:var(--bg-overlay); padding:15px; border-radius:8px; border:1px solid var(--gold); margin-top:20px;">
+                                    <div style="color:var(--gold); font-weight:600; margin-bottom:10px; display:flex; align-items:center; gap:5px;">
+                                        <span class="material-icons" style="font-size:1.1rem;">calculate</span> 
+                                        Centralized Cost Estimator (GPT-4o mini)
+                                    </div>
+                                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; font-size:0.85rem; color:var(--text-muted);">
+                                        <div>Est. ChatGPT Cost Per Msg: <b style="color:var(--text);">$0.0003</b></div>
+                                        <div>Client Charge Per Msg: <b style="color:var(--text);">$0.05</b></div>
+                                        <div>Your Gross Margin: <b style="color:var(--gold);">~99% Profit</b></div>
+                                        <div>Daily Breakeven: <b style="color:var(--text);">2 Chat Hits</b></div>
+                                    </div>
+                                    <div class="alert alert-info mt-3" style="font-size:0.75rem; background:rgba(49, 204, 236, 0.05); padding:8px; border-radius:6px; margin-top:10px; border:none; color:var(--text-muted);">
+                                        Tip: High token System Prompts might increase input costs slightly, but stay safe inside margins.
+                                    </div>
+                                </div>
+
+                                <div style="background:rgba(255,223,0,0.05); border:1px dashed var(--gold); padding:15px; border-radius:8px; margin-top:20px; display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+                                    <div>
+                                        <div style="font-size:0.75rem; color:var(--text-muted);">Current Month Revenue (Est)</div>
+                                        <div style="font-size:1.2rem; font-weight:bold; color:var(--gold);" id="bill-month-rev">$0.00</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size:0.75rem; color:var(--text-muted);">Est. API Expense</div>
+                                        <div style="font-size:1.2rem; font-weight:bold; color:var(--text);" id="bill-month-exp">$0.00</div>
+                                    </div>
+                                </div>
+
+                                <div style="margin-top:25px;">
+                                    <div style="font-weight:600; font-size:0.9rem; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+                                        <span>📊 Usage & Cost Audit Log (Option A)</span>
+                                        <div style="font-size:0.75rem; color:var(--text-muted);">Visualized month metrics</div>
+                                    </div>
+
+                                    <div style="display:flex; gap:10px; margin-bottom:12px; align-items:center;">
+                                        <select id="bill-month-select" class="form-input" style="padding:8px; font-size:0.85rem; width:150px; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); color:white;"></select>
+                                        <input type="text" id="bill-search-input" placeholder="Search by User ID or Query..." class="form-input" style="padding:8px; font-size:0.85rem; flex:1; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); color:white;">
+                                    </div>
+
+                                    <table style="width:100%; text-align:left; border-collapse:collapse;">
+                                        <thead style="font-size:0.75rem; color:var(--text-muted); border-bottom:1px solid rgba(255,255,255,0.1);">
+                                            <tr>
+                                                <th style="padding-bottom:8px;">Time</th>
+                                                <th>Source / Sender</th>
+                                                <th>Query</th>
+                                                <th>Charged</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="billing-logs-list">
+                                            <tr><td colspan="4" class="text-center text-muted" style="padding:20px;">No messages streamed yet.</td></tr>
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
 
@@ -1266,6 +1581,20 @@ window.openAgentModal = (agentJson = null) => {
                                 </div>
                             </div>
 
+                            <!-- LOGS TAB -->
+                            <div id="tab-logs" style="display:${activeTab === 'logs' ? 'block' : 'none'};">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                                    <div>
+                                        <div class="text-sm font-bold text-gold">Server Execution Logs</div>
+                                        <div class="text-xs text-muted">Recent tool executions and system processing events.</div>
+                                    </div>
+                                    <button type="button" class="btn btn-sm" onclick="window.agent_loadLogs()"><span class="material-icons" style="font-size:1rem; vertical-align:middle;">refresh</span> Refresh</button>
+                                </div>
+                                <div id="logs-container" style="background:var(--bg-dark); border:1px solid var(--border); border-radius:8px; height: 500px; overflow-y: auto;">
+                                    <div class="text-center p-4 text-muted">Logs window ready.</div>
+                                </div>
+                            </div>
+
                             <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:2rem; border-top:1px solid var(--border); padding-top:1rem;">
                                 ${isEdit ? `<button type="button" class="btn" title="Get Embed Code" onclick="window.agent_showEmbedCode('${agent.id}')"><span class="material-icons" style="font-size:1.2rem; vertical-align:text-bottom;">code</span></button>` : ''}
                                 ${isEdit ? `<button type="button" id="btn-test-live" class="btn" style="border:1px solid var(--success); color:var(--success);" onclick="testAgentLive('${agent.vapiAssistantId}')"><span class="material-icons" style="font-size:1.2rem; vertical-align:text-bottom;">mic</span> Test Live</button>` : ''}
@@ -1308,7 +1637,14 @@ window.openAgentModal = (agentJson = null) => {
             }, 0);
         }
 
-        setTimeout(() => document.getElementById('agent-form').onsubmit = handleAgentSubmit, 0);
+        setTimeout(() => {
+            const form = document.getElementById('agent-form');
+            if (form) {
+                form.onsubmit = handleAgentSubmit;
+            } else {
+                console.warn("[renderModal] agent-form not found for onsubmit binding.");
+            }
+        }, 100);
     };
 
     const handleAgentSubmit = async (e) => {
@@ -1321,8 +1657,30 @@ window.openAgentModal = (agentJson = null) => {
         try {
             const name = document.getElementById('ag-name').value;
             const personality = document.getElementById('ag-personality').value;
-            const type = document.getElementById('ag-type').value;
+            const voiceEnabled = document.getElementById('ag-voice-enabled').checked;
+            const type = voiceEnabled ? "Vapi Voice Agent" : "Text Chatbot";
             const active = document.getElementById('ag-active').checked;
+            const maxMessagesPerDay = parseInt(document.getElementById('ag-max-messages')?.value) || 50;
+            const pricePerMessage = parseFloat(document.getElementById('ag-price-msg')?.value) || 0.05;
+            const pricePerMonth = parseFloat(document.getElementById('ag-price-month')?.value) || 49;
+
+            // Meta Integrations
+            const facebookPageId = document.getElementById('ag-fb-page-id')?.value.trim() || null;
+            let facebookAccessToken = document.getElementById('ag-fb-token')?.value.trim();
+            const instagramAccountId = document.getElementById('ag-ig-account-id')?.value.trim() || null;
+            let instagramAccessToken = document.getElementById('ag-ig-token')?.value.trim();
+
+            if (facebookAccessToken === '••••••••••••••••') {
+                facebookAccessToken = agent?.facebookAccessToken || null;
+            } else if (!facebookAccessToken) {
+                facebookAccessToken = null;
+            }
+
+            if (instagramAccessToken === '••••••••••••••••') {
+                instagramAccessToken = agent?.instagramAccessToken || null;
+            } else if (!instagramAccessToken) {
+                instagramAccessToken = null;
+            }
 
             // Construct System Prompt
             let finalSystemPrompt = personality;
@@ -1335,9 +1693,8 @@ window.openAgentModal = (agentJson = null) => {
                 });
             }
 
-            let vapiAssistantId = isEdit ? agent.vapiAssistantId : null;
-
-            if (!isEdit) {
+            let vapiAssistantId = agent?.vapiAssistantId || null;
+            if (voiceEnabled && !vapiAssistantId) {
                 // CREATE
                 const token = await getAuthToken();
                 const res = await fetch(`${API_BASE}/api/vapi/create-agent`, {
@@ -1353,23 +1710,31 @@ window.openAgentModal = (agentJson = null) => {
 
             const data = {
                 name, type, personality, prompt: finalSystemPrompt, knowledgeBase, tools,
-                vapiAssistantId, active, projectId: activeProjectId, updatedAt: new Date().toISOString()
+                vapiAssistantId, active, projectId: activeProjectId, updatedAt: new Date().toISOString(),
+                maxMessagesPerDay: maxMessagesPerDay,
+                facebookPageId, facebookAccessToken, instagramAccountId, instagramAccessToken,
+                pricing: {
+                    pricePerMessage,
+                    pricePerMonth
+                }
             };
 
             if (isEdit) {
-                // UPDATE including Tools and Project ID for Isolation
-                const token = await getAuthToken();
-                await fetch(`${API_BASE}/api/vapi/update-agent/${agent.vapiAssistantId}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify({
-                        name,
-                        type,
-                        prompt: finalSystemPrompt,
-                        tools: tools,
-                        projectId: activeProjectId // !!! CRITICAL FOR ISOLATION !!!
-                    })
-                });
+                if (voiceEnabled && vapiAssistantId) {
+                    // UPDATE including Tools and Project ID for Isolation
+                    const token = await getAuthToken();
+                    await fetch(`${API_BASE}/api/vapi/update-agent/${vapiAssistantId}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify({
+                            name,
+                            type,
+                            prompt: finalSystemPrompt,
+                            tools: tools,
+                            projectId: activeProjectId // !!! CRITICAL FOR ISOLATION !!!
+                        })
+                    });
+                }
 
                 await updateDoc(doc(db, "ai_agents", agent.id), data);
                 window.showToast('Agent updated.', 'success');

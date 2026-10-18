@@ -7,7 +7,7 @@
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Premium Quasar ERP</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=55">
     <link rel="stylesheet" href="css/login.css">
 
     <!-- Material Icons -->
@@ -222,25 +222,21 @@
                         <span class="material-icons arrow-icon">expand_more</span>
                     </div>
                     <div class="nav-group-items">
-                        <a href="#automations" class="nav-item">
-                            <span class="material-icons">auto_mode</span>
-                            <span data-i18n="nav_automations">Automations Intelligence</span>
+                        <a href="#prospection" class="nav-item text-gold">
+                            <span class="material-icons" style="margin-right:8px; font-size:18px;">auto_awesome</span>
+                            <span>Prospection IA</span>
                         </a>
                         <a href="#leads" class="nav-item">
-                            <span class="material-icons">filter_list</span>
-                            <span data-i18n="nav_leads">Leads</span>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px;"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                            <span data-i18n="nav_leads">Pipeline Leads</span>
                         </a>
-                        <a href="#leadhunter" class="nav-item text-gold">
-                            <span class="material-icons">track_changes</span>
-                            <span data-i18n="nav_leadhunter">Lead Hunter</span>
+                        <a href="#sms" class="nav-item">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                            <span data-i18n="nav_sms">Conversations SMS</span>
                         </a>
                         <a href="#coldcall" class="nav-item">
-                            <span class="material-icons">phone_in_talk</span>
-                            <span data-i18n="nav_coldcall">Cold Call</span>
-                        </a>
-                        <a href="#followup" class="nav-item sub-item">
-                            <span class="material-icons">checklist</span>
-                            <span data-i18n="nav_followup">Follow-up</span>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px;"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                            <span data-i18n="nav_coldcall">Cold Call & Suivis</span>
                         </a>
                     </div>
                 </div>
@@ -296,7 +292,9 @@
             <div id="view-client-detail" class="view"></div>
             <div id="view-calendar" class="view"></div>
             <div id="view-sales" class="view"></div>
+            <div id="view-prospection" class="view"></div>
             <div id="view-leads" class="view"></div>
+            <div id="view-sms" class="view"></div>
             <div id="view-leadhunter" class="view"></div>
             <div id="view-coldcall" class="view"></div>
             <div id="view-automations" class="view"></div>
@@ -356,7 +354,7 @@
 
     <!-- Scripts -->
     <!-- Load Firebase via Module to ensure scoped access -->
-    <script type="module" src="js/app.js?v=22"></script>
+    <script type="module" src="js/app.js?v=56"></script>
 
 </body>
 

@@ -246,8 +246,19 @@ async function dynamicHandler(toolName, args, projectId, context = {}) {
             if (args.query) q = q.orderBy('createdAt', 'desc').limit(10);
             else q = q.limit(10);
             const snapshot = await q.get();
-            const results = [];
+            let results = [];
             snapshot.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
+
+            // --- ADDED: IN-MEMORY FUZZY FILTER FOR query ---
+            if (args.query) {
+                const term = args.query.toLowerCase();
+                results = results.filter(d => {
+                    // Convert row object to string for general text matching
+                    const rowStr = JSON.stringify(d).toLowerCase();
+                    return rowStr.includes(term);
+                });
+            }
+
             result = { success: true, count: results.length, results };
         }
         // 3. UPDATE Action

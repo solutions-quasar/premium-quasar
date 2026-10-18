@@ -1,6 +1,7 @@
 import { db } from '../firebase-config.js';
 import { collection, query, getDocs, orderBy, onSnapshot, where, doc, getDoc, updateDoc, addDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { t } from '../services/translationService.js';
+import { openSequencesConfigModal } from './sequences.js';
 
 export async function initAutomations() {
     console.log('Initializing Automations Module...');
@@ -12,9 +13,17 @@ export async function initAutomations() {
                 <div class="text-h text-gold" style="font-size: 1.5rem;">${t('nav_automations')}</div>
                 <div class="text-muted text-sm">Neural Engine / Autonomous Sales Orchestration</div>
             </div>
-            <button class="btn btn-primary" onclick="openNewWorkflowModal()">
-                <span class="material-icons">add_chart</span> Create Neural Workflow
-            </button>
+            <div style="display:flex; gap: 10px;">
+                <button class="btn btn-secondary" onclick="window.openSequencesConfigModal()" style="display:flex; align-items:center; gap:6px;">
+                    <span class="material-icons" style="color:var(--gold);">repeat</span> Séquences SMS & Simulation
+                </button>
+                <button class="btn btn-secondary" onclick="window.openNeuralExplanationModal()">
+                    <span class="material-icons">info</span> Learn More
+                </button>
+                <button class="btn btn-primary" onclick="openNewWorkflowModal()">
+                    <span class="material-icons">add_chart</span> Create Neural Workflow
+                </button>
+            </div>
         </div>
 
         <div style="display:grid; grid-template-columns: 2fr 1fr; gap: 2rem;">
@@ -75,6 +84,18 @@ export async function initAutomations() {
                             Connect Gmail Workspace
                         </button>
                     </div>
+
+                    <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px dashed rgba(255,255,255,0.1);">
+                        <div class="text-h mb-2" style="font-size: 0.9rem;">Neural Credentials</div>
+                        <div class="form-group mb-2">
+                            <label class="text-xs text-muted mb-1 block">OpenAI API Key</label>
+                            <input type="password" id="neural-openai-key" class="form-input" style="font-size: 0.75rem; background: rgba(0,0,0,0.3);" placeholder="sk-...">
+                        </div>
+                        <button class="btn btn-xs btn-primary btn-block" onclick="window.saveNeuralConfig()">
+                            Save Credentials
+                        </button>
+                    </div>
+
                     <div class="text-xs text-muted mt-3">Neural Engine v1.0.4-beta</div>
                 </div>
             </div>
@@ -85,10 +106,35 @@ export async function initAutomations() {
         renderWorkflows();
         checkGmailStatus();
         updateDashboardStats();
+
+        // Load existing key if any
+        const savedKey = localStorage.getItem('openai_api_key');
+        const keyInput = document.getElementById('neural-openai-key');
+        if (savedKey && keyInput) keyInput.value = savedKey;
+
         // Live pulse for stats
         window.automationStatsInterval = setInterval(updateDashboardStats, 30000);
+        // Background Neural Pulse (Process Scheduled/Waiting Tasks)
+        window.neuralPulseInterval = setInterval(processScheduledInstances, 30000); // Check every 30s
+        processScheduledInstances(); // Initial run
     }, 100);
 }
+
+window.saveNeuralConfig = () => {
+    const key = document.getElementById('neural-openai-key').value.trim();
+    if (!key) {
+        window.showToast("Please enter a valid API Key", "warning");
+        return;
+    }
+    localStorage.setItem('openai_api_key', key);
+    window.showToast("Neural Credentials Updated!", "success");
+
+    // UI update for status
+    const badge = document.querySelector('.status-badge');
+    if (badge && badge.innerText.includes('Online')) {
+        badge.style.background = 'var(--success)';
+    }
+};
 
 async function updateDashboardStats() {
     const workflowsSnap = await getDocs(collection(db, "neural_workflows"));
@@ -127,7 +173,7 @@ async function checkGmailStatus() {
 }
 
 window.connectGmail = () => {
-    const clientId = "874591230491-example.apps.googleusercontent.com";
+    const clientId = "317018641428-8grij7g2jl2m90o33c8pc1pg4gi6n42k.apps.googleusercontent.com";
     const scope = "https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.events";
     const redirect = window.location.origin + "/erp/index.html";
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirect)}&response_type=token&scope=${encodeURIComponent(scope)}`;
@@ -157,6 +203,7 @@ window.disconnectGmail = () => {
 // --- NODE-BASED CANVAS STATE ---
 let designerNodes = [];
 let designerEdges = [];
+let editingWorkflowId = null;
 let canvasState = {
     scale: 1,
     pan: { x: 0, y: 0 },
@@ -283,14 +330,38 @@ const canvasStyles = `
 `;
 
 window.openNewWorkflowModal = () => {
-    // Initial Seed Data
-    designerNodes = [
-        { id: 'trigger_1', type: 'trigger', x: 100, y: 300, label: 'Lead Approved', data: {} },
-        { id: 'enrich_1', type: 'enrichment', x: 500, y: 300, label: 'AI Deep Search', data: { mode: 'deep' } }
-    ];
-    designerEdges = [
-        { id: 'e1', source: 'trigger_1', target: 'enrich_1' }
-    ];
+    window.openWorkflowEditor(null);
+};
+
+window.openWorkflowEditor = async (id = null) => {
+    editingWorkflowId = id;
+    let initialName = `Neural Pipeline ${new Date().toLocaleDateString()}`;
+    let initialActivation = "AUTO";
+
+    if (id) {
+        try {
+            const docSnap = await getDoc(doc(db, "neural_workflows", id));
+            if (!docSnap.exists()) return;
+            const data = docSnap.data();
+            designerNodes = data.graph?.nodes || [];
+            designerEdges = data.graph?.edges || [];
+            initialName = data.name;
+            initialActivation = data.activationType || "AUTO";
+        } catch (e) {
+            console.error("Error loading workflow:", e);
+            window.showToast("Error loading workflow", "error");
+            return;
+        }
+    } else {
+        // Initial Seed Data for New Workflow
+        designerNodes = [
+            { id: 'trigger_1', type: 'trigger', x: 100, y: 300, label: 'Lead Approved', data: {} },
+            { id: 'enrich_1', type: 'enrichment', x: 500, y: 300, label: 'AI Deep Search', data: { mode: 'deep' } }
+        ];
+        designerEdges = [
+            { id: 'e1', source: 'trigger_1', target: 'enrich_1' }
+        ];
+    }
 
     // Reset Canvas State
     canvasState = { scale: 1, pan: { x: 0, y: 0 }, isDragging: false, activeNode: null, tempEdge: null };
@@ -298,7 +369,8 @@ window.openNewWorkflowModal = () => {
     const host = document.createElement('div');
     host.id = 'automation-modal-host';
     document.body.appendChild(host);
-    renderDesigner();
+
+    renderDesigner(initialName, initialActivation);
 
     // Attach Global Listeners for the Canvas
     setTimeout(attachCanvasListenersV2, 100);
@@ -306,7 +378,8 @@ window.openNewWorkflowModal = () => {
 
 function attachCanvasListenersV2() {
     const canvas = document.getElementById('neural-canvas');
-    if (!canvas) return;
+    if (!canvas || canvas.dataset.init) return;
+    canvas.dataset.init = 'true';
 
     canvas.addEventListener('mousedown', (e) => {
         // Handle Port Click (Start Connection)
@@ -343,7 +416,6 @@ function attachCanvasListenersV2() {
         // Connecting Logic
         if (canvasState.isConnecting) {
             const canvasRect = canvas.getBoundingClientRect();
-            // Project mouse to canvas coordinates
             const mouseX = (e.clientX - canvasRect.left - canvasState.pan.x) / canvasState.scale;
             const mouseY = (e.clientY - canvasRect.top - canvasState.pan.y) / canvasState.scale;
 
@@ -353,7 +425,7 @@ function attachCanvasListenersV2() {
                 currX: mouseX,
                 currY: mouseY
             };
-            renderCanvasContent();
+            renderDesignerEdges(); // Only re-render edges during connection
             return;
         }
 
@@ -366,7 +438,7 @@ function attachCanvasListenersV2() {
             if (node) {
                 node.x += dx;
                 node.y += dy;
-                renderCanvasContent();
+                renderCanvasContent(); // Full render because nodes moved
             }
             canvasState.dragStart = { x: e.clientX, y: e.clientY };
         } else if (canvasState.isDragging && !canvasState.activeNode) {
@@ -374,7 +446,7 @@ function attachCanvasListenersV2() {
             const dy = e.clientY - canvasState.dragStart.y;
             canvasState.pan.x += dx;
             canvasState.pan.y += dy;
-            renderCanvasContent();
+            renderCanvasContent(); // Full render because pan changed
             canvasState.dragStart = { x: e.clientX, y: e.clientY };
         }
     });
@@ -407,7 +479,7 @@ function attachCanvasListenersV2() {
 }
 
 
-function renderDesigner() {
+function renderDesigner(initialName = "", initialActivation = "AUTO") {
     const host = document.getElementById('automation-modal-host');
     if (!host) return;
 
@@ -417,16 +489,26 @@ function renderDesigner() {
             <div class="crm-modal-content" style="max-width: 95vw; width: 95vw; height: 90vh; display:flex; flex-direction:column; padding:0; overflow:hidden;" onclick="event.stopPropagation()">
                 
                 <!-- HEADER -->
-                <div class="crm-modal-header" style="background: var(--bg-card); z-index: 10; padding: 1rem 2rem; border-bottom: 1px solid var(--border);">
+                <div class="crm-modal-header">
                     <div style="display:flex; align-items:center; gap: 15px;">
                         <span class="material-icons text-gold" style="font-size: 2rem;">hub</span>
                         <div>
-                            <div class="text-h" style="margin:0; font-size: 1.2rem;">Neural Workflow Canvas</div>
+                            <div class="text-h" style="margin:0; font-size: 1.2rem;">${editingWorkflowId ? 'Edit Neural Workflow' : 'Neural Workflow Canvas'}</div>
                             <div class="text-xs text-muted">Drag nodes to rearrange • Connect ports to link logic</div>
                         </div>
                     </div>
                     <div style="display:flex; gap: 1rem; align-items:center;">
-                         <input type="text" id="wf-name" class="form-input" value="Neural Pipeline ${new Date().toLocaleDateString()}" style="width: 250px; background: rgba(0,0,0,0.2);">
+                         <div style="display:flex; flex-direction:column; gap:4px;">
+                            <label class="text-xs text-muted" style="text-transform:uppercase; letter-spacing:1px;">Workflow Name</label>
+                            <input type="text" id="wf-name" class="form-input" value="${initialName}" style="width: 250px; background: rgba(0,0,0,0.2);">
+                         </div>
+                         <div style="display:flex; flex-direction:column; gap:4px;">
+                            <label class="text-xs text-muted" style="text-transform:uppercase; letter-spacing:1px;">Activation</label>
+                            <select id="wf-activation" class="form-input" style="width: 150px; background: rgba(0,0,0,0.2);">
+                                <option value="AUTO" ${initialActivation === 'AUTO' ? 'selected' : ''}>Automatic</option>
+                                <option value="MANUAL" ${initialActivation === 'MANUAL' ? 'selected' : ''}>Manual</option>
+                            </select>
+                         </div>
                         <button class="icon-btn" onclick="window.closeAutomationModal()"><span class="material-icons">close</span></button>
                     </div>
                 </div>
@@ -468,7 +550,7 @@ function renderDesigner() {
                 </div>
 
                 <!-- FOOTER -->
-                <div class="crm-modal-footer" style="background: var(--bg-card); padding: 1rem 2rem; border-top: 1px solid var(--border);">
+                <div class="crm-modal-footer">
                     <button class="btn btn-secondary" onclick="window.closeAutomationModal()">Discard</button>
                     <button class="btn btn-primary" onclick="window.saveWorkflow()">Deploy Neural Pipeline</button>
                 </div>
@@ -480,19 +562,24 @@ function renderDesigner() {
 }
 
 function renderCanvasContent() {
+    renderDesignerEdges();
+    renderDesignerNodes();
+}
+
+function renderDesignerNodes() {
     const nodesLayer = document.getElementById('nodes-layer');
-    const svgLayer = document.getElementById('connections-layer');
-    if (!nodesLayer || !svgLayer) return;
-
-    // Apply Pan/Zoom
+    if (!nodesLayer) return;
     nodesLayer.style.transform = `translate(${canvasState.pan.x}px, ${canvasState.pan.y}px) scale(${canvasState.scale})`;
+    nodesLayer.innerHTML = designerNodes.map(node => renderNode(node)).join('');
+}
 
+function renderDesignerEdges() {
+    const svgLayer = document.getElementById('connections-layer');
+    if (!svgLayer) return;
     svgLayer.innerHTML = `<g transform="translate(${canvasState.pan.x}, ${canvasState.pan.y}) scale(${canvasState.scale})">
         ${designerEdges.map(edge => renderEdge(edge)).join('')}
         ${canvasState.tempEdge ? renderTempEdge(canvasState.tempEdge) : ''}
     </g>`;
-
-    nodesLayer.innerHTML = designerNodes.map(node => renderNode(node)).join('');
 }
 
 function renderNode(node) {
@@ -640,7 +727,7 @@ window.editNode = (id) => {
     host.id = 'node-edit-modal-host';
     host.innerHTML = `
         <div class="crm-modal-overlay" onclick="window.closeEditModal()">
-            <div class="crm-modal-content" style="width: 400px;" onclick="event.stopPropagation()">
+            <div class="crm-modal-content" style="width: 450px;" onclick="event.stopPropagation()">
                 <div class="crm-modal-header">
                     <div class="text-h">Configure ${node.label}</div>
                     <button class="icon-btn" onclick="window.closeEditModal()"><span class="material-icons">close</span></button>
@@ -667,11 +754,15 @@ window.saveNodeEdits = (id) => {
     const node = designerNodes.find(n => n.id === id);
     if (!node) return;
 
-    if (node.type === 'outreach') {
+    if (node.type === 'trigger') {
+        node.data.delay = parseInt(document.getElementById('cfg-delay').value) || 0;
+        node.data.unit = document.getElementById('cfg-unit').value;
+    } else if (node.type === 'outreach') {
         node.data.subject = document.getElementById('cfg-subject').value;
         node.data.body = document.getElementById('cfg-body').value;
     } else if (node.type === 'wait') {
-        node.data.days = document.getElementById('cfg-days').value;
+        node.data.value = parseInt(document.getElementById('cfg-value').value) || 1;
+        node.data.unit = document.getElementById('cfg-unit').value;
     }
 
     renderCanvasContent();
@@ -679,6 +770,28 @@ window.saveNodeEdits = (id) => {
 };
 
 function getNodeConfigForm(node) {
+    if (node.type === 'trigger') {
+        return `
+            <div class="form-group mb-3">
+                <label>Trigger Type</label>
+                <select id="cfg-trigger" class="form-input" disabled>
+                    <option value="LEAD_APPROVED">Lead Approved</option>
+                </select>
+            </div>
+            <div class="form-group mb-3">
+                <label>Start Delay</label>
+                <div style="display:flex; gap:10px;">
+                    <input type="number" id="cfg-delay" class="form-input" value="${node.data.delay || 0}" min="0" style="flex:1;">
+                    <select id="cfg-unit" class="form-input" style="flex:1;">
+                        <option value="minutes" ${node.data.unit === 'minutes' ? 'selected' : ''}>Minutes</option>
+                        <option value="hours" ${node.data.unit === 'hours' ? 'selected' : ''}>Hours</option>
+                        <option value="days" ${node.data.unit === 'days' ? 'selected' : ''}>Days</option>
+                    </select>
+                </div>
+                <div class="text-xs text-muted mt-1">Wait this long before starting the first node after approval.</div>
+            </div>
+        `;
+    }
     if (node.type === 'outreach') {
         return `
             <div class="form-group mb-3">
@@ -693,9 +806,16 @@ function getNodeConfigForm(node) {
     }
     if (node.type === 'wait') {
         return `
-            <div class="form-group">
-                <label>Wait Duration (Days)</label>
-                <input type="number" id="cfg-days" class="form-input" value="${node.data.days || 3}" min="1">
+            <div class="form-group mb-3">
+                <label>Wait Duration</label>
+                <div style="display:flex; gap:10px;">
+                    <input type="number" id="cfg-value" class="form-input" value="${node.data.value || 1}" min="1" style="flex:1;">
+                    <select id="cfg-unit" class="form-input" style="flex:1;">
+                        <option value="minutes" ${node.data.unit === 'minutes' ? 'selected' : ''}>Minutes</option>
+                        <option value="hours" ${node.data.unit === 'hours' ? 'selected' : ''}>Hours</option>
+                        <option value="days" ${node.data.unit === 'days' ? 'selected' : '' || 'selected'}>Days</option>
+                    </select>
+                </div>
             </div>
         `;
     }
@@ -734,31 +854,46 @@ window.closeAutomationModal = () => {
 window.saveWorkflow = async () => {
     const name = document.getElementById('wf-name').value || "Unnamed Pipeline";
 
-    // Validate Graph
     if (designerNodes.length === 0) {
         window.showToast("Cannot save empty workflow", "warning");
         return;
     }
 
+    // Validation: Check for orphaned nodes (except Goal)
+    const orphans = designerNodes.filter(n => n.type !== 'goal' && !designerEdges.some(e => e.source === n.id));
+    if (orphans.length > 0) {
+        const list = orphans.map(n => n.type.toUpperCase()).join(', ');
+        if (!confirm(`UNCONNECTED NODES FOUND: ${list}\n\nThese steps will not execute unless connected to a next node. Save anyway?`)) return;
+    }
+
     try {
-        await addDoc(collection(db, "neural_workflows"), {
+        const payload = {
             name: name,
+            activationType: document.getElementById('wf-activation').value || 'AUTO',
             active: true,
             trigger: 'LEAD_APPROVED',
             graph: {
                 nodes: designerNodes,
                 edges: designerEdges
             },
-            stats: { processed: 0, converted: 0 },
-            created_at: new Date().toISOString()
-        });
+            updated_at: new Date().toISOString()
+        };
 
-        window.showToast("Neural Pipeline Deployed Successfully", "success");
+        if (editingWorkflowId) {
+            await updateDoc(doc(db, "neural_workflows", editingWorkflowId), payload);
+            window.showToast("Neural Pipeline Updated", "success");
+        } else {
+            payload.stats = { processed: 0, converted: 0 };
+            payload.created_at = new Date().toISOString();
+            await addDoc(collection(db, "neural_workflows"), payload);
+            window.showToast("Neural Pipeline Deployed Successfully", "success");
+        }
+
         window.closeAutomationModal();
         renderWorkflows(); // Refresh list
     } catch (e) {
         console.error(e);
-        window.showToast("Error deploying workflow", "error");
+        window.showToast("Error saving workflow", "error");
     }
 };
 
@@ -782,14 +917,19 @@ async function renderWorkflows() {
         let html = '';
         snap.forEach(doc => {
             const data = doc.data();
+            const activation = data.activationType || 'AUTO';
+            const actLabel = activation === 'MANUAL' ? 'MANUAL' : 'AUTO';
+            const actColor = activation === 'MANUAL' ? 'var(--info)' : 'var(--warning)';
+
             html += `
-                <div class="card" style="margin-bottom: 1rem; border-left: 4px solid var(--gold); background: rgba(223, 165, 58, 0.02);">
+                <div class="card workflow-card-item" onclick="window.openWorkflowEditor('${doc.id}')" style="margin-bottom: 1rem; border-left: 4px solid var(--gold); background: rgba(223, 165, 58, 0.02); cursor: pointer; transition: 0.2s;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <div>
                             <div class="text-h" style="font-size: 1.1rem; margin:0;">${data.name}</div>
-                            <div class="text-xs text-muted">Trigger: ${data.trigger} • Created: ${new Date(data.created_at).toLocaleDateString()}</div>
+                            <div class="text-xs text-muted">Mode: ${actLabel} • Created: ${new Date(data.created_at).toLocaleDateString()}</div>
                         </div>
-                        <div style="text-align:right;">
+                        <div style="text-align:right; display:flex; gap:8px; align-items:center;">
+                            <span class="status-badge" style="background: ${actColor}; color:white; font-size:10px;">${actLabel}</span>
                             <span class="status-badge" style="background: var(--success); color:white;">ACTIVE</span>
                         </div>
                     </div>
@@ -802,6 +942,70 @@ async function renderWorkflows() {
     }
 }
 
+window.openNeuralExplanationModal = () => {
+    const host = document.createElement('div');
+    host.id = 'neural-explanation-modal-host';
+    host.innerHTML = `
+        <div class="crm-modal-overlay" onclick="window.closeNeuralExplanationModal()">
+            <div class="crm-modal-content" style="max-width: 700px; width: 90vw;" onclick="event.stopPropagation()">
+                <div class="crm-modal-header">
+                    <div style="display:flex; align-items:center; gap: 15px;">
+                        <span class="material-icons text-gold" style="font-size: 2.5rem;">psychology</span>
+                        <div>
+                            <div class="text-h" style="margin:0; font-size: 1.5rem;">The Neural Orchestrator</div>
+                            <div class="text-xs text-muted" style="letter-spacing: 1px; text-transform: uppercase;">Autonomous Sales Intelligence v1.0</div>
+                        </div>
+                    </div>
+                    <button class="icon-btn" onclick="window.closeNeuralExplanationModal()"><span class="material-icons">close</span></button>
+                </div>
+                
+                <div class="crm-modal-body">
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                        <div>
+                            <div class="text-gold mb-2" style="font-weight: 600; display:flex; align-items:center; gap:8px;">
+                                <span class="material-icons" style="font-size:18px;">travel_explore</span> 
+                                Autonomous Prospecting
+                            </div>
+                            <p class="text-sm text-muted">
+                                Our neural engine doesn't just send emails. It acts as a digital scout, visiting lead websites, analyzing their brand voice, and identifying specific "pain points" that our solutions can solve.
+                            </p>
+                            
+                            <div class="text-gold mt-4 mb-2" style="font-weight: 600; display:flex; align-items:center; gap:8px;">
+                                <span class="material-icons" style="font-size:18px;">hub</span> 
+                                Node-Based Logic
+                            </div>
+                            <p class="text-sm text-muted">
+                                Build complex sales sequences visually. Use <b>Enrichment</b> nodes to gather data, <b>Outreach</b> nodes to send AI-crafted emails, and <b>Decision</b> nodes to branch the path based on whether the prospect replied.
+                            </p>
+                        </div>
+                        
+                        <div style="background: rgba(223, 165, 58, 0.05); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(223, 165, 58, 0.1);">
+                            <div class="text-h mb-3" style="font-size: 1rem; color: var(--gold);">How it works:</div>
+                            <ul style="padding-left: 20px; font-size: 0.85rem; color: var(--text-muted); display:flex; flex-direction:column; gap:12px;">
+                                <li><b>Trigger:</b> The engine awakens when you "Approve" a lead in the Leads module.</li>
+                                <li><b>Analysis:</b> GPT-4o scans the prospect's site to build a "Neural Profile."</li>
+                                <li><b>Copywriting:</b> A hyper-personalized email is crafted based on detected pain points.</li>
+                                <li><b>Execution:</b> Emails are sent via your connected Gmail Workspace.</li>
+                                <li><b>Monitoring:</b> The system waits for replies and branches the workflow accordingly.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="crm-modal-footer">
+                    <button class="btn btn-primary btn-block" style="height: 50px; font-weight:bold; letter-spacing:1px;" onclick="window.closeNeuralExplanationModal()">Understood</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(host);
+};
+
+window.closeNeuralExplanationModal = () => {
+    const host = document.getElementById('neural-explanation-modal-host');
+    if (host) host.remove();
+};
+
 
 // --- ORCHESTRATOR ENGINE ---
 
@@ -813,8 +1017,20 @@ async function logActivity(instanceId, message, type = 'info') {
     const stream = document.getElementById('automation-activity-stream');
     if (stream) {
         const time = new Date().toLocaleTimeString();
-        stream.innerHTML += `<div><span style="opacity:0.4">[${time}]</span> <span style="color:var(--${type === 'info' ? 'text-muted' : (type === 'success' ? 'success' : 'danger')});">> ${message}</span></div>`;
+        let color = 'var(--text-muted)';
+        if (type === 'success') color = 'var(--success)';
+        if (type === 'warning') color = 'var(--warning)';
+        if (type === 'danger') color = 'var(--danger)';
+        if (type === 'ai') color = '#a07cf0'; // Neural purple
+
+        const logEntry = document.createElement('div');
+        logEntry.style.marginBottom = '4px';
+        logEntry.innerHTML = `<span style="opacity:0.4">[${time}]</span> <span style="color:${color}">> ${message}</span>`;
+        stream.appendChild(logEntry);
         stream.scrollTop = stream.scrollHeight;
+
+        // Keep only last 50 logs in UI for performance
+        if (stream.children.length > 50) stream.removeChild(stream.firstChild);
     }
 
     try {
@@ -822,8 +1038,10 @@ async function logActivity(instanceId, message, type = 'info') {
         const snap = await getDoc(ref);
         if (snap.exists()) {
             const logs = snap.data().logs || [];
-            logs.push(`> ${message}`);
-            await updateDoc(ref, { logs: logs, updated_at: new Date().toISOString() });
+            logs.push(`[${new Date().toISOString()}] ${message}`);
+            // Keep persistent logs manageable too
+            const trimmedLogs = logs.slice(-100);
+            await updateDoc(ref, { logs: trimmedLogs, updated_at: new Date().toISOString() });
         }
     } catch (e) {
         console.error("Error logging activity:", e);
@@ -831,47 +1049,145 @@ async function logActivity(instanceId, message, type = 'info') {
 }
 
 /**
+ * Background Pulse: Check for scheduled or waiting instances that need to resume.
+ */
+async function processScheduledInstances() {
+    const now = new Date().toISOString();
+    const q = query(collection(db, "workflow_instances"), where("status", "in", ["PENDING", "WAITING"]));
+
+    try {
+        const snap = await getDocs(q);
+        snap.forEach(async (instanceDoc) => {
+            const data = instanceDoc.data();
+            if (data.nextRun && data.nextRun <= now) {
+                await logActivity(instanceDoc.id, `Neural Pulse: Waking up instance ${instanceDoc.id.substring(0, 5)}...`);
+
+                if (data.status === 'PENDING') {
+                    // Start of workflow
+                    await updateDoc(instanceDoc.ref, {
+                        status: 'RUNNING',
+                        updated_at: new Date().toISOString()
+                    });
+                    executeNextStep(instanceDoc.id);
+                } else if (data.status === 'WAITING') {
+                    // Wake up from wait node
+                    const wfSnap = await getDoc(doc(db, "neural_workflows", data.workflowId));
+                    if (wfSnap.exists() && wfSnap.data().graph) {
+                        const { nodes, edges } = wfSnap.data().graph;
+                        await updateDoc(instanceDoc.ref, {
+                            status: 'RUNNING',
+                            updated_at: new Date().toISOString()
+                        });
+                        logActivity(instanceDoc.id, "System pulse: Resuming from sleep mode.", "success");
+                        moveToNextGraphNode(instanceDoc.id, data.currentNodeId, nodes, edges);
+                    }
+                }
+            }
+        });
+    } catch (e) {
+        console.error("[Neural Pulse Error]", e);
+    }
+}
+
+/**
  * Main engine entry point to trigger workflows for a specific lead.
  */
-export async function triggerWorkflowForLead(leadId) {
-    console.log(`[Neural Engine] Checking workflows for lead: ${leadId}`);
+/**
+ * Helper to launch an instance of a workflow for a specific lead.
+ */
+async function launchWorkflowInstance(workflowId, workflowData, leadId, manualConfig) {
+    const checkQ = query(collection(db, "workflow_instances"),
+        where("leadId", "==", leadId),
+        where("workflowId", "==", workflowId),
+        where("status", "in", ["RUNNING", "WAITING", "PENDING"]));
 
-    const q = query(collection(db, "neural_workflows"), where("active", "==", true), where("trigger", "==", "LEAD_APPROVED"));
-    const snap = await getDocs(q);
+    const checkSnap = await getDocs(checkQ);
+    if (!checkSnap.empty) {
+        // Find the instance ID to allow UI-based cancellation if needed
+        const activeId = checkSnap.docs[0].id;
+        console.log(`[Neural Engine] Lead ${leadId} already active in workflow ${workflowData.name} (Instance: ${activeId})`);
+        window.showToast?.(`Lead already active in "${workflowData.name}".`, "warning");
+        return;
+    }
 
-    if (snap.empty) return;
+    console.log(`[Neural Engine] Launching modular workflow "${workflowData.name}"`);
 
-    snap.forEach(async (workflowDoc) => {
-        const workflowId = workflowDoc.id;
-        const workflowData = workflowDoc.data();
-
-        const checkQ = query(collection(db, "workflow_instances"), where("leadId", "==", leadId), where("workflowId", "==", workflowId));
-        const checkSnap = await getDocs(checkQ);
-        if (!checkSnap.empty) return;
-
-        console.log(`[Neural Engine] Activating modular workflow "${workflowData.name}"`);
-
-        // Determine Start Node for Graph Workflows
-        let startNodeId = null;
-        if (workflowData.graph && workflowData.graph.nodes) {
-            const trigger = workflowData.graph.nodes.find(n => n.type === 'trigger');
-            if (trigger) startNodeId = trigger.id;
+    // Determine Start Node
+    let startNodeId = null;
+    if (workflowData.graph && workflowData.graph.nodes) {
+        const nodes = workflowData.graph.nodes;
+        const trigger = nodes.find(n => n.type === 'trigger');
+        if (trigger) {
+            startNodeId = trigger.id;
+        } else if (nodes.length > 0) {
+            // Manual Fallback: if no trigger, start at the very first node
+            startNodeId = nodes[0].id;
+            console.log(`[Neural Engine] No trigger found. Seeding manual start at first node: ${startNodeId}`);
         }
+    }
 
-        const instance = {
-            workflowId: workflowId,
-            leadId: leadId,
-            status: 'RUNNING',
-            currentStepIndex: 0, // Legacy support
-            currentNodeId: startNodeId, // Graph support
-            updated_at: new Date().toISOString(),
-            created_at: new Date().toISOString(),
-            logs: [`> Neural Pipeline initiated.`]
-        };
+    // Calculate Initial Delay
+    let nextRun = new Date();
+    const delay = manualConfig ? (manualConfig.delay || 0) : (workflowData.graph?.nodes?.find(n => n.type === 'trigger')?.data?.delay || 0);
+    const unit = manualConfig ? (manualConfig.unit || 'minutes') : (workflowData.graph?.nodes?.find(n => n.type === 'trigger')?.data?.unit || 'minutes');
 
-        const docRef = await addDoc(collection(db, "workflow_instances"), instance);
+    if (delay > 0) {
+        if (unit === 'minutes') nextRun.setMinutes(nextRun.getMinutes() + delay);
+        else if (unit === 'hours') nextRun.setHours(nextRun.getHours() + parseInt(delay));
+        else if (unit === 'days') nextRun.setDate(nextRun.getDate() + parseInt(delay));
+    }
+
+    if (!workflowId || !leadId) {
+        console.error(`[Neural Engine] MISSING CRITICAL IDS: workflowId=${workflowId}, leadId=${leadId}`);
+        return;
+    }
+
+    const instance = {
+        workflowId: workflowId,
+        leadId: leadId,
+        status: delay > 0 ? 'PENDING' : 'RUNNING',
+        currentNodeId: startNodeId,
+        nextRun: nextRun.toISOString(),
+        updated_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        logs: [`> Neural Pipeline initiated${delay > 0 ? ` (Scheduled for ${nextRun.toLocaleTimeString()})` : ''}.`]
+    };
+
+    const docRef = await addDoc(collection(db, "workflow_instances"), instance);
+    if (delay === 0) {
         executeNextStep(docRef.id);
-    });
+    } else {
+        logActivity(docRef.id, `Workflow scheduled to start in ${delay} ${unit}.`);
+    }
+}
+
+/**
+ * Main engine entry point to trigger workflows for a specific lead.
+ */
+export async function triggerWorkflowForLead(leadId, manualConfig = null) {
+    const targetId = manualConfig?.workflowId;
+
+    if (targetId) {
+        // Specific Manual Launch
+        const wfSnap = await getDoc(doc(db, "neural_workflows", targetId));
+        if (wfSnap.exists() && wfSnap.data().active) {
+            launchWorkflowInstance(wfSnap.id, wfSnap.data(), leadId, manualConfig);
+        }
+    } else {
+        // Automatic Trigger (on Lead Approved) - Filter for AUTO or missing (default AUTO)
+        const q = query(collection(db, "neural_workflows"),
+            where("active", "==", true),
+            where("trigger", "==", "LEAD_APPROVED"));
+
+        const snap = await getDocs(q);
+        snap.forEach(async (workflowDoc) => {
+            const data = workflowDoc.data();
+            // Skip if explicitly MANUAL, otherwise launch (defaults to AUTO)
+            if (data.activationType === 'MANUAL') return;
+
+            launchWorkflowInstance(workflowDoc.id, data, leadId, manualConfig);
+        });
+    }
 }
 
 /**
@@ -896,6 +1212,7 @@ async function executeNextStep(instanceId) {
     if (workflow.graph) {
         // --- GRAPH EXECUTION ---
         const { nodes, edges } = workflow.graph;
+        console.log(`[Neural Engine] Workflow "${workflow.name}" loaded: ${nodes.length} nodes, ${edges.length} edges.`);
 
         // If currentStepIndex is still used (0), we need to find the start node
         // Migration logic: if instance.currentNodeId is missing, assume start
@@ -919,7 +1236,8 @@ async function executeNextStep(instanceId) {
             return;
         }
 
-        console.log(`[Neural Engine] Executing Node ${currentNodeId}: ${currentNode.type}`);
+        const nodeLabel = currentNode.type.toUpperCase();
+        await logActivity(instanceId, `Activating Node: ${nodeLabel} (${currentNodeId.substring(0, 5)})`);
 
         try {
             switch (currentNode.type) {
@@ -933,9 +1251,20 @@ async function executeNextStep(instanceId) {
                     await runOutreachNode(instanceId, leadId, currentNodeId, nodes, edges);
                     break;
                 case 'wait':
-                    const delay = currentNode.data.days || 3;
-                    await logActivity(instanceId, `Entering sleep mode (${delay} days)...`);
-                    await updateDoc(instanceRef, { status: 'WAITING', next_run: getFutureDate(delay) });
+                    const waitVal = currentNode.data.value || 1;
+                    const waitUnit = currentNode.data.unit || 'days';
+                    let nextRunDate = new Date();
+
+                    if (waitUnit === 'minutes') nextRunDate.setMinutes(nextRunDate.getMinutes() + waitVal);
+                    else if (waitUnit === 'hours') nextRunDate.setHours(nextRunDate.getHours() + waitVal);
+                    else nextRunDate.setDate(nextRunDate.getDate() + waitVal);
+
+                    await logActivity(instanceId, `Entering sleep mode for ${waitVal} ${waitUnit}. Next active check: ${nextRunDate.toLocaleTimeString()}.`);
+                    await updateDoc(instanceRef, {
+                        status: 'WAITING',
+                        nextRun: nextRunDate.toISOString(),
+                        updated_at: new Date().toISOString()
+                    });
                     break;
                 case 'decision':
                     await runDecisionNode(instanceId, leadId, currentNodeId, nodes, edges);
@@ -986,80 +1315,155 @@ async function executeNextStep(instanceId) {
 // --- GRAPH HELPERS ---
 
 async function moveToNextGraphNode(instanceId, currentNodeId, nodes, edges, handleType = 'source') {
-    const edge = edges.find(e => {
-        if (handleType) return e.source === currentNodeId && e.sourceHandle === handleType;
-        return e.source === currentNodeId;
-    });
+    // 1. Diagnostics: Log the start of search
+    console.log(`[Neural Engine] Searching next node from ${currentNodeId} (Target Handle: ${handleType})`);
+
+    const currentNode = nodes.find(n => n.id === currentNodeId);
+    const isStrict = currentNode && currentNode.type === 'decision';
+
+    // 2. Resilient Edge Finding
+    let edge = null;
+    if (isStrict) {
+        edge = edges.find(e => e.source === currentNodeId && e.sourceHandle === handleType);
+    } else {
+        // Universal fallback for single-path nodes: find any edge from this source
+        edge = edges.find(e => e.source === currentNodeId);
+    }
 
     if (!edge) {
-        await logActivity(instanceId, "End of path reached.", "success");
-        await updateDoc(doc(db, "workflow_instances", instanceId), { status: 'COMPLETED' });
+        const type = currentNode ? currentNode.type.toUpperCase() : "UNKNOWN";
+        const outgoing = edges.filter(e => e.source === currentNodeId);
+
+        // Advanced Diagnostic for the user
+        const allSources = [...new Set(edges.map(e => e.source))].join(', ') || 'NONE';
+        await logActivity(instanceId, `Diagnostic: Node ${currentNodeId} has ${outgoing.length} outgoing edges.`, "info");
+        await logActivity(instanceId, `Diagnostic: All sources in graph: ${allSources}`, "info");
+
+        await logActivity(instanceId, `Neural Pipeline reached end of path at ${type}.`, "success");
+        await updateDoc(doc(db, "workflow_instances", instanceId), {
+            status: 'COMPLETED',
+            updated_at: new Date().toISOString()
+        });
         return;
     }
 
     const nextNodeId = edge.target;
+    const nextNode = nodes.find(n => n.id === nextNodeId);
+    const nextLabel = nextNode ? nextNode.type.toUpperCase() : "UNKNOWN";
+
+    await logActivity(instanceId, `Path found: Moving to ${nextLabel}...`);
 
     await updateDoc(doc(db, "workflow_instances", instanceId), {
         currentNodeId: nextNodeId,
         updated_at: new Date().toISOString()
     });
+
+    // Immediate execution of next step
     executeNextStep(instanceId);
 }
 
 // Wrapper Functions to adapt logic to new Node ID system
 async function runEnrichmentNode(instanceId, leadId, nodeId, nodes, edges) {
-    await logActivity(instanceId, "Initiating Deep Intelligence Scan...");
     const leadSnap = await getDoc(doc(db, "leads", leadId));
     const lead = leadSnap.data();
     const url = lead.website || lead.url;
+    const name = lead.business_name || lead.name || "Unknown Lead";
+
+    await logActivity(instanceId, `Scanning Prospect: ${name}`);
 
     if (!url) {
-        await logActivity(instanceId, "No website found. Skipping.", "warning");
+        await logActivity(instanceId, "No website URL found. Skipping enrichment.", "warning");
         await moveToNextGraphNode(instanceId, nodeId, nodes, edges);
         return;
     }
 
-    let html = await fetchWebsiteContent(url);
+    let html = await fetchWebsiteContent(url, instanceId);
     if (!html) {
+        await logActivity(instanceId, "Failed to retrieve site content. Continuing with basic data.", "warning");
         await moveToNextGraphNode(instanceId, nodeId, nodes, edges);
         return;
     }
-    const enrichment = await analyzeWebsiteWithAI(url, html);
+    const enrichment = await analyzeWebsiteWithAI(url, html, instanceId);
 
-    await updateDoc(doc(db, "leads", leadId), {
+    // --- NEURAL SEARCH FALLBACK ---
+    // If phone or email is missing after site scan, try Google/OSINT search
+    if (!enrichment.phone || !enrichment.email) {
+        await logActivity(instanceId, "Neural Engine: Primary site scan missing data. Initiating Neural Search...", "ai");
+        const searchQuery = `${name} ${enrichment.city || lead.city || ''} contact phone email`;
+        const osintData = await runSearchIntelligence(searchQuery, instanceId);
+
+        // Merge OSINT findings if they provide missing data
+        if (osintData.phone && !enrichment.phone) enrichment.phone = osintData.phone;
+        if (osintData.email && !enrichment.email) enrichment.email = osintData.email;
+        if (osintData.dm_name && !enrichment.dm_name) enrichment.dm_name = osintData.dm_name;
+    }
+
+    // SMARTER INJECTION: Map AI found data to primary lead fields if they are missing
+    const updates = {
         enriched_data: enrichment,
-        automation_status: 'ENRICHED'
-    });
+        automation_status: 'ENRICHED',
+        updated_at: new Date().toISOString()
+    };
 
-    await logActivity(instanceId, `Intelligence gathered.`, "success");
+    // Inject missing primary fields from AI intelligence
+    if (!lead.dm_name && enrichment.dm_name) updates.dm_name = enrichment.dm_name;
+    if (!lead.dm_email && enrichment.email) updates.dm_email = enrichment.email;
+    if (!lead.email && enrichment.email) updates.email = enrichment.email;
+    if (!lead.phone && enrichment.phone) updates.phone = enrichment.phone;
+    if (!lead.city && enrichment.city) updates.city = enrichment.city;
+    if (!lead.state && enrichment.state) updates.state = enrichment.state;
+
+    await updateDoc(doc(db, "leads", leadId), updates);
+
+    // Raw Data Logging for transparency
+    const rawSummary = [
+        enrichment.dm_name ? `Person: ${enrichment.dm_name}` : null,
+        enrichment.email ? `Email: ${enrichment.email}` : null,
+        enrichment.phone ? `Phone: ${enrichment.phone}` : null,
+        enrichment.city ? `Loc: ${enrichment.city}` : null
+    ].filter(Boolean).join(' | ');
+
+    if (rawSummary) await logActivity(instanceId, `Neural Engine Found: ${rawSummary}`, "ai");
+
+    await logActivity(instanceId, `Intelligence Ingested and Mapped for ${name}.`, "success");
     await moveToNextGraphNode(instanceId, nodeId, nodes, edges);
 }
 
 async function runOutreachNode(instanceId, leadId, nodeId, nodes, edges) {
     const token = localStorage.getItem('gmail_token');
+    const leadSnap = await getDoc(doc(db, "leads", leadId));
+    const lead = leadSnap.data();
+    const name = lead.name || lead.business_name;
+
     if (!token) {
+        await logActivity(instanceId, "Error: Gmail not connected. Pausing workflow.", "danger");
         await updateDoc(doc(db, "workflow_instances", instanceId), { status: 'PAUSED' });
         return;
     }
 
-    const leadSnap = await getDoc(doc(db, "leads", leadId));
-    const lead = leadSnap.data();
     const enriched = lead.enriched_data || {};
     const targetEmail = lead.email || enriched.email;
 
     if (!targetEmail) {
+        await logActivity(instanceId, `No email found for ${name}. Cannot send outreach.`, "warning");
         await moveToNextGraphNode(instanceId, nodeId, nodes, edges);
         return;
     }
 
+    await logActivity(instanceId, `Generating tailored outreach for ${targetEmail}...`, "ai");
     const emailData = await generateOutreachEmail(lead, enriched);
+
     try {
+        await logActivity(instanceId, `Gmail API: Sending "${emailData.subject}"...`);
         const sentMsg = await sendGmailEmail(token, targetEmail, emailData.subject, emailData.body);
+
         if (sentMsg && sentMsg.threadId) {
+            await logActivity(instanceId, `Message delivered. Thread ID: ${sentMsg.threadId}`, "success");
             await updateDoc(doc(db, "workflow_instances", instanceId), { last_thread_id: sentMsg.threadId });
         }
         await moveToNextGraphNode(instanceId, nodeId, nodes, edges);
     } catch (e) {
+        await logActivity(instanceId, `Gmail Error: ${e.message}`, "danger");
         throw e;
     }
 }
@@ -1069,16 +1473,18 @@ async function runDecisionNode(instanceId, leadId, nodeId, nodes, edges) {
     const instanceSnap = await getDoc(doc(db, "workflow_instances", instanceId));
     const lastThreadId = instanceSnap.data().last_thread_id;
 
+    await logActivity(instanceId, "Checking Gmail for lead replies...", "ai");
+
     let hasReply = false;
     if (token && lastThreadId) {
         hasReply = await checkGmailThreadForReply(token, lastThreadId);
     }
 
     if (hasReply) {
-        await logActivity(instanceId, "Reply Detected! Branching YES.");
+        await logActivity(instanceId, "Positive Signal: Reply detected. Branching YES.", "success");
         await moveToNextGraphNode(instanceId, nodeId, nodes, edges, 'source-yes');
     } else {
-        await logActivity(instanceId, "No reply. Branching NO.");
+        await logActivity(instanceId, "No response detected. Branching NO.", "text-muted");
         await moveToNextGraphNode(instanceId, nodeId, nodes, edges, 'source-no');
     }
 }
@@ -1122,30 +1528,49 @@ async function runDecisionStep(instanceId, leadId, currentIndex) { await moveToN
 async function runBookingStep(instanceId, leadId, currentIndex) { await moveToNextStep(instanceId, currentIndex + 1); }
 
 
-async function fetchWebsiteContent(url) {
+async function fetchWebsiteContent(url, instanceId = null) {
+    if (instanceId) logActivity(instanceId, `Connecting to site: ${url}...`);
     let htmlContent = "";
     try {
+        if (instanceId) logActivity(instanceId, `Attempting Primary Proxy (allorigins)...`);
         const proxy1 = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
         const resp1 = await fetch(proxy1);
         const data1 = await resp1.json();
-        if (data1.contents) htmlContent = data1.contents;
+        if (data1.contents) {
+            htmlContent = data1.contents;
+            if (instanceId) logActivity(instanceId, `Successfully fetched ${Math.round(htmlContent.length / 1024)}KB via Primary.`, "success");
+        }
     } catch (e) { }
 
     if (!htmlContent) {
         try {
+            if (instanceId) logActivity(instanceId, `Primary failed. Retrying with Secondary Proxy...`, "warning");
             const proxy2 = `https://corsproxy.io/?${encodeURIComponent(url)}`;
             const resp2 = await fetch(proxy2);
             htmlContent = await resp2.text();
+            if (htmlContent && instanceId) logActivity(instanceId, `Successfully fetched ${Math.round(htmlContent.length / 1024)}KB via Secondary.`, "success");
         } catch (e) { }
     }
     return htmlContent;
 }
 
-async function analyzeWebsiteWithAI(url, html) {
+async function analyzeWebsiteWithAI(url, html, instanceId = null) {
     const apiKey = localStorage.getItem('openai_api_key');
-    if (!apiKey) throw new Error("OpenAI API Key missing in system settings.");
+    if (!apiKey) {
+        if (instanceId) logActivity(instanceId, "Error: OpenAI API Key missing.", "danger");
+        throw new Error("OpenAI API Key missing. Please set it in the Neural Credentials section in the Automations sidebar.");
+    }
 
-    const cleanHtml = html.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "").substring(0, 10000);
+    if (instanceId) logActivity(instanceId, "Neural Engine: Extracting key data points...", "ai");
+
+    // Robust cleaning to maximize context space while PROTECTING JSON-LD for SEO data
+    const cleanHtml = html
+        .replace(/<script\b(?![^>]*application\/ld\+json)[^>]*>([\s\S]*?)<\/script>/gim, "")
+        .replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gim, "")
+        .replace(/<svg\b[^>]*>([\s\S]*?)<\/svg>/gim, "")
+        .replace(/<!--[\s\S]*?-->/g, "") // Remove comments
+        .replace(/\s+/g, ' ') // Collapse whitespace
+        .substring(0, 20000);
 
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
@@ -1159,14 +1584,23 @@ async function analyzeWebsiteWithAI(url, html) {
             messages: [
                 {
                     role: "system",
-                    content: `Extract business intelligence from the HTML of ${url}. Focus on finding the Decision Maker and identifying specific pain points for sales outreach.
+                    content: `Extract business intelligence from the HTML of ${url}. 
+                    CRITICAL: Specifically hunt for direct contact info in headers, footers, JSON-LD, and links. 
+                    - If you see "application/ld+json", parse it carefully for phone/email/address.
+                    - Look for "tel:" or "mailto:" links.
+                    - If the page looks like a loading skeleton, use Meta Tags (Title/Description) to reconstruct the business profile.
+                    - Identify the Decision Maker (CEO/Owner) and specific Pain Points for sales.
+                    
                     Return JSON: {
-                        "dm_name": "Name of CEO/Owner/Manager if found",
-                        "role": "Their title",
-                        "email": "Specific direct email if found",
+                        "dm_name": "Full Name",
+                        "role": "Title",
+                        "email": "direct-email@domain.com",
+                        "phone": "Raw phone number found",
+                        "city": "Detected City",
+                        "state": "Detected State/Prov",
                         "usps": ["USP 1", "USP 2"],
-                        "pain_points": ["Pain point 1 (e.g., slow site, poor mobile)"],
-                        "brand_voice": "Elegant/Aggressive/Professional"
+                        "pain_points": ["Pain point 1", "Pain point 2"],
+                        "brand_voice": "Voice description"
                     }`
                 },
                 { role: "user", content: cleanHtml }
@@ -1175,7 +1609,74 @@ async function analyzeWebsiteWithAI(url, html) {
     });
 
     const json = await resp.json();
+    if (instanceId) logActivity(instanceId, "Intelligence extraction complete.", "success");
     return JSON.parse(json.choices[0].message.content);
+}
+
+/**
+ * Perform a background search and use AI to extract intelligence from results
+ */
+async function runSearchIntelligence(query, instanceId = null) {
+    try {
+        if (instanceId) logActivity(instanceId, `Initiating Neural Search for: ${query}...`);
+
+        const backendUrl = "http://localhost:5000"; // Assuming local backend
+        const resp = await fetch(`${backendUrl}/api/neural/search?q=${encodeURIComponent(query)}`);
+        const searchData = await resp.json();
+
+        if (!searchData.success || !searchData.results?.length) {
+            if (instanceId) logActivity(instanceId, "Neural Search: No significant results found.", "warning");
+            return {};
+        }
+
+        if (instanceId) logActivity(instanceId, `Neural Search found ${searchData.results.length} snippets. Analyzing...`, "ai");
+
+        // Use AI to extract info from snippets
+        const apiKey = localStorage.getItem('openai_api_key');
+        const aiResp = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: "gpt-4o",
+                response_format: { type: "json_object" },
+                messages: [
+                    {
+                        role: "system",
+                        content: `You are a high-performance OSINT Detective. 
+                        Analyze the search result snippets for a business to extract contact intelligence.
+                        LOOK FOR:
+                        - Owners/Managers/Founders (dm_name)
+                        - Emails (even if obfuscated)
+                        - Phone numbers (any format: (xxx) xxx-xxxx, xxx.xxx.xxxx, etc.)
+                        - Business addresses
+                        
+                        Return JSON: { "dm_name": "...", "email": "...", "phone": "...", "address": "..." }
+                        If data is not found, use null or "".`
+                    },
+                    { role: "user", content: `Intelligence Windows for ${query}:\n\n` + searchData.results.join("\n---\n") }
+                ]
+            })
+        });
+
+        const aiJson = await aiResp.json();
+        const info = JSON.parse(aiJson.choices[0].message.content);
+
+        if (instanceId) {
+            if (info.phone || info.email) {
+                logActivity(instanceId, `Neural Search discovered: ${info.phone || ''} ${info.email || ''}`, "success");
+            } else {
+                logActivity(instanceId, "Neural Search: No new contact details discovered.");
+            }
+        }
+
+        return info;
+    } catch (e) {
+        if (instanceId) logActivity(instanceId, "Neural Search failed: " + e.message, "danger");
+        return {};
+    }
 }
 
 async function sendGmailEmail(token, to, subject, body) {
@@ -1299,3 +1800,20 @@ async function createMeetEvent(token, attendeeEmail, title, start, end) {
 
     return await resp.json();
 }
+
+/**
+ * Terminates an active workflow instance manually from the UI.
+ */
+export async function stopWorkflowInstance(instanceId) {
+    try {
+        await logActivity(instanceId, "Neural Pipeline Terminated Manually.", "danger");
+        await updateDoc(doc(db, "workflow_instances", instanceId), {
+            status: 'CANCELLED',
+            updated_at: new Date().toISOString()
+        });
+        window.showToast?.("AI Pipeline Terminated.", "info");
+    } catch (e) {
+        console.error("Error stopping instance:", e);
+    }
+}
+window.stopWorkflowInstance = stopWorkflowInstance;

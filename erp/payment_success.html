@@ -97,8 +97,8 @@
         <div class="icon-circle">
             <span class="material-icons">check</span>
         </div>
-        <h1>Payment Successful</h1>
-        <p>Thank you! Your payment for invoice <span id="inv-num" class="invoice-badge">...</span> has been processed
+        <h1 id="success-heading">Payment Successful</h1>
+        <p id="success-desc">Thank you! Your payment for invoice <span id="inv-num" class="invoice-badge">...</span> has been processed
             securely.</p>
 
         <a href="javascript:window.close()" class="btn">Close Window</a>
@@ -107,8 +107,14 @@
     <script>
         // Get params
         const params = new URLSearchParams(window.location.search);
-        const invId = params.get('number') || params.get('invoice_id') || 'Unknown';
-        document.getElementById('inv-num').innerText = invId;
+        const type = params.get('type');
+        if (type === 'subscription') {
+            document.getElementById('success-heading').innerText = 'Subscription Activated!';
+            document.getElementById('success-desc').innerHTML = 'Thank you! Your recurring subscription is now active. You will receive an email confirmation and receipt shortly.';
+        } else {
+            const invId = params.get('number') || params.get('invoice_id') || 'Unknown';
+            document.getElementById('inv-num').innerText = invId;
+        }
     </script>
 </body>
 

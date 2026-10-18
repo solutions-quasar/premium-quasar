@@ -45,8 +45,9 @@
         <section class="hero-service hero-service-bg"
             style="background-image: url('hero_bg_ai.png'); padding-top: var(--header-height); min-height: 80vh; display: flex; align-items: center; justify-content: center; text-align: center;">
             <div class="container">
-                <span class="uppercase text-gold" data-i18n="ai.hero.tag">Artificial Intelligence</span>
-                <h1 style="font-size: var(--h1); line-height: 1.1; margin-bottom: 1.5rem; background: linear-gradient(135deg, #fff 20%, var(--gold-light) 90%); background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent;"
+                <span class="uppercase text-gold" data-i18n="ai.hero.tag"
+                    style="display: block; margin-bottom: 0.5rem;">Artificial Intelligence</span>
+                <h1 style="font-size: var(--h1); line-height: 1.2; margin-bottom: 1.5rem; background: linear-gradient(135deg, #fff 20%, var(--gold-light) 90%); background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent; padding-bottom: 0.15em; display: inline-block;"
                     data-i18n="ai.hero.h1">
                     Future-proof your firm with practical AI.</h1>
                 <p style="font-size: var(--body-lg); color: var(--text-muted); max-width: 60ch; margin: 0 auto 2.5rem;"
@@ -176,44 +177,11 @@
                             need. We’ll reply with next
                             steps.</p>
 
-                        <form action="https://formspree.io/f/xbjnqyj" method="POST">
-                            <!-- Placeholder Formspree, should be updated by user or left as generic demo -->
-                            <div class="form-group">
-                                <label class="form-label" data-i18n="contact.form.name">Name</label>
-                                <input type="text" name="name" class="form-input" required placeholder="John Doe"
-                                    data-i18n-placeholder="contact.form.namePlaceholder">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" data-i18n="contact.form.company">Firm / Company</label>
-                                <input type="text" name="company" class="form-input" placeholder="Miller Law Group"
-                                    data-i18n-placeholder="contact.form.companyPlaceholder">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" data-i18n="contact.form.contact">Phone or Email</label>
-                                <input type="text" name="contact_method" class="form-input" required
-                                    placeholder="john@example.com"
-                                    data-i18n-placeholder="contact.form.contactPlaceholder">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" data-i18n="contact.form.interest">Interest</label>
-                                <select name="interest" class="form-select">
-                                    <option data-i18n="contact.form.interestOptions.website">New Website</option>
-                                    <option data-i18n="contact.form.interestOptions.app">Landing Page</option>
-                                    <option data-i18n="contact.form.interestOptions.ai">SEO / Optimization</option>
-                                    <option data-i18n="contact.form.interestOptions.consult">Other</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" data-i18n="contact.form.message">Message</label>
-                                <textarea name="message" class="form-textarea" placeholder="How can we help?"
-                                    data-i18n-placeholder="contact.form.messagePlaceholder"></textarea>
-                            </div>
-                            <!-- Honeypot -->
-                            <input type="text" name="_gotcha" style="display:none">
-
-                            <button type="submit" class="btn-primary" style="width:100%"
-                                data-i18n="contact.form.submit">Send Request</button>
-                        </form>
+                        <div style="margin-top: 2rem;">
+                            <a href="mailto:info@solutionsquasar.ca" class="btn-primary" style="display:inline-block; text-align:center; width:100%; text-decoration:none; padding: 15px 0; font-size: 1.1rem;">
+                                Envoyer un courriel à info@solutionsquasar.ca
+                            </a>
+                        </div>
                     </div>
 
                     <!-- Info -->
@@ -259,6 +227,8 @@
         </div>
     </div>
 
+    <!-- LeadConnector Chat Widget -->
+    <script src="https://widgets.leadconnectorhq.com/loader.js" data-resources-url="https://widgets.leadconnectorhq.com/chat-widget/loader.js" data-widget-id="6ad00592a51ffe806a724c3b" data-source="WEB_USER"></script>
 </body>
 
 </html>

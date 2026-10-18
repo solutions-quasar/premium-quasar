@@ -6,8 +6,8 @@ const app = require("./server");
  * This wraps the Express app for Firebase Cloud Functions
  */
 exports.api = onRequest({
-    memory: "256MiB",
-    timeoutSeconds: 60,
+    memory: "512MiB",
+    timeoutSeconds: 120,
     region: "us-central1", // Or your preferred region
     cors: true
 }, app);

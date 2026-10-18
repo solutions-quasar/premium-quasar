@@ -2,6 +2,44 @@ import { db } from '../firebase-config.js';
 import { collection, query, getDocs, doc, setDoc, deleteDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { t } from '../services/translationService.js';
 
+const PREMIUM_TEMPLATE = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        @media screen and (max-width: 600px) {
+            .container { width: 100% !important; border-radius: 0 !important; }
+            .content { padding: 20px !important; }
+        }
+    </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #121212; font-family: -apple-system, system-ui, sans-serif;">
+  <center style="width: 100%; padding-top: 40px; padding-bottom: 40px;">
+    <table class="container" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; margin: 0 auto; background-color: #1C1C1C; border: 1px solid #2D2D2D; border-top: 4px solid #D4A343; border-radius: 12px; color: #E0E0E0;">
+        <tr>
+            <td align="center" style="padding: 30px 40px 20px 40px;">
+                <div style="background: rgba(212, 163, 67, 0.1); width: 44px; height: 44px; border-radius: 10px; display:inline-block; text-align: center; line-height: 44px; color: #D4A343; font-size: 22px;">✦</div>
+                <div style="font-size: 13px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: #D4A343; margin-top: 8px;"> Solutions Quasar Inc. </div>
+            </td>
+        </tr>
+        <tr>
+            <td class="content" style="padding: 30px 40px 40px 40px;">
+                <div style="line-height: 1.6; color: #E0E0E0;">
+                    {{message}}
+                </div>
+            </td>
+        </tr>
+        <tr>
+            <td align="center" style="padding: 20px; border-top: 1px solid #2D2D2D; background: #181818; border-radius: 0 0 12px 12px; font-size: 11px; color: #666;">
+                © 2026 Solutions Quasar Inc. All rights reserved.
+            </td>
+        </tr>
+    </table>
+  </center>
+</body>
+</html>`;
+
 export async function initEmails() {
     const host = document.getElementById('view-emails');
     if (!host) return;
@@ -134,43 +172,91 @@ function extractPlaceholders(content) {
 window.openEmailModal = (id = null, data = null) => {
     const host = document.getElementById('email-modal-container');
     host.innerHTML = `
-        <div class="crm-modal-overlay" onclick="document.getElementById('email-modal-container').innerHTML=''" style="background: rgba(0,0,0,0.85); backdrop-filter: blur(5px);">
-            <div class="crm-modal-content" style="max-width: 700px; background: var(--bg-card); border: 1px solid var(--border); box-shadow: 0 20px 50px rgba(0,0,0,0.5);" onclick="event.stopPropagation()">
-                <div class="crm-modal-header" style="border-bottom: 1px solid var(--border); padding: 1.5rem 2rem;">
+        <div class="crm-modal-overlay" onclick="document.getElementById('email-modal-container').innerHTML=''" style="background: rgba(0,0,0,0.85); backdrop-filter: blur(5px); display:flex; align-items:center; justify-content:center; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999;">
+            <div class="crm-modal-content" style="width: 1100px; max-width: 95vw; height: 85vh; background: var(--bg-card); border: 1px solid var(--border); box-shadow: 0 20px 50px rgba(0,0,0,0.5); border-radius:12px; display:flex; flex-direction:column; overflow:hidden;" onclick="event.stopPropagation()">
+                <div class="crm-modal-header" style="border-bottom: 1px solid var(--border); padding: 1.5rem 2rem; display:flex; justify-content:space-between; align-items:center;">
                     <div style="display:flex; align-items:center; gap:12px;">
                         <span class="material-icons text-gold">email</span>
                         <div class="text-h" style="font-size:1.2rem;">${id ? t('emails_edit') : t('emails_new')}</div>
                     </div>
                     <button class="icon-btn" onclick="document.getElementById('email-modal-container').innerHTML=''"><span class="material-icons">close</span></button>
                 </div>
-                <div class="crm-modal-body" style="padding: 2rem; display:flex; flex-direction:column; gap:20px;">
-                    <div class="form-group">
-                        <label class="form-label text-xs uppercase tracking-wider text-muted">${t('emails_template_id')}</label>
-                        <input type="text" id="em-id" class="form-input" placeholder="e.g. quote_followup" value="${id || ''}" ${id ? 'disabled' : ''} style="background:var(--bg-dark); border-color:var(--border);">
-                        <div class="text-xs text-muted mt-1">This ID is used by the AI to identify the template.</div>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label text-xs uppercase tracking-wider text-muted">${t('emails_subject')}</label>
-                        <input type="text" id="em-subject" class="form-input" placeholder="Subject with {{placeholders}}" value="${data?.subject || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label text-xs uppercase tracking-wider text-muted">${t('emails_content')}</label>
-                        <textarea id="em-content" class="form-input" style="height: 250px; font-family: 'Fira Code', 'Courier New', monospace; line-height:1.5; background:var(--bg-dark);" placeholder="Hi {{name}}, ...">${data?.content || data?.body || ''}</textarea>
-                    </div>
+                
+                <!-- Main Layout Body -->
+                <div class="crm-modal-body" style="padding: 1.5rem 2rem; display:flex; gap:25px; flex: 1; overflow:hidden;">
                     
-                    <div class="bg-darker p-3 rounded" style="background: rgba(255,255,255,0.03); border:1px solid var(--border);">
-                        <div class="text-xs text-gold font-bold mb-1"><span class="material-icons" style="font-size:12px; vertical-align:middle;">help_outline</span> Tips</div>
-                        <div class="text-xs text-muted">${t('emails_placeholders_hint')}</div>
+                    <!-- LEFT COLUMN: EDITOR -->
+                    <div style="flex: 1; display:flex; flex-direction:column; gap:15px; overflow-y:auto; padding-right:10px;">
+                        <div class="form-group">
+                            <label class="form-label text-xs uppercase tracking-wider text-muted">${t('emails_template_id')}</label>
+                            <input type="text" id="em-id" class="form-input" placeholder="e.g. quote_followup" value="${id || ''}" ${id ? 'disabled' : ''} style="background:var(--bg-dark); border-color:var(--border);">
+                            <div class="text-xs text-muted mt-1">This ID is used by the AI to identify the template.</div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label text-xs uppercase tracking-wider text-muted">${t('emails_subject')}</label>
+                            <input type="text" id="em-subject" class="form-input" placeholder="Subject with {{placeholders}}" value="${data?.subject || ''}">
+                        </div>
+                        <div class="form-group" style="flex:1; display:flex; flex-direction:column;">
+                            <label class="form-label text-xs uppercase tracking-wider text-muted" style="margin-bottom:4px;">${t('emails_content')}</label>
+                            <textarea id="em-content" class="form-input" style="flex:1; height: 100%; font-family: 'Fira Code', 'Courier New', monospace; line-height:1.5; background:var(--bg-dark); resize:none;" placeholder="Hi {{name}}, ...">${data?.content || data?.body || ''}</textarea>
+                        </div>
+                        
+                        <div class="bg-darker p-3 rounded" style="background: rgba(255,255,255,0.03); border:1px solid var(--border);">
+                            <div class="text-xs text-gold font-bold mb-1"><span class="material-icons" style="font-size:12px; vertical-align:middle;">help_outline</span> Tips</div>
+                            <div class="text-xs text-muted mb-1">Content is **automatically wrapped** in the Premium Template frame.</div>
+                            <div class="text-xs text-muted"><strong>Placeholders:</strong> <code style="color:#D4A343;">{{name}}</code>, <code style="color:#D4A343;">{{booking_date}}</code>, <code style="color:#D4A343;">{{booking_time}}</code>, <code style="color:#D4A343;">{{subject}}</code></div>
+                        </div>
+
+                        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:5px;">
+                            <button class="btn btn-secondary" onclick="document.getElementById('email-modal-container').innerHTML=''">${t('btn_cancel')}</button>
+                            <button class="btn btn-primary" style="padding-left:30px; padding-right:30px;" onclick="saveTemplate()">${t('btn_save')}</button>
+                        </div>
                     </div>
 
-                    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:10px;">
-                        <button class="btn btn-secondary" onclick="document.getElementById('email-modal-container').innerHTML=''">${t('btn_cancel')}</button>
-                        <button class="btn btn-primary" style="padding-left:30px; padding-right:30px;" onclick="saveTemplate()">${t('btn_save')}</button>
+                    <!-- RIGHT COLUMN: PREVIEW -->
+                    <div style="flex: 1.2; display:flex; flex-direction:column; background:#121212; border-radius:12px; border:1px solid var(--border); overflow:hidden;">
+                        <div style="padding: 8px 15px; background: rgba(255,255,255,0.02); border-bottom: 1px solid var(--border); display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+                            <span class="font-bold text-muted uppercase tracking-wider">Live Preview</span>
+                            <span class="badge-status status-sent" style="font-size:10px;">Rendering Enabled</span>
+                        </div>
+                        <iframe id="email-preview-frame" style="width:100%; height:100%; border:none; background:#121212;"></iframe>
                     </div>
+
                 </div>
             </div>
         </div>
     `;
+
+
+
+    // Live Preview Logic
+    const textarea = document.getElementById('em-content');
+    const iframe = document.getElementById('email-preview-frame');
+    const subjectInput = document.getElementById('em-subject');
+
+    function updatePreview() {
+        if (!iframe || !textarea) return;
+        let content = textarea.value || '';
+        const subject = subjectInput ? subjectInput.value : 'No Subject';
+
+        // Wrap automatically inside PREMIUM_TEMPLATE
+        let rendered = PREMIUM_TEMPLATE
+            .replace('{{message}}', content)
+            .replace(/\{\{subject\}\}/g, subject)
+            .replace(/\{\{name\}\}/g, '<span style="color:#D4A343; font-weight:bold;">John Doe</span>')
+            .replace(/\{\{booking_date\}\}/g, new Date().toLocaleDateString())
+            .replace(/\{\{booking_time\}\}/g, '14:30 PM')
+            .replace(/\{\{action_url\}\}/g, '#');
+
+        iframe.srcdoc = rendered;
+    }
+
+
+    if (textarea) textarea.addEventListener('input', updatePreview);
+    if (subjectInput) subjectInput.addEventListener('input', updatePreview);
+
+    // Trigger initial preview opening load
+    setTimeout(updatePreview, 50);
 };
 
 window.saveTemplate = async () => {

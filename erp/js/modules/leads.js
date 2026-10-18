@@ -1,6 +1,7 @@
 import { db, auth } from '../firebase-config.js';
-import { collection, query, where, getDocs, getDoc, updateDoc, doc, addDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { triggerWorkflowForLead } from './automations.js';
+import { collection, query, where, getDocs, getDoc, updateDoc, doc, addDoc, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { triggerLeadSequenceFromUI, openSequencesConfigModal } from './sequences.js';
+import { auditSingleLeadNow } from './audit.js';
 import { getTeamDropdownOptions } from './team.js';
 import { LeadFilterService } from '../services/LeadFilterService.js';
 import { t } from '../services/translationService.js';
@@ -10,27 +11,48 @@ const API_BASE = window.location.hostname.includes('localhost') || window.locati
     ? 'http://localhost:5000'
     : '';
 
+// --- CUSTOM SLEEK SVG ICONS (Ultra-Clean, Lightweight, 24x24) ---
+export const SVG_ICONS = {
+    sms: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
+    gmail: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>`,
+    phone: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`,
+    sparkles: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>`,
+    search: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>`,
+    mapPin: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`,
+    globe: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>`,
+    user: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
+    star: `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
+    plus: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
+    grid: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>`,
+    list: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>`,
+    settings: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`,
+    target: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>`,
+    external: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`,
+    close: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`,
+    copy: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`,
+    send: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`,
+    check: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
+    bolt: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`
+};
+
 // Monitor hash changes to handle browser "Back" and "Forward" buttons
 window.addEventListener('hashchange', () => {
     const hash = window.location.hash;
 
     // 1. Clean route (Close Overlay)
-    // Close Overlay if not in detail mode
     if (!hash.startsWith('#leads?id=')) {
         const overlay = document.getElementById('lead-detail-overlay');
         if (overlay) overlay.innerHTML = '';
+
         if (hash === '#leads') return;
     }
 
     // 2. ID route (Open Overlay)
-    // This supports "Forward" button navigation
     if (hash.startsWith('#leads?id=')) {
         const id = hash.split('id=')[1];
         if (window.allLeadsCache) {
             const lead = window.allLeadsCache.find(l => l.id === id);
             if (lead) {
-                // Determine if we are already seeing this lead to prevent redraw flicker?
-                // For now, simple redraw is safer.
                 openLeadDetail(lead);
             }
         }
@@ -47,74 +69,346 @@ const escapeHtml = (text) => {
         .replace(/'/g, "&#039;");
 };
 
+// Helper: Format status badge styling & label
+function getStatusConfig(status) {
+    const s = (status || 'NEW').toUpperCase();
+    switch (s) {
+        case 'NEW':
+            return { label: 'Nouveau', className: 'lead-status-new', color: 'var(--gold)' };
+        case 'AUDITED':
+            return { label: 'Audité IA', className: 'lead-status-audited', color: '#C084FC' };
+        case 'APPROVED':
+            return { label: 'Approuvé', className: 'lead-status-approved', color: 'var(--success)' };
+        case 'CONTACTED':
+            return { label: 'Contacté', className: 'lead-status-contacted', color: '#60A5FA' };
+        case 'INTERESTED':
+            return { label: 'Intéressé', className: 'lead-status-interested', color: '#FB923C' };
+        case 'MEETING_SCHEDULED':
+            return { label: 'RDV Fixé', className: 'lead-status-meeting', color: '#C084FC' };
+        case 'CLIENT':
+            return { label: 'Client', className: 'lead-status-client', color: '#22C55E' };
+        case 'REJECTED':
+            return { label: 'Archivé', className: 'lead-status-rejected', color: '#F87171' };
+        default:
+            return { label: s, className: 'lead-status-new', color: 'var(--gold)' };
+    }
+}
+
+// Helper: Format Region Flag & Label
+function formatRegionBadge(data) {
+    const state = (data.state || '').trim().toUpperCase();
+    const city = (data.city || '').trim();
+
+    const canadianProvs = ['QC', 'NB', 'ON', 'BC', 'AB', 'MB', 'SK', 'NS', 'PE', 'NL'];
+    const usStates = ['FL', 'TX', 'CA', 'NY', 'NC', 'GA', 'PA', 'IL', 'OH', 'MI', 'AZ'];
+
+    let flag = '📍';
+    if (canadianProvs.includes(state)) flag = '🇨🇦';
+    else if (usStates.includes(state)) flag = '🇺🇸';
+
+    const locationText = [city, state].filter(Boolean).join(', ') || 'Localisation N/A';
+    return `<span class="lead-pill-subtle" title="${escapeHtml(locationText)}">${flag} ${escapeHtml(state || city || 'Zone')}</span>`;
+}
+
+// Helper: Format Category Badge
+function formatCategoryBadge(data) {
+    const cat = data.leadCategory || data.category;
+    const hasWebsite = Boolean(data.website && data.website.trim().length > 3);
+
+    if (cat === 'directory_only' || data.has_directory_only) {
+        const platName = escapeHtml(data.directory_platform || 'Annuaire');
+        return `<span class="lead-pill-subtle" style="background:rgba(239,68,68,0.12); border-color:rgba(239,68,68,0.3); color:#F87171;" title="Aucun site officiel dédié (hébergé sur la plateforme ${platName})">🚫 Pas de site dédié (${platName})</span>`;
+    }
+    if (cat === 'missing_gmb_website' || data.google_business_missing_website) {
+        return `<span class="lead-pill-subtle" style="background:rgba(245,158,11,0.12); border-color:rgba(245,158,11,0.3); color:#FBBF24;" title="Site web existant mais absent de la fiche Google Business">📍 Site non relié à Google</span>`;
+    }
+    if (cat === 'no_website' || !hasWebsite) {
+        return `<span class="lead-pill-subtle lead-pill-no-website" title="Aucun site officiel détecté sur Google">🚫 Sans site web</span>`;
+    }
+    if (cat === 'outdated_website') {
+        return `<span class="lead-pill-subtle lead-pill-outdated" title="Site lent ou non optimisé pour mobile">⚡ Refonte requise</span>`;
+    }
+    if (data.google_rating >= 4.5 && (data.google_reviews_count || 0) >= 10) {
+        return `<span class="lead-pill-subtle" style="background:rgba(223,165,58,0.1); border-color:rgba(223,165,58,0.25); color:var(--gold);" title="Forte réputation locale">⭐ Top réputation</span>`;
+    }
+    return `<span class="lead-pill-subtle">${escapeHtml(data.category || 'Commerce local')}</span>`;
+}
+
+// Helper: Format Category Human-Readable Label
+function formatCategoryLabel(cat) {
+    switch (cat) {
+        case 'directory_only': return '🚫 Pas de site web dédié';
+        case 'missing_gmb_website': return '📍 Site non relié à Google Maps';
+        case 'no_website': return '🚫 Sans Site Web';
+        case 'outdated_website': return '⏳ Site Obsolète / Refonte';
+        case 'modern_no_ai': return '🤖 Moderne sans IA';
+        case 'social_only': return '📱 Réseaux Sociaux Seuls';
+        case 'franchise': return '🏢 Franchise / Chaîne Exclue';
+        default: return cat || 'Non qualifié';
+    }
+}
+
+// Helper: Format AI Score Badge
+function formatScoreBadge(data) {
+    const auditScore = data.lastAudit?.score;
+    const confScore = data.confidence_score;
+    const score = auditScore !== undefined ? auditScore : confScore;
+
+    if (score !== undefined && score !== null) {
+        return `<span class="lead-pill-subtle lead-pill-score" title="Score de qualification IA : ${score}%">${SVG_ICONS.sparkles} ${score}% IA</span>`;
+    }
+    return '';
+}
+
+// Helper: Format Sequence Badge
+function formatSequenceBadge(data) {
+    const seqId = data.activeSequenceId || data.sequence_id;
+    const seqStatus = data.sequenceStatus || data.sms_sequence_status;
+    const step = data.smsSequenceStep || data.sms_sequence_step || 1;
+
+    const seqNames = {
+        'seq_directory_only': 'Annuaire Tierce',
+        'seq_missing_gmb_website': 'Maps sans Site',
+        'seq_no_website': 'Sans Site',
+        'seq_outdated_website': 'Refonte Web',
+        'seq_modern_no_ai': 'Agent IA 24/7'
+    };
+
+    if (seqStatus === 'ACTIVE' || seqId) {
+        const shortName = seqNames[seqId] || 'Séquence';
+        const modeLabel = data.smsStatus ? ` (${data.smsStatus})` : '';
+        return `<span class="lead-pill-subtle" style="background:rgba(223,165,58,0.12); border-color:rgba(223,165,58,0.3); color:var(--gold);" title="Séquence SMS active : ${shortName} (Étape ${step}/4${modeLabel})">${SVG_ICONS.sms} Seq: ${shortName} (Étape ${step})</span>`;
+    }
+    if (seqStatus === 'STOPPED_REPLIED') {
+        return `<span class="lead-pill-subtle" style="background:rgba(56,189,248,0.1); border-color:rgba(56,189,248,0.3); color:#38BDF8;" title="Le prospect a répondu">${SVG_ICONS.sms} ✋ Répondu</span>`;
+    }
+    if (seqStatus === 'BLOCKED_LANDLINE') {
+        return `<span class="lead-pill-subtle" style="background:rgba(148,163,184,0.1); border-color:rgba(148,163,184,0.25); color:#94A3B8;" title="Ligne fixe : SMS bloqué pour protéger votre réputation">${SVG_ICONS.phone} Fixe (Pas de SMS)</span>`;
+    }
+    if (data.status === 'CONTACTED') {
+        return `<span class="lead-pill-subtle" style="background:rgba(59,130,246,0.1); border-color:rgba(59,130,246,0.2); color:#60A5FA;">${SVG_ICONS.gmail} Contacté</span>`;
+    }
+    return '';
+}
+
+// Helper: Format friendly schedule timestamp (e.g. "Lun. 19 oct. à 09h36")
+function formatLeadScheduleTime(date, timezone) {
+    if (!date) return '';
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return '';
+
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const isTomorrow = d.toDateString() === tomorrow.toDateString();
+
+    const timeOptions = { hour: '2-digit', minute: '2-digit', hour12: false };
+    if (timezone) timeOptions.timeZone = timezone;
+    const timeStr = d.toLocaleTimeString('fr-CA', timeOptions).replace(':', 'h');
+
+    if (isToday) return `Aujourd'hui à ${timeStr}`;
+    if (isTomorrow) return `Demain à ${timeStr}`;
+
+    const dateOptions = { weekday: 'short', day: 'numeric', month: 'short' };
+    if (timezone) dateOptions.timeZone = timezone;
+    const dayStr = d.toLocaleDateString('fr-CA', dateOptions);
+
+    return `${dayStr} à ${timeStr}`;
+}
+
+// Helper: Format Next Send Badge for Leads Table Row
+function formatNextSendBadge(data) {
+    // 1. Lead has an active next send timestamp
+    if (data.nextStepDue && (data.sequenceStatus === 'ACTIVE' || data.activeSequenceId)) {
+        const d = new Date(data.nextStepDue);
+        if (!isNaN(d.getTime())) {
+            const timeStr = formatLeadScheduleTime(d, data.timezone);
+            const stepNum = data.nextStepNumber || data.smsSequenceStep || 1;
+            const isSimulated = data.smsStatus === 'Simulated' || data.dryRun !== false;
+
+            return `
+            <div class="lead-schedule-pill" style="display:inline-flex; align-items:center; gap:4px; font-size:0.71rem; font-weight:600; color:#38BDF8; background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.25); border-radius:5px; padding:2px 7px; margin-top:3px; white-space:nowrap;" title="Étape ${stepNum} programmée dans le fuseau du prospect (${data.timezone || 'Local'}) : ${d.toLocaleString()}">
+                <span style="font-size:10px;">📅</span>
+                <span>Étape ${stepNum} : <strong>${timeStr}</strong></span>
+                ${isSimulated ? `<span style="font-size:0.62rem; padding:0 3px; border-radius:3px; background:rgba(242,192,55,0.18); color:#F2C037; font-weight:700;">SIMU</span>` : ''}
+            </div>
+            `;
+        }
+    }
+
+    // 2. Lead is APPROVED with verified mobile phone, ready for sequence trigger
+    if (data.status === 'APPROVED' && data.phone_type === 'mobile') {
+        const isMasterPaused = window.isMasterAutoSmsEnabled === false;
+        return `
+        <div class="lead-schedule-pill" style="display:inline-flex; align-items:center; gap:4px; font-size:0.7rem; color:${isMasterPaused ? '#F59E0B' : '#4ADE80'}; background:${isMasterPaused ? 'rgba(245,158,11,0.08)' : 'rgba(34,197,94,0.08)'}; border:1px solid ${isMasterPaused ? 'rgba(245,158,11,0.22)' : 'rgba(34,197,94,0.22)'}; border-radius:5px; padding:2px 7px; margin-top:3px; white-space:nowrap;" title="${isMasterPaused ? 'Envois automatiques suspendus (Switch SMS en pause)' : 'Mobile qualifié, prêt pour envoi lundi matin'}">
+            <span>${isMasterPaused ? '⏸️' : '⚡'}</span>
+            <span>${isMasterPaused ? 'SMS Auto en pause' : 'Prêt pour Lundi 09h36'}</span>
+        </div>
+        `;
+    }
+
+    return '';
+}
+
+// Helper: Format Phone Line Type Badge (Mobile vs Fixe / Landline)
+function formatPhoneBadge(data) {
+    if (!data.phone && !data.phone_number) {
+        return `<span class="lead-pill-subtle" style="opacity:0.4; font-size:0.73rem;" title="Aucun numéro de téléphone">🚫 Sans tél</span>`;
+    }
+    const type = data.phone_type;
+    const carrier = escapeHtml(data.carrier_name || data.phone_carrier || '');
+    if (type === 'mobile') {
+        return `<span class="lead-pill-subtle" style="background:rgba(34,197,94,0.12); border-color:rgba(34,197,94,0.25); color:#4ADE80; font-size:0.75rem;" title="Numéro Cellulaire / Mobile certifié (${carrier || 'Opérateur Mobile'})">📱 Mobile</span>`;
+    }
+    if (type === 'landline') {
+        return `<span class="lead-pill-subtle" style="background:rgba(148,163,184,0.12); border-color:rgba(148,163,184,0.25); color:#94A3B8; font-size:0.75rem;" title="Ligne Fixe / Filaire (${carrier || 'Ligne Fixe'}). Les SMS ne sont pas supportés.">☎️ Fixe</span>`;
+    }
+    if (type === 'voip') {
+        return `<span class="lead-pill-subtle" style="background:rgba(59,130,246,0.12); border-color:rgba(59,130,246,0.25); color:#60A5FA; font-size:0.75rem;" title="Ligne VoIP / Virtuelle (${carrier || 'VoIP'})">🌐 VoIP</span>`;
+    }
+    return `<span class="lead-pill-subtle" style="background:rgba(245,158,11,0.1); border-color:rgba(245,158,11,0.25); color:#FBBF24; font-size:0.73rem;" title="Numéro non qualifié — Cliquez sur le lead pour vérifier">❓ Non vérifié</span>`;
+}
+
 // Init Leads Module
 export async function initLeads() {
-    console.log('Initializing Leads Module...');
+    console.log('Initializing Clean Leads Pipeline Module...');
     const container = document.getElementById('view-leads');
 
     container.innerHTML = `
-        <div class="top-actions" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-            <div style="display:flex; align-items:center; gap:15px;">
-                <div class="text-h text-gold">${t('leads_title')}</div>
-                <input type="text" id="lead-search-input" class="form-input" placeholder="${t('leads_search_placeholder')}" style="width:250px; padding:6px 12px; font-size:0.9rem;" onkeyup="handleLeadSearch(this.value)">
-            </div>
-            <div style="display:flex; gap:10px; align-items:center;">
-                <button class="btn btn-primary" onclick="openNewLeadModal()" style="display:flex; align-items:center; gap:5px;">
-                    <span class="material-icons">add</span> ${t('leads_new_lead')}
-                </button>
-                <!-- View Toggles -->
-                <div class="view-toggle">
-                    <div class="view-toggle-btn active" id="btn-view-grid" onclick="setViewMode('grid')"><span class="material-icons" style="font-size:1.2rem;">grid_view</span></div>
-                    <div class="view-toggle-btn" id="btn-view-list" onclick="setViewMode('list')"><span class="material-icons" style="font-size:1.2rem;">view_list</span></div>
+        <!-- Top Actions Bar (Sleek & Airy) -->
+        <div class="top-actions" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem; flex-wrap:wrap; gap:12px;">
+            <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <div class="text-h text-gold" style="font-size:1.3rem; margin:0; letter-spacing:-0.02em;">Pipeline Leads</div>
+                    <span id="leads-total-counter" class="badge" style="background:rgba(223,165,58,0.12); color:var(--gold); border:1px solid rgba(223,165,58,0.25); font-size:0.75rem; padding:2px 8px; border-radius:12px;">...</span>
                 </div>
-                <button class="btn btn-secondary" onclick="openImportModal()" style="display:flex; align-items:center; gap:5px;">
-                    <span class="material-icons" style="font-size:1.1rem;">upload_file</span> ${t('leads_import_csv')}
+                
+                <!-- Modern Search Bar with SVG -->
+                <div style="position:relative; width:260px;">
+                    <span style="position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--text-muted); pointer-events:none; display:flex;">
+                        ${SVG_ICONS.search}
+                    </span>
+                    <input type="text" id="lead-search-input" class="form-input" placeholder="Rechercher entreprise, ville..." style="padding-left:34px; padding-right:12px; height:36px; font-size:0.85rem; border-radius:8px; border:1px solid rgba(255,255,255,0.08); background:#14171D;" onkeyup="handleLeadSearch(this.value)">
+                </div>
+            </div>
+
+            <!-- Right Controls -->
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <!-- View Toggles -->
+                <div class="view-toggle" style="background:#14171D; border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:2px; display:flex;">
+                    <div class="view-toggle-btn ${currentViewMode === 'grid' ? 'active' : ''}" id="btn-view-grid" onclick="setViewMode('grid')" title="Vue Grille" style="padding:4px 8px; border-radius:6px; cursor:pointer;">
+                        ${SVG_ICONS.grid}
+                    </div>
+                    <div class="view-toggle-btn ${currentViewMode === 'list' ? 'active' : ''}" id="btn-view-list" onclick="setViewMode('list')" title="Vue Liste" style="padding:4px 8px; border-radius:6px; cursor:pointer;">
+                        ${SVG_ICONS.list}
+                    </div>
+                </div>
+
+                <!-- Master Toggle: Auto SMS Outreach -->
+                <button id="btn-master-auto-sms" class="btn btn-sm auto-sms-toggle-btn" onclick="window.toggleMasterAutoSms()" style="display:flex; align-items:center; gap:6px; height:36px; padding:0 12px; font-size:0.8rem; font-weight:600; border-radius:8px; transition:all 0.2s;" title="Activer ou suspendre les envois automatiques de séquences SMS">
+                    <span class="status-dot" style="width:8px; height:8px; border-radius:50%; background:#22C55E; display:inline-block; box-shadow:0 0 8px #22C55E;"></span>
+                    <span id="master-auto-sms-label">SMS Auto : ACTIF</span>
                 </button>
-                <input type="file" id="csv-file-input" style="display:none;" accept=".csv" onchange="handleCSVImport(this)">
-                <button class="btn" onclick="window.location.hash='#leadhunter'">${t('leads_go_to_hunter')}</button>
+
+                <button class="btn btn-primary" onclick="openNewLeadModal()" style="display:flex; align-items:center; gap:6px; height:36px; padding:0 14px; font-size:0.82rem; font-weight:600;">
+                    ${SVG_ICONS.plus} <span>Nouveau Lead</span>
+                </button>
+                
+                <button class="btn btn-secondary" onclick="window.openSequencesConfigModal()" style="display:flex; align-items:center; gap:6px; height:36px; padding:0 12px; font-size:0.82rem;" title="Configurer le prompt IA, les séquences SMS et les templates d'accroche">
+                    <span style="color:var(--gold); display:flex;">${SVG_ICONS.settings}</span> <span>Séquences & IA</span>
+                </button>
+
+                <button class="btn btn-outline-gold" onclick="window.location.hash='#leadhunter'" style="display:flex; align-items:center; gap:6px; height:36px; padding:0 14px; font-size:0.82rem; font-weight:600;">
+                    ${SVG_ICONS.target} <span>Lead Hunter</span>
+                </button>
             </div>
         </div>
 
-        <!-- Smart Filter Bar -->
-        <div class="smart-filter-bar" style="margin-bottom:1rem;">
-            <select id="smart-filter-industry" onchange="applySmartFilters()">
-                <option value="ALL">${t('leads_all_industries')}</option>
-            </select>
-            <select id="smart-filter-region" onchange="applySmartFilters()">
-                <option value="ALL">${t('leads_all_regions')}</option>
-            </select>
-            <select id="smart-filter-pain" onchange="applySmartFilters()">
-                <option value="ALL">${t('leads_all_pain_points')}</option>
-            </select>
-            <div class="smart-filter-stats" id="smart-filter-count">
-                ${t('leads_loading_filters')}
+        <!-- Status Filter Pills (Clean, Horizontal Scroll, Highly Readable with Count Badges) -->
+        <div style="display:flex; gap:8px; margin-bottom:1.25rem; overflow-x:auto; padding-bottom:6px; -webkit-overflow-scrolling:touch;">
+            <button class="btn btn-sm active-filter" data-filter="ALL" style="border-radius:20px; padding:5px 12px; font-size:0.8rem; display:inline-flex; align-items:center;">
+                <span>Tous</span>
+                <span class="lead-filter-badge" id="count-filter-ALL">0</span>
+            </button>
+            <button class="btn btn-sm" data-filter="NEW" style="border-radius:20px; padding:5px 12px; font-size:0.8rem; display:inline-flex; align-items:center;">
+                <span>Nouveaux</span>
+                <span class="lead-filter-badge" id="count-filter-NEW">0</span>
+            </button>
+            <button class="btn btn-sm" data-filter="AUDITED" style="border-radius:20px; padding:5px 12px; font-size:0.8rem; display:inline-flex; align-items:center;">
+                <span>Audit IA</span>
+                <span class="lead-filter-badge" id="count-filter-AUDITED">0</span>
+            </button>
+            <button class="btn btn-sm" data-filter="APPROVED" style="border-radius:20px; padding:5px 12px; font-size:0.8rem; display:inline-flex; align-items:center;">
+                <span>Approuvés</span>
+                <span class="lead-filter-badge" id="count-filter-APPROVED">0</span>
+            </button>
+            <button class="btn btn-sm" data-filter="CONTACTED" style="border-radius:20px; padding:5px 12px; font-size:0.8rem; display:inline-flex; align-items:center;">
+                <span>Contactés</span>
+                <span class="lead-filter-badge" id="count-filter-CONTACTED">0</span>
+            </button>
+            <button class="btn btn-sm" data-filter="INTERESTED" style="border-radius:20px; padding:5px 12px; font-size:0.8rem; display:inline-flex; align-items:center;">
+                <span>Intéressés</span>
+                <span class="lead-filter-badge" id="count-filter-INTERESTED">0</span>
+            </button>
+            <button class="btn btn-sm" data-filter="MEETING_SCHEDULED" style="border-radius:20px; padding:5px 12px; font-size:0.8rem; display:inline-flex; align-items:center;">
+                <span>RDV Fixé</span>
+                <span class="lead-filter-badge" id="count-filter-MEETING_SCHEDULED">0</span>
+            </button>
+            <button class="btn btn-sm" data-filter="CLIENT" style="border-radius:20px; padding:5px 12px; font-size:0.8rem; display:inline-flex; align-items:center;">
+                <span>Clients</span>
+                <span class="lead-filter-badge" id="count-filter-CLIENT">0</span>
+            </button>
+            <button class="btn btn-sm" data-filter="REJECTED" style="border-radius:20px; padding:5px 12px; font-size:0.8rem; display:inline-flex; align-items:center;">
+                <span>Archivés</span>
+                <span class="lead-filter-badge" id="count-filter-REJECTED">0</span>
+            </button>
+        </div>
+
+        <!-- Sub-filters Bar (Displayed to distinguish Mobiles vs Fixes) -->
+        <div id="leads-subfilters-bar" style="display:none; align-items:center; justify-content:space-between; margin-bottom:1.1rem; padding:8px 14px; background:rgba(20,23,29,0.7); border:1px solid rgba(255,255,255,0.06); border-radius:10px; flex-wrap:wrap; gap:8px;">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span class="text-xs text-muted font-bold uppercase" style="letter-spacing:0.5px; margin-right:2px;">Canal Télécom :</span>
+                <button class="subfilter-pill active" data-subfilter="ALL" onclick="window.setLeadsSubfilter('ALL')">
+                    <span>Tous</span> <span id="subfilter-count-all" class="subfilter-badge">0</span>
+                </button>
+                <button class="subfilter-pill" data-subfilter="MOBILE" onclick="window.setLeadsSubfilter('MOBILE')" title="Uniquement les leads avec cellulaire vérifié, prêts pour les séquences SMS">
+                    <span>📱 Mobiles Prêts SMS</span> <span id="subfilter-count-mobile" class="subfilter-badge" style="background:rgba(34,197,94,0.2); color:#4ADE80;">0</span>
+                </button>
+                <button class="subfilter-pill" data-subfilter="LANDLINE" onclick="window.setLeadsSubfilter('LANDLINE')" title="Lignes fixes filaires (SMS non supporté - appel direct ou courriel requis)">
+                    <span>☎️ Fixes / À Appeler</span> <span id="subfilter-count-landline" class="subfilter-badge" style="background:rgba(148,163,184,0.2); color:#CBD5E1;">0</span>
+                </button>
+                <button class="subfilter-pill" data-subfilter="UNKNOWN" onclick="window.setLeadsSubfilter('UNKNOWN')" title="Numéros à qualifier via Telnyx Lookup">
+                    <span>❓ À Vérifier</span> <span id="subfilter-count-unknown" class="subfilter-badge">0</span>
+                </button>
+            </div>
+            <div id="subfilter-batch-action" style="display:flex; align-items:center; gap:6px;">
+                <button class="btn btn-xs btn-outline-gold" onclick="window.batchVerifyApprovedPhones()" style="display:inline-flex; align-items:center; gap:5px; font-weight:600; font-size:0.75rem; padding:3px 10px;" title="Vérifier automatiquement les numéros non vérifiés de cette vue via Telnyx">
+                    <span class="material-icons" style="font-size:13px;">verified</span> Qualifier les numéros
+                </button>
             </div>
         </div>
 
-        <!-- Filter Tabs -->
-        <div style="display:flex; gap:1rem; margin-bottom:1rem; overflow-x:auto; padding-bottom:5px;">
-            <button class="btn btn-sm active-filter" data-filter="NEW">${t('leads_status_new')}</button>
-            <button class="btn btn-sm" data-filter="APPROVED">${t('leads_status_approved')}</button>
-            <button class="btn btn-sm" data-filter="CONTACTED">${t('leads_status_contacted')}</button>
-            <button class="btn btn-sm" data-filter="AUDITED">${t('leads_status_audited')}</button>
-            <button class="btn btn-sm" data-filter="ALL">${t('leads_status_all')}</button>
-        </div>
-
+        <!-- Leads List/Grid Host Container -->
         <div id="leads-list-container">
-            <div class="text-center text-muted" style="padding: 2rem;">${t('leads_fetching')}</div>
+            <div class="text-center text-muted" style="padding: 3rem;">${t('leads_fetching')}</div>
         </div>
-
     `;
 
     // Add filter listeners
     const buttons = container.querySelectorAll('button[data-filter]');
     buttons.forEach(btn => {
         btn.addEventListener('click', (e) => {
-            buttons.forEach(b => b.classList.remove('btn-primary'));
-            buttons.forEach(b => b.classList.remove('active-filter'));
-            e.target.classList.add('btn-primary');
-            e.target.classList.add('active-filter');
-            loadLeads(e.target.dataset.filter);
+            const targetBtn = e.target.closest('button[data-filter]');
+            if (!targetBtn) return;
+            buttons.forEach(b => {
+                b.classList.remove('btn-primary');
+                b.classList.remove('active-filter');
+            });
+            targetBtn.classList.add('btn-primary');
+            targetBtn.classList.add('active-filter');
+            loadLeads(targetBtn.dataset.filter);
         });
     });
 
@@ -122,13 +416,13 @@ export async function initLeads() {
     let initialFilter = 'NEW';
     const hash = window.location.hash;
     if (hash.includes('?id=')) {
-        initialFilter = 'ALL'; // Switch to ALL to ensure the lead is found
+        initialFilter = 'ALL';
     }
 
     const initialBtn = Array.from(buttons).find(b => b.dataset.filter === initialFilter) || buttons[0];
 
     // Initial fetch
-    await loadLeads(initialBtn.dataset.filter);
+    await loadLeads(initialBtn.dataset.filter, true);
 
     // Sync UI
     buttons.forEach(b => b.classList.remove('btn-primary', 'active-filter', 'active'));
@@ -140,168 +434,588 @@ export async function initLeads() {
         const lead = window.allLeadsCache.find(l => l.id === id);
         if (lead) openLeadDetail(lead);
     }
+
+    // Load Master Auto-SMS Switch Status from backend
+    if (window.loadMasterAutoSmsStatus) {
+        window.loadMasterAutoSmsStatus();
+    }
 }
 
-// Global state for view mode
-let currentViewMode = 'grid';
-window.setViewMode = (mode) => {
-    currentViewMode = mode;
-    document.getElementById('btn-view-grid').className = `view-toggle-btn ${mode === 'grid' ? 'active' : ''}`;
-    document.getElementById('btn-view-list').className = `view-toggle-btn ${mode === 'list' ? 'active' : ''}`;
-    // Reload list with new class
-    const container = document.getElementById('leads-grid-wrapper');
-    if (container) container.className = mode === 'grid' ? 'leads-grid' : 'leads-list';
+// Subfilter & Master Toggle State
+let currentSubfilter = 'ALL';
+let currentMainFilter = 'ALL';
+
+window.setLeadsSubfilter = (subfilter) => {
+    currentSubfilter = subfilter;
+    const pills = document.querySelectorAll('.subfilter-pill');
+    pills.forEach(p => {
+        if (p.dataset.subfilter === subfilter) {
+            p.classList.add('active');
+        } else {
+            p.classList.remove('active');
+        }
+    });
+    applyCurrentSubfilter();
 };
 
-window.allLeadsCache = []; // Store leads for client-side search
+function applyCurrentSubfilter() {
+    if (!window.allLeadsCache) return;
+    let list = [...window.allLeadsCache];
 
-// Global state for Fuse instance
-let fuseInstance = null;
+    if (currentSubfilter === 'MOBILE') {
+        list = list.filter(l => l.phone_type === 'mobile' && l.sms_eligible !== false);
+    } else if (currentSubfilter === 'LANDLINE') {
+        list = list.filter(l => l.phone_type === 'landline' || l.sms_eligible === false);
+    } else if (currentSubfilter === 'UNKNOWN') {
+        list = list.filter(l => (!l.phone_type || l.phone_type === 'unknown') && Boolean(l.phone || l.phone_number));
+    }
+
+    window.currentFilteredLeads = list;
+    renderLeads(list);
+}
+
+function updateSubfilterCounts(leads) {
+    const list = leads || [];
+    const countAll = list.length;
+    const countMobile = list.filter(l => l.phone_type === 'mobile' && l.sms_eligible !== false).length;
+    const countLandline = list.filter(l => l.phone_type === 'landline' || l.sms_eligible === false).length;
+    const countUnknown = list.filter(l => (!l.phone_type || l.phone_type === 'unknown') && Boolean(l.phone || l.phone_number)).length;
+
+    const elAll = document.getElementById('subfilter-count-all');
+    const elMobile = document.getElementById('subfilter-count-mobile');
+    const elLandline = document.getElementById('subfilter-count-landline');
+    const elUnknown = document.getElementById('subfilter-count-unknown');
+
+    if (elAll) elAll.textContent = countAll;
+    if (elMobile) elMobile.textContent = countMobile;
+    if (elLandline) elLandline.textContent = countLandline;
+    if (elUnknown) elUnknown.textContent = countUnknown;
+}
+
+// Master Switch: Load, Update UI, Toggle
+window.isMasterAutoSmsEnabled = true;
+
+window.loadMasterAutoSmsStatus = async () => {
+    try {
+        const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+        const resp = await fetch(`${API_BASE}/api/sms/auto-send-status`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await resp.json();
+        const isEnabled = data.success ? data.autoSendEnabled : true;
+        window.isMasterAutoSmsEnabled = isEnabled;
+        window.updateMasterAutoSmsUI(isEnabled);
+    } catch (_) {
+        window.updateMasterAutoSmsUI(true);
+    }
+};
+
+window.updateMasterAutoSmsUI = (isEnabled) => {
+    const btn = document.getElementById('btn-master-auto-sms');
+    const label = document.getElementById('master-auto-sms-label');
+    const dot = btn?.querySelector('.status-dot');
+    if (!btn) return;
+
+    if (isEnabled) {
+        btn.className = 'btn btn-sm auto-sms-toggle-btn active';
+        btn.style.borderColor = 'rgba(34,197,94,0.4)';
+        btn.style.background = 'rgba(34,197,94,0.12)';
+        btn.style.color = '#4ADE80';
+        if (label) label.textContent = 'SMS Auto : ACTIF';
+        if (dot) {
+            dot.style.background = '#22C55E';
+            dot.style.boxShadow = '0 0 8px #22C55E';
+        }
+    } else {
+        btn.className = 'btn btn-sm auto-sms-toggle-btn paused';
+        btn.style.borderColor = 'rgba(239,68,68,0.4)';
+        btn.style.background = 'rgba(239,68,68,0.12)';
+        btn.style.color = '#FCA5A5';
+        if (label) label.textContent = 'SMS Auto : EN PAUSE';
+        if (dot) {
+            dot.style.background = '#EF4444';
+            dot.style.boxShadow = '0 0 8px #EF4444';
+        }
+    }
+};
+
+window.toggleMasterAutoSms = async () => {
+    const nextState = !window.isMasterAutoSmsEnabled;
+    window.isMasterAutoSmsEnabled = nextState;
+    window.updateMasterAutoSmsUI(nextState);
+
+    try {
+        const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+        const resp = await fetch(`${API_BASE}/api/sms/toggle-auto-send`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ enabled: nextState })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            showToast(data.message || (nextState ? "Envois automatiques de SMS activés." : "Envois automatiques de SMS suspendus."), nextState ? "success" : "warning");
+        }
+    } catch (e) {
+        console.error("Toggle Auto SMS Error:", e);
+        showToast("Erreur de synchronisation du Master Switch", "error");
+    }
+};
+
+// Batch Verify Approved Phones
+window.batchVerifyApprovedPhones = async () => {
+    if (!window.allLeadsCache) return;
+    const unverifiedLeads = window.allLeadsCache.filter(l => (!l.phone_type || l.phone_type === 'unknown') && Boolean(l.phone || l.phone_number));
+    
+    if (unverifiedLeads.length === 0) {
+        showToast("Tous les leads de cette liste sont déjà qualifiés !", "info");
+        return;
+    }
+
+    const leadIds = unverifiedLeads.map(l => l.id).slice(0, 15);
+    showToast(`Qualification de ${leadIds.length} numéros via Telnyx en cours...`, "info");
+
+    try {
+        const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+        const resp = await fetch(`${API_BASE}/api/leads/batch-validate-phones`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ leadIds })
+        });
+        const data = await resp.json();
+        if (data.success && data.results) {
+            let mobilesCount = 0;
+            let landlinesCount = 0;
+            data.results.forEach(res => {
+                syncLeadInAllCaches(res.leadId, {
+                    phone_type: res.phone_type,
+                    carrier_name: res.carrier_name,
+                    sms_eligible: res.sms_eligible,
+                    recommended_channel: res.recommended_channel,
+                    phone_validated_at: res.checked_at
+                });
+                if (res.phone_type === 'mobile') mobilesCount++;
+                else if (res.phone_type === 'landline') landlinesCount++;
+            });
+
+            updateSubfilterCounts(window.allLeadsCache);
+            applyCurrentSubfilter();
+            showToast(`${data.results.length} numéro(s) qualifié(s) : ${mobilesCount} Mobile(s) 📱, ${landlinesCount} Ligne(s) Fixe(s) ☎️`, "success");
+        }
+    } catch (e) {
+        console.error("Batch verify error:", e);
+        showToast("Erreur lors de la qualification par lot : " + e.message, "error");
+    }
+};
+
+// Global state for view mode
+let currentViewMode = (() => {
+    try {
+        return localStorage.getItem('erp_leads_view_mode') || 'list';
+    } catch (e) {
+        return 'list';
+    }
+})();
+
+window.setViewMode = (mode) => {
+    currentViewMode = mode;
+    try {
+        localStorage.setItem('erp_leads_view_mode', mode);
+    } catch (e) {}
+
+    const btnGrid = document.getElementById('btn-view-grid');
+    const btnList = document.getElementById('btn-view-list');
+    if (btnGrid) btnGrid.className = `view-toggle-btn ${mode === 'grid' ? 'active' : ''}`;
+    if (btnList) btnList.className = `view-toggle-btn ${mode === 'list' ? 'active' : ''}`;
+
+    renderLeads(window.currentFilteredLeads || window.allLeadsCache);
+};
+
+window.allLeadsCache = [];
+window.currentFilteredLeads = null;
 
 window.handleLeadSearch = (query) => {
-    if (!query) {
+    if (!query || !query.trim()) {
+        window.currentFilteredLeads = window.allLeadsCache;
         renderLeads(window.allLeadsCache);
         return;
     }
 
-    // Initialize Fuse if not already done or if data changed (we'll just re-init here for simplicity or init in loadLeads)
-    // To keep it simple and reactive to cache changes without complex state management, 
-    // we can init it here. For 100-1000 items it's very fast.
     const options = {
         keys: [
             'business_name',
             'city',
+            'state',
             'category',
-            'discovered_query',
-            'notes'
+            'dm_name',
+            'phone',
+            'discovered_query'
         ],
-        threshold: 0.4, // 0.0 requires perfect match, 1.0 matches anything. 0.4 is a good balance.
-        ignoreLocation: true // Find matches anywhere in the string
+        threshold: 0.35,
+        ignoreLocation: true
     };
 
     const fuse = new Fuse(window.allLeadsCache, options);
-    const results = fuse.search(query);
+    const results = fuse.search(query.trim());
     const filtered = results.map(r => r.item);
 
+    window.currentFilteredLeads = filtered;
     renderLeads(filtered);
 };
 
 function renderLeads(leads) {
     const listContainer = document.getElementById('leads-list-container');
+    if (!listContainer) return;
 
-    if (leads.length === 0) {
+    window.currentFilteredLeads = leads;
+
+    if (!leads || leads.length === 0) {
         listContainer.innerHTML = `
-            <div class="card" style="text-align:center; padding:3rem;">
-                <div class="text-h text-muted">${t('leads_no_leads')}</div>
-                <p class="text-sm text-muted">${t('leads_adjust_search')}</p>
+            <div style="background:var(--bg-card); border: 1px solid rgba(255,255,255,0.06); border-radius:12px; padding:3.5rem 1.5rem; text-align:center;">
+                <div style="color:var(--gold); margin-bottom:0.75rem; display:flex; justify-content:center;">
+                    ${SVG_ICONS.target}
+                </div>
+                <div class="text-h" style="font-size:1.1rem; color:var(--text-main); margin-bottom:0.25rem;">Aucun prospect dans cette vue</div>
+                <p class="text-xs text-muted" style="margin-bottom:1.25rem;">Ajustez vos filtres ci-dessus ou lancez le Lead Hunter pour sourcer de nouvelles entreprises.</p>
+                <button class="btn btn-primary btn-sm" onclick="window.location.hash='#leadhunter'" style="display:inline-flex; align-items:center; gap:6px;">
+                    ${SVG_ICONS.sparkles} Ouvrir le Lead Hunter
+                </button>
             </div>
         `;
         return;
     }
 
+    // LIST VIEW MODE (Strict CSS Grid alignment across all rows)
+    if (currentViewMode === 'list') {
+        let rowsHtml = '';
+        leads.forEach((data) => {
+            const statusCfg = getStatusConfig(data.status);
+            const regionBadge = formatRegionBadge(data);
+            const catBadge = formatCategoryBadge(data);
+            const scoreBadge = formatScoreBadge(data);
+            const sequenceBadge = formatSequenceBadge(data);
+            const phoneBadge = formatPhoneBadge(data);
+
+            const ratingHtml = data.google_rating 
+                ? `<span style="display:inline-flex; align-items:center; gap:3px; font-weight:600; color:var(--gold); font-size:0.82rem;">
+                     ${SVG_ICONS.star} ${data.google_rating} <span class="text-muted" style="font-weight:400; font-size:0.75rem;">(${data.google_reviews_count || 0})</span>
+                   </span>`
+                : `<span class="text-muted text-xs" style="opacity:0.45; padding-left:2px;">—</span>`;
+
+            const safePhone = (data.phone || '').replace(/'/g, "\\'");
+            const safeName = (data.business_name || '').replace(/'/g, "\\'");
+            const isLandline = data.phone_type === 'landline' || data.sms_eligible === false;
+            const hasPhone = Boolean(data.phone && String(data.phone).trim());
+            const carrierLabel = (data.carrier_name || data.phone_carrier || 'Ligne Fixe').replace(/'/g, "\\'");
+
+            rowsHtml += `
+                <div class="lead-row-clean" onclick="openLeadDetail('${data.id}')">
+                    <!-- Col 1: Entreprise & Profil -->
+                    <div class="lead-col-info">
+                        <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+                            <span class="lead-title truncate" title="${escapeHtml(data.business_name)}" style="color:#FFFFFF; font-weight:600; font-size:0.9rem;">${escapeHtml(data.business_name)}</span>
+                            <span class="lead-status-pill ${statusCfg.className}">${statusCfg.label}</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:6px; margin-top:3px; flex-wrap:wrap;">
+                            ${regionBadge}
+                            ${catBadge}
+                            ${phoneBadge}
+                        </div>
+                    </div>
+
+                    <!-- Col 2: Avis Google -->
+                    <div class="lead-col-rating">
+                        ${ratingHtml}
+                    </div>
+
+                    <!-- Col 3: Qualification IA & Séquence -->
+                    <div class="lead-col-ai">
+                        <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
+                            ${scoreBadge || sequenceBadge ? `${scoreBadge || ''} ${sequenceBadge || ''}` : '<span class="text-muted text-xs" style="opacity:0.45; padding-left:2px;">—</span>'}
+                        </div>
+                        ${formatNextSendBadge(data)}
+                    </div>
+
+                    <!-- Col 4: Décideur -->
+                    <div class="lead-col-dm" title="${escapeHtml(data.dm_name || 'Dirigeant à qualifier')}">
+                        ${data.dm_name 
+                            ? `<span style="color:#94A3B8; display:inline-flex;">${SVG_ICONS.user}</span> <strong class="truncate" style="color:var(--text-main); font-size:0.82rem;">${escapeHtml(data.dm_name)}</strong>` 
+                            : '<span class="text-muted truncate" style="font-size:0.8rem; opacity:0.55;">Dirigeant à qualifier</span>'}
+                    </div>
+
+                    <!-- Col 5: Actions Rapides -->
+                    <div class="lead-col-actions" onclick="event.stopPropagation()">
+                        ${!hasPhone ? `
+                            <button class="lead-action-btn sms-btn" style="opacity:0.35; cursor:not-allowed;" onclick="window.showToast('Aucun numéro de téléphone enregistré pour ce lead.', 'warning')" title="Aucun numéro disponible">
+                                ${SVG_ICONS.sms} <span>SMS</span>
+                            </button>
+                        ` : isLandline ? `
+                            <button class="lead-action-btn sms-btn landline-blocked" style="opacity:0.45; cursor:not-allowed; border-color:rgba(239,68,68,0.25);" onclick="window.showToast('☎️ Ligne Fixe détectée (${carrierLabel}) : les SMS ne peuvent être reçus. Privilégiez un appel direct.', 'warning')" title="☎️ Ligne fixe (${carrierLabel}) : SMS indisponible">
+                                ${SVG_ICONS.sms} <span style="text-decoration:line-through; opacity:0.75;">SMS</span>
+                            </button>
+                        ` : `
+                            <button class="lead-action-btn sms-btn" onclick="window.openSmsOutreachModal('${data.id}', '${safePhone}', '${safeName}', '${data.preferredLanguage || (window.detectLeadLanguage ? window.detectLeadLanguage(data) : 'en')}')" title="Envoyer un SMS IA via Twilio (+18193002831)">
+                                ${SVG_ICONS.sms} <span>SMS</span>
+                            </button>
+                        `}
+                        <button class="lead-action-btn gmail-btn" onclick="window.openGmailPitchModal('${data.id}')" title="Ouvrir un pitch pré-rempli dans Gmail (ou envoi serveur)">
+                            ${SVG_ICONS.gmail} <span>Gmail</span>
+                        </button>
+                        ${isLandline ? `
+                            <button class="lead-action-btn phone-btn highlight-landline-call" style="border-color: rgba(223, 165, 58, 0.65); color: var(--gold); background: rgba(223, 165, 58, 0.1);" onclick="window.openLeadCallModal('${data.id}')" title="☎️ Ligne fixe détectée : Privilégier un appel direct">
+                                ${SVG_ICONS.phone} <span style="font-weight:600;">Appeler</span>
+                            </button>
+                        ` : `
+                            <button class="lead-action-btn phone-btn" onclick="window.openLeadCallModal('${data.id}')" title="Appeler directement ou transférer vers Cold Call">
+                                ${SVG_ICONS.phone} <span>Appel</span>
+                            </button>
+                        `}
+                    </div>
+                </div>
+            `;
+        });
+
+        listContainer.innerHTML = `
+            <div class="leads-list-wrapper">
+                <div id="leads-grid-wrapper" class="leads-list-clean">
+                    <div class="leads-table-header">
+                        <div class="lead-col-info">Entreprise & Catégorie</div>
+                        <div class="lead-col-rating">Avis Google</div>
+                        <div class="lead-col-ai">Audit IA & Séquence</div>
+                        <div class="lead-col-dm">Décideur</div>
+                        <div class="lead-col-actions">Actions</div>
+                    </div>
+                    ${rowsHtml}
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    // GRID VIEW MODE
     let html = '';
     leads.forEach((data) => {
-        // Pain Signals Badges
-        let badges = '';
-        if (data.pain_signals && data.pain_signals.length > 0) {
-            badges = data.pain_signals.map(s => `<span class="badge badge-danger">${s.replace(/_/g, ' ')}</span>`).join('');
-        }
+        const statusCfg = getStatusConfig(data.status);
+        const regionBadge = formatRegionBadge(data);
+        const catBadge = formatCategoryBadge(data);
+        const scoreBadge = formatScoreBadge(data);
+        const sequenceBadge = formatSequenceBadge(data);
+        const phoneBadge = formatPhoneBadge(data);
 
-        // Audit Badge
-        if (data.lastAudit) {
-            const score = data.lastAudit.score !== undefined ? data.lastAudit.score : '?';
-            const color = score > 70 ? 'success' : (score > 40 ? 'gold' : 'danger');
-            badges += `<span class="badge" style="border:1px solid var(--${color}); color:var(--${color}); background:rgba(0,0,0,0.3); display:inline-flex; align-items:center; gap:4px; padding: 2px 6px;" title="AI Audit Score: ${score}">
-                <span class="material-icons" style="font-size:14px;">psychology</span> <strong style="font-size:0.8rem;">${score}</strong>
-             </span>`;
-        }
+        // Rating
+        const ratingHtml = data.google_rating 
+            ? `<span style="display:inline-flex; align-items:center; gap:3px; font-weight:600; color:var(--gold); font-size:0.8rem;">
+                 ${SVG_ICONS.star} ${data.google_rating} <span class="text-muted" style="font-weight:400; font-size:0.75rem;">(${data.google_reviews_count || 0})</span>
+               </span>`
+            : `<span class="text-muted text-xs">—</span>`;
+
+        // Safe strings for inline handlers
+        const safePhone = (data.phone || '').replace(/'/g, "\\'");
+        const safeName = (data.business_name || '').replace(/'/g, "\\'");
+        const isLandline = data.phone_type === 'landline' || data.sms_eligible === false;
+        const hasPhone = Boolean(data.phone && String(data.phone).trim());
+        const carrierLabel = (data.carrier_name || data.phone_carrier || 'Ligne Fixe').replace(/'/g, "\\'");
 
         html += `
-            <div class="lead-card card" onclick="openLeadDetail('${data.id}')" style="display:flex; flex-direction:column; gap:0.5rem; border-left: 3px solid ${getStatusColor(data.status)}; cursor:pointer;">
-                <div style="display:flex; justify-content:space-between; align-items:start;">
-                    <div>
-                        <div class="text-h" style="font-size:1.1rem;">${escapeHtml(data.business_name)}</div>
-                        <div class="text-sm text-muted">${escapeHtml(data.category || 'Business')} • ${escapeHtml(data.city || '')}</div>
+            <div class="lead-card-clean" onclick="openLeadDetail('${data.id}')">
+                <!-- Card Header -->
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:8px;">
+                    <div style="min-width:0; flex:1;">
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <span class="lead-title truncate" title="${escapeHtml(data.business_name)}">${escapeHtml(data.business_name)}</span>
+                            <span class="lead-status-pill ${statusCfg.className}">${statusCfg.label}</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:6px; margin-top:4px; flex-wrap:wrap;">
+                            ${regionBadge}
+                            ${catBadge}
+                            ${phoneBadge}
+                        </div>
                     </div>
-                    <div class="text-gold" style="font-weight:bold; min-width:80px; text-align:right;">${data.google_rating || '-'} ★ <span class="text-muted text-sm">(${data.google_reviews_count || 0})</span></div>
-                </div>
-                
-                <div style="display:flex; gap:5px; flex-wrap:wrap; margin: 0.5rem 0;">
-                    ${badges}
-                    ${data.status === 'NEW' ? `<span class="badge status-new">NEW</span>` : ''}
+                    <div style="text-align:right; flex-shrink:0;">
+                        ${ratingHtml}
+                    </div>
                 </div>
 
-                 <!-- Mini Info -->
-                <div class="text-xs text-muted" style="margin-bottom:0.5rem;">
-                     ${t('leads_found_via')}: "${escapeHtml(data.discovered_query || 'N/A')}"
+                <!-- AI Insights & Contact Line -->
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin: 8px 0; padding: 6px 10px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04); border-radius: 7px; font-size:0.75rem;">
+                    <div style="display:flex; flex-direction:column; gap:3px;">
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            ${scoreBadge}
+                            ${sequenceBadge}
+                        </div>
+                        ${formatNextSendBadge(data)}
+                    </div>
+                    <div class="text-muted truncate" style="max-width:180px; display:flex; align-items:center; gap:4px;" title="${escapeHtml(data.dm_name || 'Dirigeant à qualifier')}">
+                        ${data.dm_name ? `${SVG_ICONS.user} <strong style="color:var(--text-main);">${escapeHtml(data.dm_name)}</strong>` : '<span style="opacity:0.55;">Dirigeant à qualifier</span>'}
+                    </div>
                 </div>
 
-                <div style="margin-top:auto; display:flex; gap:10px; justify-content: space-between; align-items:center;">
-                     <div style="display:flex; gap:5px;" onclick="event.stopPropagation()">
-                        ${renderActionButtons(data.id, data.status)}
-                     </div>
+                <!-- 3 Master Actions Footer -->
+                <div style="margin-top:auto; padding-top:10px; border-top:1px solid rgba(255,255,255,0.05); display:grid; grid-template-columns: 1fr 1fr 1fr; gap:6px;" onclick="event.stopPropagation()">
+                    ${!hasPhone ? `
+                        <button class="lead-action-btn sms-btn" style="opacity:0.35; cursor:not-allowed;" onclick="window.showToast('Aucun numéro de téléphone enregistré pour ce lead.', 'warning')" title="Aucun numéro disponible">
+                            ${SVG_ICONS.sms} <span>SMS</span>
+                        </button>
+                    ` : isLandline ? `
+                        <button class="lead-action-btn sms-btn landline-blocked" style="opacity:0.45; cursor:not-allowed; border-color:rgba(239,68,68,0.25);" onclick="window.showToast('☎️ Ligne Fixe détectée (${carrierLabel}) : les SMS ne peuvent être reçus. Privilégiez un appel direct.', 'warning')" title="☎️ Ligne fixe (${carrierLabel}) : SMS indisponible">
+                            ${SVG_ICONS.sms} <span style="text-decoration:line-through; opacity:0.75;">SMS</span>
+                        </button>
+                    ` : `
+                        <button class="lead-action-btn sms-btn" onclick="window.openSmsOutreachModal('${data.id}', '${safePhone}', '${safeName}', '${data.preferredLanguage || (window.detectLeadLanguage ? window.detectLeadLanguage(data) : 'en')}')" title="Envoyer un SMS IA via Twilio (+18193002831)">
+                            ${SVG_ICONS.sms} <span>SMS</span>
+                        </button>
+                    `}
+                    <button class="lead-action-btn gmail-btn" onclick="window.openGmailPitchModal('${data.id}')" title="Ouvrir un pitch pré-rempli dans Gmail (ou envoi serveur)">
+                        ${SVG_ICONS.gmail} <span>Gmail</span>
+                    </button>
+                    ${isLandline ? `
+                        <button class="lead-action-btn phone-btn highlight-landline-call" style="border-color: rgba(223, 165, 58, 0.65); color: var(--gold); background: rgba(223, 165, 58, 0.1);" onclick="window.openLeadCallModal('${data.id}')" title="☎️ Ligne fixe détectée : Privilégier un appel direct">
+                            ${SVG_ICONS.phone} <span style="font-weight:600;">Appeler</span>
+                        </button>
+                    ` : `
+                        <button class="lead-action-btn phone-btn" onclick="window.openLeadCallModal('${data.id}')" title="Appeler directement ou transférer vers Cold Call">
+                            ${SVG_ICONS.phone} <span>Appel</span>
+                        </button>
+                    `}
                 </div>
             </div>
         `;
     });
 
     listContainer.innerHTML = `
-        <div id="leads-grid-wrapper" class="${currentViewMode === 'grid' ? 'leads-grid' : 'leads-list'}">
+        <div id="leads-grid-wrapper" class="leads-grid-clean">
             ${html}
         </div>
     `;
 }
 
-async function loadLeads(statusFilter) {
-    const listContainer = document.getElementById('leads-list-container');
-    listContainer.innerHTML = `<div class="text-center text-muted mt-4">${t('leads_fetching')}</div>`;
+let masterLeadsCache = null;
+window.masterLeadsCache = masterLeadsCache;
 
-    // reset search input
+// Universal Lead Cache Synchronizer: guarantees data consistency across ALL memory caches & views
+function syncLeadInAllCaches(leadId, patch) {
+    if (!leadId || !patch) return;
+    if (Array.isArray(masterLeadsCache)) {
+        const leadM = masterLeadsCache.find(l => l.id === leadId);
+        if (leadM) Object.assign(leadM, patch);
+    }
+    if (Array.isArray(window.masterLeadsCache)) {
+        const leadWM = window.masterLeadsCache.find(l => l.id === leadId);
+        if (leadWM) Object.assign(leadWM, patch);
+    }
+    if (Array.isArray(window.allLeadsCache)) {
+        const leadA = window.allLeadsCache.find(l => l.id === leadId);
+        if (leadA) Object.assign(leadA, patch);
+    }
+    if (Array.isArray(window.currentFilteredLeads)) {
+        const leadF = window.currentFilteredLeads.find(l => l.id === leadId);
+        if (leadF) Object.assign(leadF, patch);
+    }
+}
+window.syncLeadInAllCaches = syncLeadInAllCaches;
+
+function updateFilterCounts(leads) {
+    const list = leads || masterLeadsCache || [];
+    const counts = {
+        ALL: list.length,
+        NEW: 0,
+        AUDITED: 0,
+        APPROVED: 0,
+        CONTACTED: 0,
+        INTERESTED: 0,
+        MEETING_SCHEDULED: 0,
+        CLIENT: 0,
+        REJECTED: 0
+    };
+
+    list.forEach(l => {
+        const status = (l.status || 'NEW').toUpperCase();
+        if (status === 'NEW') counts.NEW++;
+        else if (status === 'APPROVED') counts.APPROVED++;
+        else if (status === 'CONTACTED') counts.CONTACTED++;
+        else if (status === 'INTERESTED') counts.INTERESTED++;
+        else if (status === 'MEETING_SCHEDULED') counts.MEETING_SCHEDULED++;
+        else if (status === 'CLIENT') counts.CLIENT++;
+        else if (status === 'REJECTED') counts.REJECTED++;
+
+        if (l.lastAudit || l.audit_date || l.confidence_score !== undefined || l.leadCategory) {
+            counts.AUDITED++;
+        }
+    });
+
+    Object.entries(counts).forEach(([key, count]) => {
+        const el = document.getElementById(`count-filter-${key}`);
+        if (el) el.textContent = count;
+    });
+
+    const counterEl = document.getElementById('leads-total-counter');
+    if (counterEl) {
+        counterEl.innerText = `${list.length} ${list.length > 1 ? 'leads' : 'lead'}`;
+    }
+}
+
+async function loadLeads(statusFilter = 'ALL', forceRefresh = false) {
+    const listContainer = document.getElementById('leads-list-container');
+    if (!listContainer) return;
+
     const searchInput = document.getElementById('lead-search-input');
     if (searchInput) searchInput.value = '';
 
     try {
-        let q;
-        if (statusFilter === 'ALL' || statusFilter === 'AUDITED') {
-            q = query(collection(db, "leads"));
-        } else {
-            q = query(collection(db, "leads"), where("status", "==", statusFilter));
+        if (!masterLeadsCache || forceRefresh) {
+            listContainer.innerHTML = `<div class="text-center text-muted mt-4">${t('leads_fetching')}</div>`;
+            const q = query(collection(db, "leads"));
+            const querySnapshot = await getDocs(q);
+
+            masterLeadsCache = [];
+            querySnapshot.forEach(docSnap => {
+                masterLeadsCache.push({ ...docSnap.data(), id: docSnap.id });
+            });
+            window.masterLeadsCache = masterLeadsCache;
+
+            // Client-side Sort (Newest First)
+            masterLeadsCache.sort((a, b) => {
+                const dateA = a.created_at ? new Date(a.created_at) : new Date(0);
+                const dateB = b.created_at ? new Date(b.created_at) : new Date(0);
+                return dateB - dateA;
+            });
         }
 
-        const querySnapshot = await getDocs(q);
+        // Update Counter Badges on every filter button
+        updateFilterCounts(masterLeadsCache);
 
-        // Cache data
+        // Filter for current view
         window.allLeadsCache = [];
-        querySnapshot.forEach(docSnap => {
-            const data = { ...docSnap.data(), id: docSnap.id };
-            if (statusFilter === 'AUDITED') {
-                // Filter client side for audited leads
-                if (data.lastAudit) {
-                    window.allLeadsCache.push(data);
-                }
-            } else {
-                window.allLeadsCache.push(data);
-            }
-        });
-
-        // Client-side Sort (Newest First)
-        window.allLeadsCache.sort((a, b) => {
-            const dateA = a.created_at ? new Date(a.created_at) : new Date(0);
-            const dateB = b.created_at ? new Date(b.created_at) : new Date(0);
-            return dateB - dateA;
-        });
-
-        renderLeads(window.allLeadsCache);
-
-        // Init Smart Filters
-        if (typeof populateSmartFilters === 'function') {
-            populateSmartFilters();
+        if (statusFilter === 'ALL') {
+            window.allLeadsCache = [...masterLeadsCache];
+        } else if (statusFilter === 'AUDITED') {
+            window.allLeadsCache = masterLeadsCache.filter(l => Boolean(l.lastAudit || l.audit_date || l.confidence_score !== undefined || l.leadCategory));
+        } else {
+            window.allLeadsCache = masterLeadsCache.filter(l => (l.status || 'NEW').toUpperCase() === statusFilter);
         }
+
+        currentMainFilter = statusFilter;
+        const subfiltersBar = document.getElementById('leads-subfilters-bar');
+        if (subfiltersBar) {
+            // Show subfilters for APPROVED, AUDITED, or ALL views
+            if (statusFilter === 'APPROVED' || statusFilter === 'AUDITED' || statusFilter === 'ALL') {
+                subfiltersBar.style.display = 'flex';
+                updateSubfilterCounts(window.allLeadsCache);
+            } else {
+                subfiltersBar.style.display = 'none';
+            }
+        }
+
+        applyCurrentSubfilter();
 
     } catch (e) {
-        console.error(e);
-
-        listContainer.innerHTML = `<div class="text-danger">${t('leads_error_loading')}</div>`;
+        console.error('Error fetching leads:', e);
+        listContainer.innerHTML = `<div class="text-danger" style="text-align:center; padding:2rem;">${t('leads_error_loading')}</div>`;
     }
 }
 
@@ -312,13 +1026,28 @@ window.openLeadDetail = async (data) => {
     if (typeof data === 'object' && data !== null) {
         lead = data;
     } else if (typeof data === 'string') {
+        const leadId = data;
         if (window.allLeadsCache) {
-            lead = window.allLeadsCache.find(l => l.id === data);
+            lead = window.allLeadsCache.find(l => l.id === leadId);
+        }
+        if (!lead && masterLeadsCache) {
+            lead = masterLeadsCache.find(l => l.id === leadId);
+        }
+        if (!lead && window.masterLeadsCache) {
+            lead = window.masterLeadsCache.find(l => l.id === leadId);
         }
         if (!lead) {
             try {
                 lead = JSON.parse(decodeURIComponent(data));
             } catch (e) { }
+        }
+    }
+
+    // Always merge latest fields from cache if lead is already in memory
+    if (lead && lead.id) {
+        const cachedLead = (window.allLeadsCache || []).find(l => l.id === lead.id) || (masterLeadsCache || []).find(l => l.id === lead.id);
+        if (cachedLead) {
+            lead = Object.assign({}, cachedLead, lead);
         }
     }
 
@@ -373,20 +1102,31 @@ window.openLeadDetail = async (data) => {
         window.lastAuditReport = null;
     }
 
+    const teamOptions = await getTeamDropdownOptions(lead.assigned_agent_id);
+    const enriched = lead.enriched_data || {};
+    const hasEnrichment = Object.keys(enriched).length > 0;
+    const savedSidebarWidth = localStorage.getItem('erp_lead_detail_sidebar_width') || '520px';
+
     overlay.innerHTML = `
-        <div class="detail-overlay" style="flex-direction: row; padding:0;">
+        <div class="detail-overlay" style="flex-direction: row; padding:0; height: 100%; max-height: 100vh; overflow: hidden;">
             
             <!-- 1. FULL HEIGHT SIDEBAR (Left) -->
-            <div class="detail-sidebar" id="lead-sidebar" style="background: var(--bg-card); border-right: 1px solid var(--border); overflow-y: auto; display: flex; flex-direction: column; z-index: 20; height: 100vh;">
+            <div class="detail-sidebar" id="lead-sidebar" style="width: ${savedSidebarWidth}; min-width: 380px; max-width: 900px; background: var(--bg-card); border-right: 1px solid var(--border); position: relative; height: 100%; max-height: 100vh; overflow: hidden; display: flex; flex-direction: column; z-index: 20;">
                 
-                <!-- MOVED: Identity Section from Header (Optional overlap or just standard sidebar) -->
-                <!-- Or keeping sidebar content as is, just physically 100% height -->
+                <!-- SCROLLABLE BODY (Padding-bottom ensures content is never covered by floating action bar) -->
+                <div style="flex: 1; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; padding-bottom: 78px;">
 
                 <!-- SECTION 1: IDENTITY -->
                 <div style="padding: 0.75rem 1rem; border-bottom: 1px solid var(--border);">
                     <div class="form-group" style="margin-bottom: 8px;">
                         <label class="form-label">${t('leads_business_name')}</label>
-                        <input type="text" id="edit-business-name" class="form-input" value="${escapeHtml(lead.business_name)}" style="font-weight: 600; border-color: rgba(223, 165, 58, 0.2); padding: 8px 12px; font-size: 1rem;">
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <input type="text" id="edit-business-name" class="form-input" value="${escapeHtml(lead.business_name)}" style="font-weight: 600; border-color: rgba(223, 165, 58, 0.2); padding: 8px 12px; font-size: 1rem; flex: 1;">
+                            <button id="lead-google-search" class="btn btn-sm" onclick="window.open('https://www.google.com/search?q=${encodeURIComponent(lead.business_name + ' ' + (lead.city || ''))}+contact+phone+email', '_blank')" 
+                                    style="padding: 8px; min-width: 40px; display: flex; align-items: center; justify-content: center; background: rgba(223,165,58,0.1); border-color: rgba(223,165,58,0.2);" title="Search Google">
+                                <span class="material-icons" style="font-size: 1.2rem; color: var(--gold);">search</span>
+                            </button>
+                        </div>
                     </div>
                     <div style="display: flex; gap: 15px; margin-top: 5px;">
                         <div style="flex: 1;">
@@ -411,7 +1151,8 @@ window.openLeadDetail = async (data) => {
                     <div class="text-xs text-muted uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">${t('leads_pain_points')}</div>
                     <div id="sidebar-pain-selector" style="display:flex; flex-wrap:wrap; gap:5px;">
                         ${['NO_WEBSITE', 'BAD_DESIGN', 'BAD_SEO', 'SLOW_SPEED', 'OTHER'].map(p => {
-        const isSelected = lead.pain_signals && lead.pain_signals.includes(p) ? 'selected' : '';
+        const isDir = lead.leadCategory === 'directory_only' || lead.has_directory_only;
+        const isSelected = lead.pain_signals && (lead.pain_signals.includes(p) || (p === 'NO_WEBSITE' && isDir)) ? 'selected' : '';
         const label = p.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase()).replace('Seo', 'SEO');
         return `<div class="pain-chip ${isSelected}" onclick="togglePain(this, '${p}')" data-value="${p}" style="font-size: 0.75rem; padding: 4px 10px;">${label}</div>`;
     }).join('')}
@@ -446,20 +1187,52 @@ window.openLeadDetail = async (data) => {
                     </div>
 
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                        <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
+                        <div style="display:flex; align-items:center; gap:6px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
                             <span class="material-icons text-muted" style="font-size:1rem;">phone</span>
-                            <input type="text" id="edit-phone" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.85rem;" value="${escapeHtml(lead.phone || '')}" placeholder="${t('leads_phone')}">
+                            <input type="text" id="edit-phone" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.85rem; flex:1; min-width:0;" value="${escapeHtml(lead.phone || '')}" placeholder="${t('leads_phone')}">
+                            ${lead.phone ? `
+                                <div id="lead-phone-badge-slot" style="flex-shrink:0;">
+                                    ${lead.phone_type === 'mobile' 
+                                        ? `<span class="badge" style="background:rgba(34,197,94,0.15); color:#4ADE80; font-size:0.68rem; padding:2px 6px; border-radius:4px; font-weight:600;" title="${escapeHtml(lead.carrier_name || 'Opérateur Mobile')}">📱 Mobile</span>`
+                                        : (lead.phone_type === 'landline'
+                                            ? `<span class="badge" style="background:rgba(148,163,184,0.15); color:#94A3B8; font-size:0.68rem; padding:2px 6px; border-radius:4px; font-weight:600;" title="${escapeHtml(lead.carrier_name || 'Ligne Fixe')}">☎️ Fixe</span>`
+                                            : `<button type="button" class="btn btn-xs" onclick="window.verifyLeadPhone('${lead.id}')" style="background:rgba(223,165,58,0.12); color:var(--gold); border:1px solid rgba(223,165,58,0.3); font-size:0.68rem; padding:2px 6px; border-radius:4px; font-weight:600;" title="Qualifier la ligne avec Telnyx Lookup (Mobile vs Fixe)">Vérifier</button>`
+                                        )
+                                    }
+                                </div>
+                            ` : ''}
                         </div>
                         <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
                             <span class="material-icons text-muted" style="font-size:1rem;">email</span>
                             <input type="text" id="edit-email" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.85rem;" value="${escapeHtml(lead.email || '')}" placeholder="${t('leads_public_email')}">
                         </div>
                     </div>
+
+                    ${lead.website ? `
+                    <div style="margin-top: 8px;">
+                        <button type="button" class="btn btn-xs ${(!lead.phone || !lead.email) ? 'btn-outline-gold' : 'btn-secondary'}" onclick="window.enrichLeadContactsFromWebsite('${lead.id}')" style="display:flex; align-items:center; justify-content:center; gap:6px; width:100%; padding:5px 10px; font-weight:700; font-size:0.78rem;" title="Scrape le site web pour extraire automatiquement le téléphone et l'email">
+                            <span class="material-icons" style="font-size:14px;">travel_explore</span> ${(!lead.phone || !lead.email) ? 'Scanner Contacts Web (Tél & Email)' : 'Re-scanner Coordonnées Web'}
+                        </button>
+                    </div>
+                    ` : ''}
                 </div>
 
                 <!-- SECTION 3: DECISION MAKER -->
                 <div style="padding: 1rem; border-bottom: 1px solid var(--border); background: rgba(223, 165, 58, 0.02);">
-                    <div class="text-xs text-gold uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">${t('leads_governance')}</div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+                        <div class="text-xs text-gold uppercase tracking-wider font-bold" style="letter-spacing: 1px;">${t('leads_governance')}</div>
+                        <button type="button" id="btn-enrich-dm-${lead.id}" class="btn btn-xs btn-outline-gold" style="font-size: 0.68rem; padding: 2px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; font-weight: 600;" onclick="window.enrichLeadDecisionMakerWithPerplexity('${lead.id}')" title="Rechercher automatiquement le propriétaire/dirigeant via Perplexity Agent API (Recherche Web en direct)">
+                            <span class="material-icons" style="font-size: 13px;">travel_explore</span> Décideur (Perplexity)
+                        </button>
+                    </div>
+
+                    <div id="dm-source-badge-${lead.id}">
+                        ${lead.dm_source_summary ? `
+                            <div style="font-size:0.68rem; color:#94A3B8; margin-bottom:6px; font-style:italic; background:rgba(0,0,0,0.25); padding:3px 6px; border-radius:4px; border:1px solid rgba(223,165,58,0.2);">
+                                🔍 Source Perplexity : ${escapeHtml(lead.dm_source_summary)}
+                            </div>
+                        ` : ''}
+                    </div>
                     
                     <div class="form-group" style="margin-bottom: 6px;">
                         <div style="display:flex; align-items:center; gap:8px; border-bottom: 1px solid rgba(255,255,255,0.05);">
@@ -483,10 +1256,10 @@ window.openLeadDetail = async (data) => {
                     </div>
 
                     <!-- ASSIGNED AGENT SELECTOR -->
-                        <div style="margin-top: 1rem; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 1rem;">
+                    <div style="margin-top: 1rem; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 1rem;">
                         <div class="text-xs text-muted uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">${t('leads_assigned_agent')}</div>
                         <select id="edit-assigned-agent" class="form-input" style="background: rgba(0,0,0,0.2); border: 1px solid var(--border); font-size: 0.9rem;">
-                            ${await getTeamDropdownOptions(lead.assigned_agent_id)}
+                            ${teamOptions}
                         </select>
                     </div>
 
@@ -497,6 +1270,204 @@ window.openLeadDetail = async (data) => {
                 <div style="padding: 1rem; border-bottom: 1px solid var(--border);">
                         <div class="text-xs text-muted uppercase tracking-wider mb-2 font-bold" style="letter-spacing: 1px;">${t('leads_strategic_notes')}</div>
                         <textarea id="edit-notes" class="form-input" rows="3" style="font-size: 0.85rem; background: rgba(0,0,0,0.15); border-style: dashed; padding: 8px;" placeholder="${t('leads_notes_placeholder')}">${escapeHtml(lead.notes || '')}</textarea>
+                </div>
+
+                <!-- AUDIT IA -->
+                <div style="padding: 1rem; border-bottom: 1px solid var(--border); background: rgba(223, 165, 58, 0.04);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                        <div class="text-xs text-gold uppercase tracking-wider font-bold" style="letter-spacing: 1px; display:flex; align-items:center; gap:6px;">
+                            ${SVG_ICONS.sparkles}
+                            Audit IA
+                        </div>
+                        <div>
+                            ${lead.confidence_score !== undefined
+                                ? `<span class="badge" style="border:1px solid ${lead.confidence_score >= 85 ? '#21BA45' : '#F2C037'}; color:${lead.confidence_score >= 85 ? '#21BA45' : '#F2C037'}; background:rgba(0,0,0,0.3); font-size:11px;">🎯 ${lead.confidence_score}% Confiance</span>`
+                                : '<span class="badge text-muted" style="font-size:11px;">Non audité</span>'}
+                        </div>
+                    </div>
+
+                    ${lead.audit_date ? `
+                    <div style="background:rgba(0,0,0,0.25); border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:10px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <span class="text-xs text-muted">Profil qualifié :</span>
+                            <span class="badge" style="background:${(lead.leadCategory === 'directory_only' || lead.has_directory_only) ? 'rgba(239,68,68,0.15)' : (lead.leadCategory === 'missing_gmb_website' || lead.google_business_missing_website) ? 'rgba(245,158,11,0.2)' : 'rgba(223,165,58,0.15)'}; color:${(lead.leadCategory === 'directory_only' || lead.has_directory_only) ? '#F87171' : (lead.leadCategory === 'missing_gmb_website' || lead.google_business_missing_website) ? '#FBBF24' : 'var(--gold)'}; border:1px solid ${(lead.leadCategory === 'directory_only' || lead.has_directory_only) ? '#F87171' : (lead.leadCategory === 'missing_gmb_website' || lead.google_business_missing_website) ? '#FBBF24' : 'var(--gold)'}; font-size:11px; font-weight:bold;">
+                                ${escapeHtml(formatCategoryLabel(lead.leadCategory || lead.category))}
+                            </span>
+                        </div>
+                        ${lead.isFranchise ? `
+                            <div style="background:rgba(237,76,103,0.15); border:1px solid #ED4C67; color:#ED4C67; border-radius:6px; padding:6px 10px; font-size:0.8rem; font-weight:bold; margin-bottom:6px;">
+                                🚫 FRANCHISE / CHAÎNE CORPORATIVE EXCLUE
+                            </div>
+                        ` : ''}
+                        <div class="text-xs" style="color:var(--text-main); margin-bottom:6px; line-height:1.4;">
+                            ${escapeHtml(lead.audit_summary || 'Aucune synthèse disponible.')}
+                        </div>
+                        <div class="text-xs text-muted" style="font-size:0.75rem;">
+                            Vérification : ${escapeHtml(lead.anti_homonym_details || 'Vérification automatique')}
+                        </div>
+                    </div>
+                    ` : ''}
+
+                    <button class="btn btn-block btn-sm" id="btn-run-lead-audit" style="border-color: var(--gold); color: var(--gold); font-weight: bold; background: rgba(223, 165, 58, 0.1); font-size: 0.75rem; display:flex; align-items:center; justify-content:center; gap:6px;" onclick="window.auditSingleLeadNow('${lead.id}')">
+                        ${SVG_ICONS.bolt}
+                        ${lead.audit_date ? "Ré-auditer l'Entreprise (IA)" : "Lancer l'Audit IA"}
+                    </button>
+                </div>
+
+                <!-- SECTION: SÉQUENCE SMS & PROSPECTION -->
+                <div style="padding: 1rem; border-bottom: 1px solid var(--border); background: rgba(56, 189, 248, 0.03);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                        <div class="text-xs uppercase tracking-wider font-bold" style="color: #38BDF8; letter-spacing: 1px; display:flex; align-items:center; gap:6px;">
+                            ${SVG_ICONS.sms}
+                            Séquence SMS & Prospection
+                        </div>
+                        <div>
+                            ${(lead.sequenceStatus === 'ACTIVE' || lead.activeSequenceId)
+                                ? `<span class="badge" style="background:rgba(33,186,69,0.15); color:#21BA45; border:1px solid rgba(33,186,69,0.3); font-size:10px;">🟢 Active (${lead.smsStatus || 'Simulation'})</span>`
+                                : (lead.sequenceStatus === 'STOPPED_REPLIED'
+                                    ? `<span class="badge" style="background:rgba(56,189,248,0.15); color:#38BDF8; border:1px solid rgba(56,189,248,0.3); font-size:10px;">✋ Répondu</span>`
+                                    : (lead.phone_type === 'landline' || lead.sms_eligible === false
+                                        ? `<span class="badge" style="background:rgba(148,163,184,0.15); color:#94A3B8; border:1px solid rgba(148,163,184,0.3); font-size:10px;">☎️ Fixe (Non éligible SMS)</span>`
+                                        : `<span class="badge text-muted" style="font-size:10px; background:rgba(255,255,255,0.05);">⚪ Prête à déclencher</span>`
+                                    )
+                                )
+                            }
+                        </div>
+                    </div>
+
+                    <!-- CASL / LCAP COMPLIANCE DOSSIER (Canada Anti-Spam Legislation) -->
+                    ${(() => {
+                        const casl = lead.casl;
+                        if (!casl) {
+                            return `
+                            <div style="background:rgba(255,255,255,0.02); border:1px dashed rgba(255,255,255,0.1); border-radius:8px; padding:10px 12px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <span class="material-icons" style="font-size:18px; color:var(--text-muted);">verified_user</span>
+                                    <div>
+                                        <div style="font-size:0.75rem; font-weight:600; color:var(--text-main);">Dossier LCAP / CASL (Canada)</div>
+                                        <div style="font-size:0.68rem; color:var(--text-muted);">Conformité non encore attestée</div>
+                                    </div>
+                                </div>
+                                <button type="button" class="btn btn-xs btn-outline-gold" onclick="window.verifyLeadCasl('${lead.id}')" style="font-size:0.7rem; padding:3px 10px; border-radius:6px; font-weight:600;">
+                                    Vérifier LCAP
+                                </button>
+                            </div>
+                            `;
+                        }
+                        if (casl.status === 'ELIGIBLE') {
+                            return `
+                            <div style="background:rgba(34,197,94,0.08); border:1px solid rgba(34,197,94,0.25); border-radius:8px; padding:10px 12px; margin-bottom:10px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <div style="display:flex; align-items:center; gap:6px; font-weight:700; color:#4ADE80; font-size:0.78rem;">
+                                        <span class="material-icons" style="font-size:16px;">verified</span> 🇨🇦 LCAP : ÉLIGIBLE (Publication officielle)
+                                    </div>
+                                    <button type="button" class="btn btn-xs" style="background:transparent; border:1px solid rgba(74,222,128,0.3); color:#86EFAC; font-size:0.68rem; padding:2px 8px; border-radius:4px; cursor:pointer;" onclick="window.verifyLeadCasl('${lead.id}')" title="Re-scanner la conformité CASL">
+                                        Re-vérifier
+                                    </button>
+                                </div>
+                                <div style="font-size:0.72rem; color:#A7F3D0; margin-top:4px; line-height:1.35;">
+                                    Numéro publié bien en vue sur le site officiel sans restriction (art. 10(9)(b) LCAP).
+                                    ${casl.publication_context ? `<div style="font-size:0.68rem; color:#6EE7B7; font-style:italic; margin-top:3px; background:rgba(0,0,0,0.2); padding:3px 6px; border-radius:4px; font-family:monospace;">« ${escapeHtml(casl.publication_context)} »</div>` : ''}
+                                    <div style="font-size:0.65rem; color:#94A3B8; margin-top:4px; font-family:monospace;">Preuve : ${escapeHtml(casl.evidence_hash || '')} &bull; ${casl.source_url ? `<a href="${escapeHtml(casl.source_url)}" target="_blank" style="color:#60A5FA; text-decoration:underline;">Source</a>` : ''} &bull; ${new Date(casl.captured_at || Date.now()).toLocaleDateString('fr-CA')}</div>
+                                </div>
+                            </div>
+                            `;
+                        }
+                        if (casl.status === 'REVIEW') {
+                            return `
+                            <div style="background:rgba(234,179,8,0.08); border:1px solid rgba(234,179,8,0.25); border-radius:8px; padding:10px 12px; margin-bottom:10px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <div style="display:flex; align-items:center; gap:6px; font-weight:700; color:#FACC15; font-size:0.78rem;">
+                                        <span class="material-icons" style="font-size:16px;">pending_actions</span> 🇨🇦 LCAP : À VÉRIFIER
+                                    </div>
+                                    <button type="button" class="btn btn-xs" style="background:rgba(234,179,8,0.15); border:1px solid rgba(234,179,8,0.4); color:#FDE047; font-size:0.68rem; padding:2px 8px; border-radius:4px; cursor:pointer;" onclick="window.verifyLeadCasl('${lead.id}')">
+                                        Scanner Site
+                                    </button>
+                                </div>
+                                <div style="font-size:0.72rem; color:#FEF08A; margin-top:4px; line-height:1.35;">
+                                    ${escapeHtml(casl.notes || 'Publication non détectée avec certitude sur le site officiel. Envoi automatique suspendu.')}
+                                </div>
+                            </div>
+                            `;
+                        }
+                        if (casl.status === 'INELIGIBLE') {
+                            return `
+                            <div style="background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); border-radius:8px; padding:10px 12px; margin-bottom:10px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <div style="display:flex; align-items:center; gap:6px; font-weight:700; color:#F87171; font-size:0.78rem;">
+                                        <span class="material-icons" style="font-size:16px;">block</span> 🇨🇦 LCAP : REFUSÉ
+                                    </div>
+                                    <button type="button" class="btn btn-xs" style="background:transparent; border:1px solid rgba(239,68,68,0.4); color:#FCA5A5; font-size:0.68rem; padding:2px 8px; border-radius:4px; cursor:pointer;" onclick="window.verifyLeadCasl('${lead.id}')">
+                                        Re-scanner
+                                    </button>
+                                </div>
+                                <div style="font-size:0.72rem; color:#FCA5A5; margin-top:4px; line-height:1.35;">
+                                    ${escapeHtml(casl.notes || 'Sollicitation commerciale interdite par l\'entreprise.')}
+                                </div>
+                            </div>
+                            `;
+                        }
+                        if (casl.status === 'NOT_APPLICABLE') {
+                            return `
+                            <div style="background:rgba(148,163,184,0.06); border:1px solid rgba(148,163,184,0.15); border-radius:8px; padding:8px 12px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-size:0.75rem; color:#CBD5E1;">🇺🇸 <strong>USA</strong> &bull; Régie par 10DLC Telnyx (LCAP non applicable)</span>
+                            </div>
+                            `;
+                        }
+                        return '';
+                    })()}
+
+                    <div style="background:rgba(0,0,0,0.25); border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:10px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <span class="text-xs text-muted">Séquence attribuée :</span>
+                            <span style="font-weight:700; color:var(--gold); font-size:0.8rem;">
+                                ${escapeHtml(
+                                    lead.activeSequenceId === 'seq_directory_only' || (!lead.activeSequenceId && (lead.leadCategory === 'directory_only' || lead.has_directory_only))
+                                        ? 'Indépendance vs Annuaire & Plateforme'
+                                        : (lead.activeSequenceId === 'seq_missing_gmb_website' || (!lead.activeSequenceId && (lead.leadCategory === 'missing_gmb_website' || lead.google_business_missing_website))
+                                            ? 'Site non relié à Google Maps'
+                                            : (lead.activeSequenceId === 'seq_no_website' || (!lead.activeSequenceId && lead.leadCategory === 'no_website')
+                                                ? 'Création de site web officiel'
+                                                : (lead.activeSequenceId === 'seq_outdated_website' || (!lead.activeSequenceId && lead.leadCategory === 'outdated_website')
+                                                    ? 'Refonte moderne & Conversion'
+                                                    : 'Agent Conversationnel IA 24/7'
+                                                )
+                                            )
+                                        )
+                                )}
+                            </span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:0.75rem; color:#94A3B8;">
+                            <span>Progression :</span>
+                            <span style="font-weight:600; color:#F8FAFC;">
+                                ${lead.sequenceStatus === 'ACTIVE' 
+                                    ? `Étape ${lead.smsSequenceStep || 1} sur 4 (${lead.smsStatus || 'Simulé'})`
+                                    : (lead.phone_type === 'landline' ? 'Ligne fixe (SMS bloqué pour réputation)' : 'En attente de déclenchement')}
+                            </span>
+                        </div>
+                        <div class="text-xs" style="color:#CBD5E1; line-height:1.4; background:rgba(255,255,255,0.03); padding:8px 10px; border-radius:6px; border:1px dashed rgba(255,255,255,0.08); font-style:italic;">
+                            ${escapeHtml(
+                                lead.lastSimulatedSmsText 
+                                    || lead.recommended_angle 
+                                    || (lead.leadCategory === 'directory_only' 
+                                        ? `Bonjour ${lead.business_name || 'cher dirigeant'}, Ben de Solutions Quasar. Avoir votre propre vitrine officielle évite que vos clients voient vos concurrents sur ${lead.directory_platform || 'les plateformes tierces'}.`
+                                        : `Bonjour ${lead.business_name || 'cher dirigeant'}, Ben de Solutions Quasar. Vos clients peuvent-ils réserver en direct 24/7 sans attendre ?`
+                                    )
+                            )}
+                        </div>
+                    </div>
+
+                    <!-- Sequence Timeline Container -->
+                    <div id="lead-sequence-timeline-container" style="margin-bottom:12px;"></div>
+
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                        <button type="button" class="btn btn-sm btn-outline-gold" style="font-size:0.75rem; font-weight:700; display:flex; align-items:center; justify-content:center; gap:5px;" onclick="window.triggerLeadSequenceFromUI('${lead.id}', '${escapeHtml(lead.business_name || '')}', '${escapeHtml(lead.business_name || '')}', '${escapeHtml(lead.phone || '')}', '${escapeHtml(lead.leadCategory || lead.category || '')}')">
+                            <span class="material-icons" style="font-size:14px;">play_arrow</span> ${lead.sequenceStatus === 'ACTIVE' ? 'Relancer Séquence' : 'Déclencher SMS'}
+                        </button>
+                        <button type="button" class="btn btn-sm btn-secondary" style="font-size:0.75rem; font-weight:600; display:flex; align-items:center; justify-content:center; gap:5px;" onclick="window.openSequencesConfigModal('instances')">
+                            <span class="material-icons" style="font-size:14px;">view_list</span> Toutes les Séquences
+                        </button>
+                    </div>
                 </div>
 
                 <!-- PERFORMANCE & AUDIT -->
@@ -531,65 +1502,77 @@ window.openLeadDetail = async (data) => {
                             `}
                     </div>
                 </div>
+                <!-- END OF SCROLLABLE BODY -->
+                </div>
 
-                <!-- ACTIONS MATRIX (STICKY BOTTOM) -->
-                <div style="padding: 1rem; background: var(--bg-dark); position: sticky; bottom: 0; z-index: 10; border-top: 1px solid var(--border);">
-                    <div id="lead-actions-row" style="display:flex; gap:8px;">
-                        <button class="btn btn-sm" onclick="sendLeadToSelf('${lead.id}')" title="Send info to my phone" style="background:rgba(255,255,255,0.05); border:1px solid var(--border); padding: 0 8px;">
-                            <span class="material-icons" style="font-size:18px;">smartphone</span>
+                <!-- FLOATING ACTION BAR (ALIGNED WITH SIDEBAR) -->
+                <div id="lead-floating-bar-container" style="position: absolute; bottom: 14px; left: 14px; right: 14px; background: rgba(18, 21, 28, 0.94); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(223, 165, 58, 0.3); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.05); padding: 7px 9px; z-index: 40; box-sizing: border-box; pointer-events: auto;">
+                    <div id="lead-actions-row" style="display: grid; grid-template-columns: repeat(3, 1fr) 1.25fr; gap: 6px; align-items: center;">
+                        ${(lead && (lead.phone_type === 'landline' || lead.sms_eligible === false)) ? `
+                            <button class="btn btn-sm" onclick="window.showToast('☎️ Ligne fixe détectée (${escapeHtml(lead.carrier_name || 'Fixe')}) : SMS non supporté. Privilégiez un appel direct.', 'warning')" style="display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 0.75rem; font-weight: 600; opacity: 0.55; border: 1px solid rgba(239,68,68,0.3); color: #FCA5A5; background: rgba(239,68,68,0.06); white-space: nowrap; height: 34px; padding: 0 6px; border-radius: 8px; cursor: not-allowed;" title="Ligne fixe : SMS non supporté">
+                                ${SVG_ICONS.sms} <span style="text-decoration:line-through;">SMS IA</span>
+                            </button>
+                        ` : `
+                            <button class="btn btn-sm btn-outline-gold" onclick="window.openSmsOutreachModal('${lead.id}', document.getElementById('edit-phone')?.value || '${(lead.phone || '').replace(/'/g, "\\'")}', document.getElementById('edit-business-name')?.value || '${(lead.business_name || lead.name || '').replace(/'/g, "\\'")}', '${lead.preferredLanguage || (window.detectLeadLanguage ? window.detectLeadLanguage(lead) : 'en')}')" style="display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; height: 34px; padding: 0 6px; border-radius: 8px; transition: all 0.2s;" title="Envoyer un SMS IA via Twilio/Telnyx">
+                                ${SVG_ICONS.sms} <span>SMS IA</span>
+                            </button>
+                        `}
+                        
+                        <button class="btn btn-sm" onclick="window.openGmailPitchModal('${lead.id}')" style="display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 0.75rem; font-weight: 600; border: 1px solid rgba(96,165,250,0.3); color: #60A5FA; background: rgba(96,165,250,0.08); white-space: nowrap; height: 34px; padding: 0 6px; border-radius: 8px; transition: all 0.2s;" title="Ouvrir un pitch pré-rempli dans Gmail">
+                            ${SVG_ICONS.gmail} <span>Gmail Pitch</span>
                         </button>
-                        
-                        ${lead.email ?
-            `<button class="btn btn-sm btn-secondary" onclick="openEmailComposer(document.getElementById('edit-email').value, document.getElementById('edit-business-name').value)" style="flex:1; display: flex; align-items:center; justify-content:center; gap: 4px; font-size: 0.75rem;">
-                                <span class="material-icons" style="font-size:14px;">send</span> COMPOSE
-                                </button>`
-            : ''}
-                        
-                        <button class="btn btn-sm btn-primary" style="flex:1.5; box-shadow: 0 4px 15px rgba(223, 165, 58, 0.2); font-size: 0.75rem;" onclick="saveLeadDetails('${lead.id}')">SAVE UPDATES</button>
+
+                        <button class="btn btn-sm" onclick="window.openLeadCallModal('${lead.id}')" style="display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 0.75rem; font-weight: 600; ${(lead && (lead.phone_type === 'landline' || lead.sms_eligible === false)) ? 'border: 1px solid rgba(223, 165, 58, 0.7); color: var(--gold); background: rgba(223, 165, 58, 0.12);' : 'border: 1px solid rgba(255,255,255,0.15); color: #CBD5E1; background: rgba(255,255,255,0.04);'} white-space: nowrap; height: 34px; padding: 0 6px; border-radius: 8px; transition: all 0.2s;" title="Appel direct ou transférer vers Cold Call">
+                            ${SVG_ICONS.phone} <span>Appeler</span>
+                        </button>
+
+                        <button class="btn btn-sm btn-primary" style="height: 34px; font-size: 0.76rem; font-weight: 700; padding: 0 10px; box-shadow: 0 4px 15px rgba(223, 165, 58, 0.25); white-space: nowrap; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; transition: all 0.2s;" onclick="saveLeadDetails('${lead.id}')" title="Enregistrer les modifications">
+                            ${SVG_ICONS.check} <span>Sauvegarder</span>
+                        </button>
                     </div>
                 </div>
 
             </div>
 
             <!-- 2. RESIZER -->
-            <div class="detail-resizer" id="sidebar-resizer" style="height: 100vh;"></div>
+            <div class="detail-resizer" id="sidebar-resizer" style="height: 100%;"></div>
 
             <!-- 3. RIGHT PANE (Header + Preview) -->
-            <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden; height: 100vh; position: relative;">
+            <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden; height: 100%; position: relative;">
                 
                 <!-- HEADER (Now specific to right pane) -->
-                <div class="detail-header" style="height: auto; min-height: 50px; flex-shrink: 0; flex-direction: column; justify-content:center; gap: 8px; padding: 12px 20px;">
-                    <!-- ROW 1: Identity (Simplified) & Close -->
-                    <div style="display:flex; justify-content:space-between; align-items: center;">
-                        <div style="display:flex; align-items:center; gap: 12px; overflow:hidden; flex: 1;">
-                                <div class="text-h truncate" style="font-size:1.15rem; margin:0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(lead.business_name)}">${escapeHtml(lead.business_name)}</div>
+                <div class="detail-header" style="width: 100%; box-sizing: border-box; height: auto; min-height: 52px; flex-shrink: 0; display: flex; flex-direction: column; justify-content: center; align-items: stretch; gap: 8px; padding: 12px 24px;">
+                    <!-- ROW 1: Identity & Close -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; box-sizing: border-box; gap: 16px;">
+                        <div style="display: flex; align-items: center; gap: 14px; overflow: hidden; min-width: 0; flex: 1;">
+                                <div class="text-h truncate" style="font-size: 1.18rem; font-weight: 700; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-main);" title="${escapeHtml(lead.business_name)}">${escapeHtml(lead.business_name)}</div>
                                 
-                                <div style="display:flex; gap:8px; align-items:center; flex-shrink: 0;">
-                                <select id="edit-lead-status" class="badge status-${lead.status ? lead.status.toLowerCase() : 'new'}" style="font-size:0.7rem; padding: 2px 20px 2px 6px; font-weight:bold; border: 1px solid rgba(255,255,255,0.2); appearance: menulist; cursor:pointer;" onchange="this.className='badge status-'+this.value.toLowerCase();">
-                                    <option value="NEW" ${lead.status === 'NEW' ? 'selected' : ''}>NEW</option>
-                                    <option value="INTERESTED" ${lead.status === 'INTERESTED' ? 'selected' : ''}>INTERESTED</option>
-                                    <option value="CALLBACK" ${lead.status === 'CALLBACK' ? 'selected' : ''}>CALLBACK</option>
-                                    <option value="NOT_INTERESTED" ${lead.status === 'NOT_INTERESTED' ? 'selected' : ''}>NOT INTERESTED</option>
+                                <div style="display: flex; gap: 10px; align-items: center; flex-shrink: 0;">
+                                <select id="edit-lead-status" class="badge status-${lead.status ? lead.status.toLowerCase() : 'new'}" style="font-size: 0.75rem; padding: 4px 22px 4px 10px; font-weight: 600; border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; background: #14171D; color: var(--text-main); cursor: pointer;" onchange="this.className='badge status-'+this.value.toLowerCase();">
+                                    <option value="NEW" ${lead.status === 'NEW' ? 'selected' : ''}>NOUVEAU</option>
+                                    <option value="AUDITED" ${lead.status === 'AUDITED' ? 'selected' : ''}>AUDITÉ IA</option>
+                                    <option value="APPROVED" ${lead.status === 'APPROVED' ? 'selected' : ''}>APPROUVÉ</option>
+                                    <option value="CONTACTED" ${lead.status === 'CONTACTED' ? 'selected' : ''}>CONTACTÉ</option>
+                                    <option value="INTERESTED" ${lead.status === 'INTERESTED' ? 'selected' : ''}>INTÉRESSÉ</option>
+                                    <option value="MEETING_SCHEDULED" ${lead.status === 'MEETING_SCHEDULED' ? 'selected' : ''}>RDV FIXÉ</option>
                                     <option value="CLIENT" ${lead.status === 'CLIENT' ? 'selected' : ''}>CLIENT</option>
-                                    <option value="REJECTED" ${lead.status === 'REJECTED' ? 'selected' : ''}>REJECTED</option>
+                                    <option value="REJECTED" ${lead.status === 'REJECTED' ? 'selected' : ''}>ARCHIVÉ</option>
                                 </select>
-                                ${lead.google_page_rank ? `<span class="badge" style="background:rgba(255,255,255,0.05); color:var(--text-muted); border:1px solid var(--border); font-size:0.7rem; padding: 2px 6px;">Page ${lead.google_page_rank}</span>` : ''}
-                                <a href="${googleSearchUrl}" target="_blank" class="text-xs text-gold hover-underline" style="display:flex; align-items:center; gap:3px;">
-                                    <span class="material-icons" style="font-size:13px;">open_in_new</span> ${t('leads_verify_rank')}
+                                ${lead.google_page_rank ? `<span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid var(--border); font-size: 0.72rem; padding: 3px 8px; border-radius: 6px;">Page ${lead.google_page_rank}</span>` : ''}
+                                <a href="${googleSearchUrl}" target="_blank" class="text-xs text-gold hover-underline" style="display: flex; align-items: center; gap: 5px; font-weight: 500;">
+                                    ${SVG_ICONS.external} ${t('leads_verify_rank')}
                                 </a>
                                 </div>
                         </div>
                         
-                        <button class="btn icon-btn" style="background:transparent; color:var(--text-muted); padding:4px;" onclick="window.location.hash='#leads'">
-                            <span class="material-icons">close</span>
+                        <button class="btn icon-btn" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: var(--text-muted); width: 36px; height: 36px; min-width: 36px; min-height: 36px; padding: 0; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; margin-left: auto; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);" onmouseenter="this.style.background='rgba(239, 68, 68, 0.15)'; this.style.borderColor='rgba(239, 68, 68, 0.35)'; this.style.color='#f87171';" onmouseleave="this.style.background='rgba(255, 255, 255, 0.05)'; this.style.borderColor='rgba(255, 255, 255, 0.1)'; this.style.color='var(--text-muted)';" onclick="window.location.hash='#leads'" title="Fermer le volet">
+                            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                         </button>
                     </div>
 
-                    <!-- ROW 2: Actions (Compact) - Only if needed in header too, or assume sidebar handles "Approve/Reject" if it was there? -->
-                    <!-- The user originally wanted Approve/Reject visibly. Let's keep them here for convenience or remove if redundant. -->
-                    <!-- Keeping them here as "Top/Quick Actions" is good UX. -->
+                    <!-- ROW 2: Actions (Compact) -->
                     ${lead.status === 'NEW' || lead.lastAudit ? `
-                    <div style="display:flex; justify-content:space-between; align-items:center; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 8px; width: 100%; box-sizing: border-box;">
                             <!-- Left: Audit Action -->
                             <div>
                             ${lead.lastAudit ? `
@@ -680,6 +1663,17 @@ window.openLeadDetail = async (data) => {
 
     // Initialize Resizer Logic
     initSidebarResizer();
+
+    // Load Proactive SMS Sequence Timeline (Section 4)
+    if (window.loadLeadSequenceTimeline) {
+        window.loadLeadSequenceTimeline(lead.id, lead);
+    }
+};
+
+// Global to store listeners for cleanup (kept for safety)
+window.activeLeadLogListeners = [];
+window.startLeadNeuralLogsListener = (leadId) => {
+    // Retired for streamlined simplicity & zero listener overhead
 };
 
 function initSidebarResizer() {
@@ -704,8 +1698,8 @@ function initSidebarResizer() {
         let newWidth = e.clientX - sidebar.getBoundingClientRect().left;
 
         // Constraints
-        if (newWidth < 300) newWidth = 300;
-        if (newWidth > 600) newWidth = 600;
+        if (newWidth < 380) newWidth = 380;
+        if (newWidth > 950) newWidth = 950;
 
         sidebar.style.width = `${newWidth}px`;
     });
@@ -715,9 +1709,191 @@ function initSidebarResizer() {
             isResizing = false;
             document.body.style.cursor = "default";
             resizer.classList.remove("resizing");
+            try {
+                localStorage.setItem('erp_lead_detail_sidebar_width', sidebar.style.width);
+            } catch (_) {}
         }
     });
 }
+
+// --- VISUAL SMS SEQUENCE TIMELINE (SIDEBAR SECTION 4) ---
+
+window.toggleTimelineMessagePreview = function(stepNum) {
+    const box = document.getElementById(`seq-step-preview-${stepNum}`);
+    const arrow = document.getElementById(`seq-step-arrow-${stepNum}`);
+    if (!box) return;
+    const isHidden = box.style.display === 'none';
+    box.style.display = isHidden ? 'block' : 'none';
+    if (arrow) {
+        arrow.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+    }
+};
+
+window.loadLeadSequenceTimeline = async function(leadId, leadData) {
+    const container = document.getElementById('lead-sequence-timeline-container');
+    if (!container) return;
+
+    // Loading State
+    container.innerHTML = `
+        <div class="lead-timeline-container">
+            <div class="seq-timeline-header">
+                <div style="display:flex; align-items:center; gap:6px;">
+                    <span class="material-icons text-gold" style="font-size:15px;">schedule</span>
+                    <span style="font-weight:700; color:#F8FAFC; font-size:0.78rem;">Calendrier d'envoi SMS (4 Étapes)</span>
+                </div>
+                <span class="text-xs text-muted" style="font-size:0.68rem;">Calcul en cours...</span>
+            </div>
+            <div style="padding:14px; text-align:center; color:#94A3B8; font-size:0.75rem;">
+                <span class="material-icons" style="font-size:16px; vertical-align:middle; margin-right:4px; animation: spin 1s linear infinite;">sync</span>
+                Calcul des créneaux dans le fuseau du prospect...
+            </div>
+        </div>
+    `;
+
+    try {
+        const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+        const resp = await fetch(`${API_BASE}/api/sequences/leads/${leadId}/timeline`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        const data = await resp.json();
+
+        if (!data.success || !Array.isArray(data.steps) || data.steps.length === 0) {
+            container.innerHTML = `
+                <div class="lead-timeline-container" style="padding:10px 12px; font-size:0.74rem; color:#94A3B8;">
+                    <span class="material-icons" style="font-size:14px; vertical-align:middle; color:var(--gold); margin-right:4px;">info</span>
+                    Calendrier indisponible : numéro de téléphone à qualifier ou séquence en attente.
+                </div>
+            `;
+            return;
+        }
+
+        const isLandline = (leadData && leadData.phone_type === 'landline');
+        const tz = data.timezone || 'America/Montreal';
+        const hasActive = data.hasActiveInstance;
+        const dryRun = data.dryRun;
+        
+        let badgeClass = 'preview';
+        let badgeText = 'Prévisionnel';
+        if (hasActive) {
+            badgeClass = dryRun ? 'simulated' : 'active';
+            badgeText = dryRun ? 'Simulation' : 'Actif';
+        }
+
+        const delayLabels = [
+            'Immédiat / Lundi matin',
+            'J+1 (24h après Étape 1)',
+            'J+3 (48h après Étape 2)',
+            'J+6 (Breakup final)'
+        ];
+
+        let stepsHtml = '';
+        data.steps.forEach((step, idx) => {
+            const stepNum = step.stepNumber || (idx + 1);
+            const isDone = step.status === 'COMPLETED';
+            const isSimulated = step.status === 'SIMULATED';
+            const isScheduled = step.status === 'SCHEDULED';
+            const isCurrent = (hasActive && data.currentStep === stepNum);
+            
+            let dotClass = 'preview';
+            let dotContent = stepNum;
+            let timeColor = '#CBD5E1';
+            let statusBadge = '';
+
+            if (isDone) {
+                dotClass = 'done';
+                dotContent = '✓';
+                timeColor = '#4ADE80';
+                statusBadge = '<span style="font-size:0.65rem; color:#4ADE80; font-weight:700;">ENVOYÉ</span>';
+            } else if (isSimulated) {
+                dotClass = 'simulated';
+                dotContent = '✓';
+                timeColor = '#38BDF8';
+                statusBadge = '<span style="font-size:0.65rem; color:#38BDF8; font-weight:700;">SIMULÉ</span>';
+            } else if (isScheduled) {
+                dotClass = 'scheduled';
+                dotContent = '⏳';
+                timeColor = 'var(--gold)';
+                statusBadge = '<span style="font-size:0.65rem; color:var(--gold); font-weight:700;">PROGRAMMÉ</span>';
+            }
+
+            const sendDate = step.sentAt ? new Date(step.sentAt) : (step.scheduledFor ? new Date(step.scheduledFor) : null);
+            const formattedTime = sendDate ? formatLeadScheduleTime(sendDate, tz) : 'Non défini';
+            const delayText = delayLabels[idx] || `Délai : ${step.delayHours}h`;
+            const messageBody = step.executedBody || step.template || step.templateText || '';
+
+            stepsHtml += `
+                <div class="seq-step-item ${isCurrent ? 'is-current' : ''}">
+                    <div class="seq-step-dot ${dotClass}">
+                        ${dotContent}
+                    </div>
+                    <div class="seq-step-topline">
+                        <span class="seq-step-title">Étape ${stepNum} • ${delayText}</span>
+                        ${statusBadge}
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; flex-wrap:wrap; gap:4px;">
+                        <span class="seq-step-time" style="color:${timeColor};">
+                            <span class="material-icons" style="font-size:12px;">event</span>
+                            <span>${formattedTime}</span>
+                        </span>
+                        <span class="text-xs text-muted" style="font-size:0.66rem; opacity:0.8;">(Heure locale)</span>
+                    </div>
+                    <div class="seq-step-purpose" style="color:${step.purposeColor || '#94A3B8'};">
+                        🎯 ${escapeHtml(step.purpose || 'Relance stratégique')}
+                    </div>
+                    ${messageBody ? `
+                        <div class="seq-step-accordion">
+                            <button type="button" class="seq-step-accordion-toggle" onclick="window.toggleTimelineMessagePreview(${stepNum})">
+                                <span class="material-icons" id="seq-step-arrow-${stepNum}" style="font-size:13px; transition:transform 0.2s;">expand_more</span>
+                                <span>Aperçu du SMS prévu</span>
+                            </button>
+                            <div id="seq-step-preview-${stepNum}" class="seq-step-preview-box" style="display:none;">
+                                <div class="seq-preview-bubble">
+                                    ${escapeHtml(messageBody)}
+                                </div>
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        });
+
+        container.innerHTML = `
+            <div class="lead-timeline-container">
+                <div class="seq-timeline-header">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <span class="material-icons text-gold" style="font-size:15px;">schedule</span>
+                        <span style="font-weight:700; color:#F8FAFC; font-size:0.78rem;">Calendrier d'envoi SMS (4 Étapes)</span>
+                    </div>
+                    <span class="seq-timeline-badge ${badgeClass}">${badgeText}</span>
+                </div>
+
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:5px 8px; margin-bottom:10px; background:rgba(255,255,255,0.02); border-radius:6px; font-size:0.7rem; color:#94A3B8; border:1px solid rgba(255,255,255,0.04);">
+                    <div style="display:flex; align-items:center; gap:4px;">
+                        <span class="material-icons" style="font-size:13px; color:var(--info);">public</span>
+                        <span>Fuseau : <strong style="color:#F8FAFC;">${tz}</strong></span>
+                    </div>
+                    <span style="display:inline-flex; align-items:center; gap:4px;">
+                        ${isLandline ? '<span style="color:#FCA5A5;">☎️ Ligne Fixe (SMS Bloqué)</span>' : '<span style="color:#4ADE80;">● Respect TCPA 9h-18h</span>'}
+                    </span>
+                </div>
+
+                <div class="seq-timeline-track">
+                    ${stepsHtml}
+                </div>
+            </div>
+        `;
+    } catch (err) {
+        console.error('Error loading sequence timeline:', err);
+        container.innerHTML = `
+            <div class="lead-timeline-container" style="padding:10px; font-size:0.72rem; color:#FCA5A5;">
+                <span class="material-icons" style="font-size:14px; vertical-align:middle; margin-right:4px;">error_outline</span>
+                Impossible de charger le calendrier de séquence.
+            </div>
+        `;
+    }
+};
 
 // --- TIMER LOGIC ---
 
@@ -1592,37 +2768,30 @@ window.updateLeadStatus = async (id, newStatus, category = null) => {
             updated_at: new Date().toISOString()
         };
 
-        // If Approving, use provided category or default
-        if (newStatus === 'APPROVED' && category) {
+        if (category) {
             updateData.lead_quality_category = category;
-
-            // If "Other", prompt for specific notes
-            if (category === 'OTHER') {
-                const note = prompt("Please enter a note for why this is 'Other' (optional):");
-                if (note) {
-                    updateData.notes = note;
-                }
-            }
         }
 
         const ref = doc(db, "leads", id);
         await updateDoc(ref, updateData);
 
-        // --- NEW: Trigger Automation ---
-        if (newStatus === 'APPROVED') {
-            triggerWorkflowForLead(id);
-        }
+        // Update local cache across all memory layers
+        syncLeadInAllCaches(id, updateData);
 
-        // Close overlay via URL reset
-        window.location.hash = '#leads';
+        window.showToast ? window.showToast(`Statut mis à jour : ${newStatus}`, "success") : null;
+
+        // Close overlay via URL reset if open
+        if (window.location.hash.includes('?id=')) {
+            window.location.hash = '#leads';
+        }
 
         // Refresh list
         const activeBtn = document.querySelector('button[data-filter].btn-primary');
         if (activeBtn) activeBtn.click();
 
     } catch (e) {
-        console.error(e);
-        alert('Error updating status');
+        console.error('Error updating status:', e);
+        window.showToast ? window.showToast("Erreur lors de la mise à jour du statut", "error") : null;
     }
 };
 
@@ -1804,6 +2973,34 @@ window.openImportModal = () => {
 };
 
 // --- EMAIL COMPOSER ---
+window.emailTemplates = {
+    general: {
+        subject: "Regarding {name} - Opportunity",
+        body: "Hi there,\n\nI came across {name} and was impressed by what I saw. I'd love to connect and discuss how we can help you grow.\n\nBest,\nThe Team"
+    },
+    audit: {
+        subject: "Free Website Audit for {name}",
+        body: "Hi there,\n\nI was looking at the {name} website and noticed a few areas that could be improved for better conversions. Would you be open to receiving a free audit report?\n\nCheers,\nThe Team"
+    },
+    seo: {
+        subject: "SEO Proposal for {name}",
+        body: "Hello,\n\nWe specialize in helping businesses like {name} rank higher on Google. Are you currently taking on new clients? Let me know if you are interested in a quick chat.\n\nBest,\nThe Team"
+    },
+    followup: {
+        subject: "Following up: {name}",
+        body: "Hi there,\n\nI'm just following up on my previous email. I'd love to hear your thoughts when you have a moment.\n\nThanks,\nThe Team"
+    }
+};
+
+window.applyEmailTemplate = (templateKey, companyName) => {
+    if (!templateKey) return;
+    const template = window.emailTemplates[templateKey];
+    if (template) {
+        document.getElementById('email-subject').value = template.subject.replace(/{name}/g, companyName);
+        document.getElementById('email-body').value = template.body.replace(/{name}/g, companyName);
+    }
+};
+
 window.openEmailComposer = (email, name) => {
     // Only open if email exists
     if (!email || email === 'undefined') {
@@ -1816,32 +3013,42 @@ window.openEmailComposer = (email, name) => {
 
     if (modal) modal.remove();
 
+    // Default template
+    const defaultSubject = window.emailTemplates.general.subject.replace(/{name}/g, name);
+    const defaultBody = window.emailTemplates.general.body.replace(/{name}/g, name);
+
     const html = `
     <div id="${modalId}" class="modal-overlay" style="display:flex; align-items:center; justify-content:center; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:2000;">
         <div class="card" style="width:600px; max-width:95vw; background:#15171C; border:1px solid #333;">
              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; border-bottom:1px solid #333; padding-bottom:1rem;">
-                <div class="text-h">New Message to <span class="text-gold">${name}</span></div>
+                <div class="text-h">New Message to <span class="text-gold">${escapeHtml(name)}</span></div>
                 <button class="btn btn-sm" onclick="document.getElementById('${modalId}').remove()">✕</button>
             </div>
             
-            <div class="form-group">
-                <label class="form-label" for="email-to">To:</label>
-                <input type="text" id="email-to" class="form-input" value="${email}" disabled style="opacity:0.7;">
+            <div class="form-group" style="display:flex; gap: 10px; align-items: flex-end;">
+                <div style="flex:1;">
+                    <label class="form-label" for="email-template-select">Template:</label>
+                    <select id="email-template-select" class="form-input" onchange="applyEmailTemplate(this.value, '${escapeHtml(name)}')">
+                        <option value="general">General Interest</option>
+                        <option value="audit">Free Audit Offer</option>
+                        <option value="seo">SEO Proposal</option>
+                        <option value="followup">Follow Up</option>
+                    </select>
+                </div>
+                <div style="flex:1;">
+                    <label class="form-label" for="email-to">To:</label>
+                    <input type="text" id="email-to" class="form-input" value="${email}" disabled style="opacity:0.7;">
+                </div>
             </div>
 
             <div class="form-group">
                 <label class="form-label" for="email-subject">Subject:</label>
-                <input type="text" id="email-subject" class="form-input" value="Regarding ${name} - Opportunity">
+                <input type="text" id="email-subject" class="form-input" value="${escapeHtml(defaultSubject)}">
             </div>
 
             <div class="form-group">
                 <label class="form-label" for="email-body">Message:</label>
-                <textarea id="email-body" class="form-input" rows="8" style="resize:vertical;">Hi there,
-
-I came across ${name} and was impressed by what I saw. I'd love to connect and discuss how we can help you grow.
-
-Best,
-The Team</textarea>
+                <textarea id="email-body" class="form-input" rows="8" style="resize:vertical;">${escapeHtml(defaultBody)}</textarea>
             </div>
 
             <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">
@@ -1898,6 +3105,658 @@ window.sendLeadEmail = async (toEmail) => {
     }
 };
 
+// --- LEAD LANGUAGE DETECTION (DEFAULT ENGLISH, FRENCH FOR QUEBEC / FRANCOPHONE) ---
+export function detectLeadLanguage(lead = {}) {
+    if (lead.preferredLanguage) {
+        return String(lead.preferredLanguage).toLowerCase().startsWith('fr') ? 'fr' : 'en';
+    }
+    const prov = String(lead.province || lead.state || '').trim().toUpperCase();
+    const city = String(lead.city || '').trim().toLowerCase();
+    const address = String(lead.address || lead.formattedAddress || '').toUpperCase();
+    const postal = String(lead.postal_code || lead.postalCode || '').trim().toUpperCase();
+    const cleanPhone = String(lead.phone || '').replace(/[^\d]/g, '');
+
+    // 1. Quebec Province
+    if (prov === 'QC' || prov === 'QUEBEC' || prov === 'QUÉBEC' ||
+        address.includes(' QC ') || address.includes(', QC') || address.includes('QUEBEC') || address.includes('QUÉBEC')) {
+        return 'fr';
+    }
+    // 2. Quebec FSA Postal Code (G, H, J)
+    if (/^[GHJ]\d[A-Z]/.test(postal)) {
+        return 'fr';
+    }
+    // 3. Quebec NPAs Area Codes
+    if (cleanPhone.length >= 10) {
+        const areaCode = cleanPhone.length === 11 && cleanPhone.startsWith('1')
+            ? cleanPhone.slice(1, 4)
+            : cleanPhone.slice(0, 3);
+        const qcAreaCodes = ['418', '581', '367', '514', '438', '450', '579', '819', '873'];
+        if (qcAreaCodes.includes(areaCode)) {
+            return 'fr';
+        }
+    }
+    // 4. Quebec Municipalities
+    const qcCities = [
+        'montréal', 'montreal', 'québec', 'quebec', 'laval', 'gatineau', 'longueuil', 'sherbrooke',
+        'lévis', 'levis', 'saguenay', 'trois-rivières', 'trois-rivieres', 'terrebonne', 'saint-jean-sur-richelieu',
+        'brossard', 'repentigny', 'drummondville', 'saint-jérôme', 'saint-jerome', 'granby', 'blainville',
+        'mirabel', 'shawinigan', 'rimouski', 'victoriaville', 'rouyn-noranda', 'châteauguay', 'saint-hyacinthe',
+        'magog', 'val-d-or', 'alma', 'baie-comeau', 'sept-îles', 'deschambault'
+    ];
+    if (qcCities.some(c => city.includes(c))) {
+        return 'fr';
+    }
+    // 5. French business naming patterns
+    const bizName = String(lead.business_name || lead.company || lead.name || '').toLowerCase();
+    const frPatterns = /\b(clinique|rénovation|renovation|plomberie|toiture|menuiserie|électricien|electricite|avocat|notaire|comptable|esthétique|esthetique|coiffure|boutique|chiropratique|santé|sante|dentaire|ébénisterie|paysagiste)\b/i;
+    if (frPatterns.test(bizName)) {
+        return 'fr';
+    }
+    // 6. DEFAULT: English for all other Canada provinces and all US states!
+    return 'en';
+}
+window.detectLeadLanguage = detectLeadLanguage;
+
+// --- TWILIO AI SMS OUTREACH MODAL & ACTIONS ---
+window.openSmsOutreachModal = (leadId, phone, name, preferredLang = null) => {
+    const modalId = 'sms-outreach-modal';
+    let modal = document.getElementById(modalId);
+    if (modal) modal.remove();
+
+    const lead = leadId && window.allLeadsCache ? window.allLeadsCache.find(l => l.id === leadId) : null;
+    const isLandline = lead && (lead.phone_type === 'landline' || lead.sms_eligible === false);
+    const carrierName = lead ? (lead.carrier_name || lead.phone_carrier || 'Ligne Fixe') : '';
+    const pClean = (phone || (lead && lead.phone) || '').replace(/\D/g, '');
+    const isCanadian = !lead ? true : (lead.country === 'Canada' || lead.country === 'CA' || /^(?:204|226|236|249|250|289|306|343|365|367|368|403|416|418|428|431|437|438|450|506|514|519|548|579|581|584|587|604|613|639|647|672|683|705|709|742|753|778|780|782|807|819|825|867|873|879|902|905)/.test(pClean.startsWith('1') ? pClean.slice(1) : pClean));
+
+    let isFr = false;
+    if (preferredLang) {
+        isFr = String(preferredLang).toLowerCase().startsWith('fr');
+    } else {
+        isFr = detectLeadLanguage({ phone, name }) === 'fr';
+    }
+    const defaultPhone = phone || '';
+    const safeName = (name || '').replace(/"/g, '&quot;');
+
+    const html = `
+    <div id="${modalId}" class="modal-overlay" style="display:flex; align-items:center; justify-content:center; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(11, 13, 16, 0.85); z-index:2200; backdrop-filter: blur(6px); padding:1rem;">
+        <div class="card" style="width:580px; max-width:95vw; background:#14171D; border:1px solid rgba(223,165,58,0.3); box-shadow: 0 25px 60px rgba(0,0,0,0.8); border-radius:14px; overflow:hidden;">
+            <div style="background:#181C24; padding: 1.2rem 1.5rem; border-bottom: 1px solid rgba(255,255,255,0.08); display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <div style="width:34px; height:34px; border-radius:8px; background:rgba(223,165,58,0.12); color:var(--gold); display:flex; align-items:center; justify-content:center;">
+                        ${SVG_ICONS.sms}
+                    </div>
+                    <div>
+                        <div class="text-h" style="font-size:1.05rem; margin:0; color:#FFFFFF;">Outreach SMS IA</div>
+                        <div class="text-xs text-muted">Solutions Quasar Inc. &bull; <strong>${isCanadian ? '🇨🇦 Twilio : +1 (819) 300-2831' : '🇺🇸 Telnyx : +1 (832) 743-6292'}</strong></div>
+                    </div>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <button class="btn btn-xs btn-outline-gold" onclick="window.openSmsConfigModal()" style="display:flex; align-items:center; gap:5px; font-weight:600; padding:3px 10px; font-size:0.75rem;" title="Modifier le prompt système et la documentation d'entreprise">
+                        ${SVG_ICONS.settings} Prompt & Docs
+                    </button>
+                    <button class="btn icon-btn" onclick="document.getElementById('${modalId}').remove()" style="background:transparent; border:none; color:var(--text-muted); cursor:pointer;">
+                        ${SVG_ICONS.close}
+                    </button>
+                </div>
+            </div>
+
+            <div style="padding: 1.5rem; display:flex; flex-direction:column; gap:14px;">
+                ${isLandline ? `
+                <div style="background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.35); border-radius:8px; padding:10px 14px; display:flex; align-items:flex-start; gap:10px; color:#FCA5A5; font-size:0.8rem;">
+                    <span style="font-size:1.3rem; line-height:1;">☎️</span>
+                    <div>
+                        <strong style="color:#F87171;">Ligne Fixe Détectée (${escapeHtml(carrierName)})</strong><br>
+                        <span style="opacity:0.9;">Ce numéro est un téléphone fixe d'entreprise. Les SMS ne peuvent pas être délivrés aux téléphones fixes et seront rejetés par l'opérateur telecom. Privilégiez un appel direct ou Gmail.</span>
+                    </div>
+                </div>
+                ` : ''}
+
+                ${isCanadian && lead?.casl?.status === 'ELIGIBLE' ? `
+                <div style="background:rgba(34,197,94,0.08); border:1px solid rgba(34,197,94,0.25); border-radius:8px; padding:8px 12px; display:flex; align-items:center; gap:8px; color:#4ADE80; font-size:0.75rem;">
+                    <span class="material-icons" style="font-size:16px;">verified</span>
+                    <span><strong>Conforme LCAP / CASL :</strong> Numéro publié bien en vue sur le site officiel sans restriction. Preuve archivée.</span>
+                </div>
+                ` : (isCanadian && lead?.casl?.status === 'INELIGIBLE' ? `
+                <div style="background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.35); border-radius:8px; padding:8px 12px; display:flex; align-items:center; gap:8px; color:#F87171; font-size:0.75rem;">
+                    <span class="material-icons" style="font-size:16px;">block</span>
+                    <span><strong>Attention LCAP / CASL :</strong> Mention de refus de sollicitation détectée sur le site de l'entreprise. Envoi risqué.</span>
+                </div>
+                ` : (isCanadian && lead?.casl?.status === 'REVIEW' ? `
+                <div style="background:rgba(234,179,8,0.08); border:1px solid rgba(234,179,8,0.25); border-radius:8px; padding:8px 12px; display:flex; align-items:center; gap:8px; color:#FACC15; font-size:0.75rem;">
+                    <span class="material-icons" style="font-size:16px;">warning</span>
+                    <span><strong>LCAP / CASL en attente :</strong> Numéro non repéré dans le texte officiel. Vérification recommandée avant l'envoi.</span>
+                </div>
+                ` : ''))}
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+                    <div class="form-group" style="margin:0;">
+                        <label class="form-label text-xs uppercase text-muted font-bold" style="margin-bottom:4px;">Destinataire (Téléphone) *</label>
+                        <input type="text" id="sms-to" class="form-input" value="${defaultPhone}" placeholder="+1 819 123 4567" style="background:#0F1217; border-color:rgba(255,255,255,0.1); height:36px; font-size:0.85rem;">
+                    </div>
+                    <div class="form-group" style="margin:0;">
+                        <label class="form-label text-xs uppercase text-muted font-bold" style="margin-bottom:4px;">Contact / Entreprise</label>
+                        <input type="text" id="sms-name" class="form-input" value="${safeName}" placeholder="Nom du contact ou commerce" style="background:#0F1217; border-color:rgba(255,255,255,0.1); height:36px; font-size:0.85rem;">
+                    </div>
+                </div>
+
+                <div style="display:grid; grid-template-columns: 1fr 1.5fr; gap:12px;">
+                    <div class="form-group" style="margin:0;">
+                        <label class="form-label text-xs uppercase text-muted font-bold" style="margin-bottom:4px;">Langue du SMS</label>
+                        <select id="sms-language" class="form-input" style="background:#0F1217; border-color:rgba(255,255,255,0.1); height:36px; font-size:0.85rem;">
+                            <option value="fr" ${isFr ? 'selected' : ''}>Français (French)</option>
+                            <option value="en" ${!isFr ? 'selected' : ''}>English (Anglais)</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin:0;">
+                        <label class="form-label text-xs uppercase text-muted font-bold" style="margin-bottom:4px;">Angle d'Accroche IA</label>
+                        <select id="sms-angle" class="form-input" style="background:#0F1217; border-color:rgba(255,255,255,0.1); height:36px; font-size:0.85rem;">
+                            <option value="audit" selected>Offre d'Audit IA Gratuit</option>
+                            <option value="general">Prise de contact & Partenariat</option>
+                            <option value="website_upgrade">Modernisation Site & Automatisations</option>
+                            <option value="follow_up">Relance / Suivi rapide</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin:0;">
+                    <label class="form-label text-xs uppercase text-muted font-bold" style="margin-bottom:4px;">Consignes Personnalisées pour l'IA (Optionnel)</label>
+                    <input type="text" id="sms-custom-prompt" class="form-input" placeholder="ex: Mentionner qu'on a vu leur page Facebook, proposer un appel de 10 min" style="background:#0F1217; border-color:rgba(255,255,255,0.1); height:36px; font-size:0.85rem;">
+                </div>
+
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:2px;">
+                    <label class="form-label text-xs uppercase text-gold font-bold" style="margin:0;">Message SMS (Prêt à l'envoi)</label>
+                    <button class="btn btn-xs btn-outline-gold" id="btn-generate-ai-sms" onclick="window.generateAiSmsMessage()" style="display:flex; align-items:center; gap:4px; padding:3px 10px; font-size:0.75rem;">
+                        ${SVG_ICONS.sparkles} Générer avec l'IA
+                    </button>
+                </div>
+
+                <div class="form-group" style="position:relative; margin:0;">
+                    <textarea id="sms-body" class="form-input" rows="4" style="resize:vertical; font-family:inherit; font-size:0.85rem; background:#0F1217; border-color:rgba(255,255,255,0.1);" placeholder="Cliquez sur 'Générer avec l'IA' ou écrivez votre message directement..." oninput="window.updateSmsCharCount()"></textarea>
+                    <div id="sms-char-counter" class="text-xs text-muted" style="text-align:right; margin-top:4px;">0 / 160 caractères (1 SMS)</div>
+                </div>
+
+                <div class="text-xs text-muted" style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:10px; font-size:0.73rem;">
+                    <span class="text-gold font-bold">Conformité Légale (LCAP / TCPA) :</span> Les SMS de prospection incluent la mention de désabonnement obligatoire <em>[Rép. STOP pour cesser]</em>. Dès qu'un prospect répond, l'IA répond automatiquement.
+                </div>
+            </div>
+
+            <div style="background:#181C24; padding: 1rem 1.5rem; border-top:1px solid rgba(255,255,255,0.08); display:flex; justify-content:flex-end; gap:10px; align-items:center;">
+                <button class="btn btn-secondary btn-sm" onclick="document.getElementById('${modalId}').remove()" style="font-size:0.8rem;">Annuler</button>
+                <button class="btn btn-primary btn-sm" id="btn-send-sms" onclick="window.sendSmsOutreach('${leadId || ''}')" style="display:flex; align-items:center; gap:6px; font-weight:600; padding:0 16px; font-size:0.82rem; box-shadow: 0 4px 15px rgba(223, 165, 58, 0.25);">
+                    ${SVG_ICONS.send} <span>Envoyer le SMS</span>
+                </button>
+            </div>
+        </div>
+    </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', html);
+
+    if (defaultPhone) {
+        window.generateAiSmsMessage();
+    }
+};
+
+window.updateSmsCharCount = () => {
+    const textarea = document.getElementById('sms-body');
+    const counter = document.getElementById('sms-char-counter');
+    if (!textarea || !counter) return;
+    const len = textarea.value.length;
+    const segments = Math.ceil(len / 160) || 1;
+    counter.innerHTML = `${len} / 160 caractères (${segments} SMS)`;
+    if (len > 160) {
+        counter.style.color = 'var(--warning)';
+    } else {
+        counter.style.color = 'var(--text-muted)';
+    }
+};
+
+window.generateAiSmsMessage = async () => {
+    const to = document.getElementById('sms-to')?.value.trim();
+    const name = document.getElementById('sms-name')?.value.trim();
+    const language = document.getElementById('sms-language')?.value || 'fr';
+    const angle = document.getElementById('sms-angle')?.value || 'audit';
+    const customPrompt = document.getElementById('sms-custom-prompt')?.value.trim();
+
+    const genBtn = document.getElementById('btn-generate-ai-sms');
+    const textarea = document.getElementById('sms-body');
+    const originalText = genBtn ? genBtn.innerHTML : '';
+
+    if (genBtn) {
+        genBtn.innerHTML = '<span class="material-icons rotating" style="font-size:13px;">refresh</span> Génération...';
+        genBtn.disabled = true;
+    }
+
+    try {
+        const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+        const resp = await fetch(`${API_BASE}/api/sms/generate-outreach`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                name,
+                company: name,
+                language,
+                angle,
+                customPrompt
+            })
+        });
+
+        const data = await resp.json();
+        if (data.success && data.text) {
+            textarea.value = data.text;
+            window.updateSmsCharCount();
+        } else {
+            throw new Error(data.error || "Impossible de générer le SMS");
+        }
+    } catch (e) {
+        console.error("SMS Generation Error:", e);
+        showToast(e.message, "error");
+    } finally {
+        if (genBtn) {
+            genBtn.innerHTML = originalText;
+            genBtn.disabled = false;
+        }
+    }
+};
+
+window.sendSmsOutreach = async (leadId) => {
+    const to = document.getElementById('sms-to')?.value.trim();
+    const name = document.getElementById('sms-name')?.value.trim();
+    const message = document.getElementById('sms-body')?.value.trim();
+    const sendBtn = document.getElementById('btn-send-sms');
+
+    if (!to) {
+        return showToast("Veuillez saisir un numéro de téléphone valide.", "warning");
+    }
+    if (!message) {
+        return showToast("Le message SMS ne peut pas être vide.", "warning");
+    }
+
+    const lead = leadId && window.allLeadsCache ? window.allLeadsCache.find(l => l.id === leadId) : null;
+    if (lead && (lead.phone_type === 'landline' || lead.sms_eligible === false)) {
+        return showToast(`Envoi impossible : Ce numéro est une ligne fixe (${lead.carrier_name || 'Filaire'}). Privilégiez un appel direct.`, "warning");
+    }
+
+    const originalBtnHtml = sendBtn ? sendBtn.innerHTML : '';
+    if (sendBtn) {
+        sendBtn.innerHTML = '<span class="material-icons rotating" style="font-size:16px;">refresh</span> Envoi en cours...';
+        sendBtn.disabled = true;
+    }
+
+    try {
+        const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+        const resp = await fetch(`${API_BASE}/api/sms/send-outreach`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                to,
+                message,
+                leadId,
+                name,
+                company: name
+            })
+        });
+
+        const data = await resp.json();
+        if (!data.success) {
+            throw new Error(data.error || "Échec de l'envoi du SMS via Twilio.");
+        }
+
+        showToast(`SMS envoyé avec succès à ${to} !`, "success");
+        const modal = document.getElementById('sms-outreach-modal');
+        if (modal) modal.remove();
+
+    } catch (e) {
+        console.error("SMS Send Error:", e);
+        showToast(`Erreur Twilio: ${e.message}`, "error");
+    } finally {
+        if (sendBtn) {
+            sendBtn.innerHTML = originalBtnHtml;
+            sendBtn.disabled = false;
+        }
+    }
+};
+
+// Verification de numéro de téléphone en direct via Telnyx Lookup v2
+window.verifyLeadPhone = async (leadId) => {
+    const badgeSlot = document.getElementById('lead-phone-badge-slot');
+    const phoneInput = document.getElementById('edit-phone');
+    const phone = phoneInput ? phoneInput.value.trim() : null;
+
+    if (!phone) {
+        showToast("Aucun numéro de téléphone à vérifier.", "warning");
+        return;
+    }
+
+    if (badgeSlot) {
+        badgeSlot.innerHTML = `<span class="badge" style="background:rgba(223,165,58,0.15); color:var(--gold); font-size:0.68rem; padding:2px 6px; border-radius:4px;"><span class="material-icons rotating" style="font-size:10px;">refresh</span> Vérification...</span>`;
+    }
+
+    try {
+        const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+        const resp = await fetch(`${API_BASE}/api/phone/validate`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ phone, leadId })
+        });
+        const data = await resp.json();
+        if (!data.success) {
+            throw new Error(data.error || "Échec de validation Telnyx");
+        }
+
+        const res = data.result;
+        // Update local caches across all collections & views
+        syncLeadInAllCaches(leadId, {
+            phone_type: res.phone_type,
+            carrier_name: res.carrier_name,
+            sms_eligible: res.sms_eligible,
+            recommended_channel: res.recommended_channel,
+            phone_validated_at: res.checked_at
+        });
+
+        if (badgeSlot) {
+            if (res.phone_type === 'mobile') {
+                badgeSlot.innerHTML = `<span class="badge" style="background:rgba(34,197,94,0.15); color:#4ADE80; font-size:0.68rem; padding:2px 6px; border-radius:4px; font-weight:600;" title="${escapeHtml(res.carrier_name || 'Mobile')}">📱 Mobile</span>`;
+                showToast(`Ligne certifiée Mobile (${res.carrier_name || 'Cellulaire'}). Éligible SMS !`, "success");
+            } else if (res.phone_type === 'landline') {
+                badgeSlot.innerHTML = `<span class="badge" style="background:rgba(148,163,184,0.15); color:#94A3B8; font-size:0.68rem; padding:2px 6px; border-radius:4px; font-weight:600;" title="${escapeHtml(res.carrier_name || 'Fixe')}">☎️ Fixe</span>`;
+                showToast(`Ligne Fixe détectée (${res.carrier_name || 'Filaire'}). SMS non supporté.`, "warning");
+            } else {
+                badgeSlot.innerHTML = `<span class="badge" style="background:rgba(59,130,246,0.15); color:#60A5FA; font-size:0.68rem; padding:2px 6px; border-radius:4px; font-weight:600;" title="${escapeHtml(res.carrier_name || 'Ligne')}">${escapeHtml(res.phone_type)}</span>`;
+                showToast(`Type de ligne : ${res.phone_type} (${res.carrier_name || ''})`, "info");
+            }
+        }
+
+        // Dynamically update the actions row in open sidebar
+        const actionRow = document.getElementById('lead-actions-row');
+        if (actionRow) {
+            const isLandline = res.phone_type === 'landline' || res.sms_eligible === false;
+            const carrierLabel = escapeHtml(res.carrier_name || 'Fixe');
+            const buttons = actionRow.querySelectorAll('button');
+            const smsBtn = buttons[0];
+            const callBtn = buttons[2];
+            if (isLandline) {
+                if (smsBtn) {
+                    smsBtn.style.opacity = '0.5';
+                    smsBtn.style.cursor = 'not-allowed';
+                    smsBtn.style.borderColor = 'rgba(239,68,68,0.3)';
+                    smsBtn.style.color = '#FCA5A5';
+                    smsBtn.onclick = () => window.showToast(`☎️ Ligne fixe détectée (${carrierLabel}) : SMS non supporté. Privilégiez un appel direct.`, 'warning');
+                    const textSpan = smsBtn.querySelector('span');
+                    if (textSpan) textSpan.style.textDecoration = 'line-through';
+                }
+                if (callBtn) {
+                    callBtn.style.borderColor = 'rgba(223, 165, 58, 0.7)';
+                    callBtn.style.color = 'var(--gold)';
+                    callBtn.style.background = 'rgba(223, 165, 58, 0.12)';
+                    callBtn.style.fontWeight = '600';
+                }
+            }
+        }
+
+        // Re-render leads list & subfilters
+        updateSubfilterCounts(window.allLeadsCache);
+        applyCurrentSubfilter();
+    } catch (err) {
+        console.error("Phone verification error:", err);
+        showToast(err.message, "error");
+        if (badgeSlot) {
+            badgeSlot.innerHTML = `<button type="button" class="btn btn-xs" onclick="window.verifyLeadPhone('${leadId}')" style="background:rgba(223,165,58,0.12); color:var(--gold); border:1px solid rgba(223,165,58,0.3); font-size:0.68rem; padding:2px 6px; border-radius:4px; font-weight:600;">Réessayer</button>`;
+        }
+    }
+};
+
+// --- SMS AI SYSTEM PROMPT & DOCUMENTATION MODAL ---
+window.openSmsConfigModal = async () => {
+    const modalId = 'sms-config-modal';
+    let modal = document.getElementById(modalId);
+    if (modal) modal.remove();
+
+    const modalHtml = `
+    <div id="${modalId}" class="modal-overlay" style="display:flex; align-items:center; justify-content:center; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:2200; backdrop-filter: blur(4px);">
+        <div class="card" style="width:740px; max-width:95vw; background:#15171C; border:1px solid rgba(223,165,58,0.4); box-shadow: 0 25px 60px rgba(0,0,0,0.8); border-radius:12px; overflow:hidden; display:flex; flex-direction:column; max-height:90vh;">
+            
+            <!-- Header -->
+            <div style="background: linear-gradient(135deg, #15171C 0%, #0B0D10 100%); padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <div style="width:36px; height:36px; border-radius:8px; background:rgba(223,165,58,0.15); color:var(--gold); display:flex; align-items:center; justify-content:center;">
+                        <span class="material-icons" style="font-size:20px;">psychology</span>
+                    </div>
+                    <div>
+                        <div class="text-h" style="font-size:1.1rem; margin:0;">Configuration de l'IA SMS (Prompt & Documentation)</div>
+                        <div class="text-xs text-muted">Personnalisez à volonté le comportement et les connaissances de l'IA</div>
+                    </div>
+                </div>
+                <button class="btn btn-sm btn-icon" onclick="document.getElementById('${modalId}').remove()" style="background:transparent; border:none; color:var(--text-muted); cursor:pointer;">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+
+            <!-- Tabs Nav -->
+            <div style="display:flex; background:rgba(0,0,0,0.25); border-bottom:1px solid var(--border); padding:0 1.5rem; gap:10px;">
+                <button class="tab-btn active" id="tab-btn-prompt" onclick="window.switchSmsConfigTab('prompt')" style="padding:10px 14px; background:transparent; border:none; border-bottom:2px solid var(--gold); color:var(--gold); font-weight:bold; font-size:0.85rem; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                    <span class="material-icons" style="font-size:16px;">chat</span> System Prompt
+                </button>
+                <button class="tab-btn" id="tab-btn-docs" onclick="window.switchSmsConfigTab('docs')" style="padding:10px 14px; background:transparent; border:none; border-bottom:2px solid transparent; color:var(--text-muted); font-size:0.85rem; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                    <span class="material-icons" style="font-size:16px;">library_books</span> Documentation & FAQ
+                </button>
+                <button class="tab-btn" id="tab-btn-model" onclick="window.switchSmsConfigTab('model')" style="padding:10px 14px; background:transparent; border:none; border-bottom:2px solid transparent; color:var(--text-muted); font-size:0.85rem; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                    <span class="material-icons" style="font-size:16px;">tune</span> Modèle & Paramètres
+                </button>
+            </div>
+
+            <!-- Body -->
+            <div id="sms-config-body" style="padding: 1.5rem; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:16px;">
+                <div style="text-align:center; padding:2rem; color:var(--text-muted);">
+                    <span class="material-icons rotating" style="font-size:2rem; color:var(--gold);">refresh</span>
+                    <div style="margin-top:8px;">Chargement de la configuration...</div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div style="background:var(--bg-dark); padding: 1rem 1.5rem; border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+                <button class="btn btn-xs btn-secondary" onclick="window.resetSmsConfigToDefaults()">
+                    <span class="material-icons" style="font-size:14px;">restart_alt</span> Restaurer par défaut
+                </button>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn btn-secondary" onclick="document.getElementById('${modalId}').remove()">Fermer</button>
+                    <button class="btn btn-primary" id="btn-save-sms-cfg" onclick="window.saveSmsAiConfig()" style="display:flex; align-items:center; gap:6px;">
+                        <span class="material-icons" style="font-size:16px;">save</span> Enregistrer la configuration
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+    try {
+        const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+        const resp = await fetch(`${API_BASE}/api/sms/config`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await resp.json();
+        if (data.success && data.config) {
+            window.currentSmsConfig = data.config;
+            window.renderSmsConfigFields(data.config);
+        } else {
+            throw new Error(data.error || "Impossible de charger la configuration");
+        }
+    } catch (e) {
+        console.error("SMS Config Fetch Error:", e);
+        const body = document.getElementById('sms-config-body');
+        if (body) {
+            body.innerHTML = `<div class="text-danger" style="text-align:center; padding:2rem;">Erreur de chargement: ${e.message}</div>`;
+        }
+    }
+};
+
+window.switchSmsConfigTab = (tabName) => {
+    ['prompt', 'docs', 'model'].forEach(t => {
+        const btn = document.getElementById(`tab-btn-${t}`);
+        const panel = document.getElementById(`panel-cfg-${t}`);
+        if (btn) {
+            if (t === tabName) {
+                btn.style.color = 'var(--gold)';
+                btn.style.borderBottom = '2px solid var(--gold)';
+                btn.style.fontWeight = 'bold';
+            } else {
+                btn.style.color = 'var(--text-muted)';
+                btn.style.borderBottom = '2px solid transparent';
+                btn.style.fontWeight = 'normal';
+            }
+        }
+        if (panel) {
+            panel.style.display = (t === tabName) ? 'flex' : 'none';
+        }
+    });
+};
+
+window.renderSmsConfigFields = (cfg) => {
+    const body = document.getElementById('sms-config-body');
+    if (!body) return;
+
+    body.innerHTML = `
+        <!-- Panel 1: System Prompt -->
+        <div id="panel-cfg-prompt" style="display:flex; flex-direction:column; gap:12px;">
+            <div class="text-xs text-muted" style="line-height:1.5;">
+                Le <strong>System Prompt</strong> dicte le comportement, la personnalité et les contraintes strictes de l'IA lorsqu'elle répond par SMS ou génère un premier message d'accroche.
+            </div>
+            <div class="form-group">
+                <label class="form-label text-xs uppercase text-gold font-bold">System Prompt (Instructions de l'Agent SMS) :</label>
+                <textarea id="cfg-system-prompt" class="form-input" rows="12" style="font-family:monospace; font-size:0.85rem; line-height:1.5; resize:vertical;">${cfg.systemPrompt || ''}</textarea>
+            </div>
+            <div class="text-xs text-muted" style="background:rgba(255,255,255,0.02); padding:8px 12px; border-radius:6px; border:1px solid var(--border);">
+                💡 <em>Règle clé :</em> Conservez toujours l'instruction d'une réponse de moins de 160 caractères pour le format SMS.
+            </div>
+        </div>
+
+        <!-- Panel 2: Documentation & FAQ -->
+        <div id="panel-cfg-docs" style="display:none; flex-direction:column; gap:12px;">
+            <div class="text-xs text-muted" style="line-height:1.5;">
+                Collez ici toute la <strong>documentation de Solutions Quasar</strong> (liste détaillée de vos services, forfaits d'entretien, tarifs indicatifs, lien de prise de rendez-vous Calendly/Cal.com, heures d'ouverture). L'IA s'appuie directement dessus pour répondre avec exactitude aux questions posées par SMS.
+            </div>
+            <div class="form-group">
+                <label class="form-label text-xs uppercase text-gold font-bold">Base de connaissances & Documentation d'entreprise :</label>
+                <textarea id="cfg-knowledge-docs" class="form-input" rows="14" style="font-family:monospace; font-size:0.85rem; line-height:1.5; resize:vertical;" placeholder="# SOLUTIONS QUASAR INC.&#10;Services : Création de sites web...&#10;Tarifs : À partir de 350 $/mois...&#10;Lien de rendez-vous : https://cal.com/...">${cfg.knowledgeDocumentation || ''}</textarea>
+            </div>
+        </div>
+
+        <!-- Panel 3: Modèle & Paramètres -->
+        <div id="panel-cfg-model" style="display:none; flex-direction:column; gap:16px;">
+            <div class="form-group">
+                <label class="form-label text-xs uppercase text-muted font-bold">Modèle d'Intelligence Artificielle</label>
+                <select id="cfg-model" class="form-input">
+                    <option value="gpt-4o-mini" ${cfg.model === 'gpt-4o-mini' || !cfg.model ? 'selected' : ''}>gpt-4o-mini (Recommandé : ultra-rapide < 1s, économique et idéal pour SMS)</option>
+                    <option value="gpt-4o" ${cfg.model === 'gpt-4o' ? 'selected' : ''}>gpt-4o (Raisonnement avancé et écriture sophistiquée)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label text-xs uppercase text-muted font-bold">Température (Créativité)</label>
+                <select id="cfg-temperature" class="form-input">
+                    <option value="0.3" ${cfg.temperature == 0.3 ? 'selected' : ''}>0.3 - Précis et factuel</option>
+                    <option value="0.7" ${cfg.temperature == 0.7 || !cfg.temperature ? 'selected' : ''}>0.7 - Équilibré et naturel (Recommandé)</option>
+                    <option value="0.9" ${cfg.temperature == 0.9 ? 'selected' : ''}>0.9 - Plus créatif</option>
+                </select>
+            </div>
+
+            <div class="text-xs text-muted" style="background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:6px; padding:12px;">
+                <span class="text-gold font-bold">Application instantanée :</span> Toute modification enregistrée ici est immédiatement active sur le serveur et injectée dans chaque nouveau SMS sortant et chaque réponse entrante.
+            </div>
+        </div>
+    `;
+};
+
+window.saveSmsAiConfig = async () => {
+    const systemPrompt = document.getElementById('cfg-system-prompt')?.value;
+    const knowledgeDocumentation = document.getElementById('cfg-knowledge-docs')?.value;
+    const model = document.getElementById('cfg-model')?.value || 'gpt-4o-mini';
+    const temperature = parseFloat(document.getElementById('cfg-temperature')?.value || '0.7');
+
+    const saveBtn = document.getElementById('btn-save-sms-cfg');
+    const originalText = saveBtn ? saveBtn.innerHTML : '';
+    if (saveBtn) {
+        saveBtn.innerHTML = '<span class="material-icons rotating" style="font-size:16px;">refresh</span> Sauvegarde...';
+        saveBtn.disabled = true;
+    }
+
+    try {
+        const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+        const resp = await fetch(`${API_BASE}/api/sms/config`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                systemPrompt,
+                knowledgeDocumentation,
+                model,
+                temperature
+            })
+        });
+
+        const data = await resp.json();
+        if (data.success) {
+            window.currentSmsConfig = data.config;
+            showToast("Configuration du System Prompt et de la Documentation enregistrée !", "success");
+            const modal = document.getElementById('sms-config-modal');
+            if (modal) modal.remove();
+        } else {
+            throw new Error(data.error || "Échec de l'enregistrement");
+        }
+    } catch (e) {
+        console.error("Save SMS Config Error:", e);
+        showToast(`Erreur: ${e.message}`, "error");
+    } finally {
+        if (saveBtn) {
+            saveBtn.innerHTML = originalText;
+            saveBtn.disabled = false;
+        }
+    }
+};
+
+window.resetSmsConfigToDefaults = async () => {
+    const confirmed = await erpConfirm("Voulez-vous réinitialiser le prompt et la documentation avec les valeurs par défaut de Solutions Quasar ?", "Réinitialiser la configuration");
+    if (!confirmed) return;
+
+    try {
+        const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+        const resp = await fetch(`${API_BASE}/api/sms/config`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                systemPrompt: null,
+                knowledgeDocumentation: null,
+                model: 'gpt-4o-mini',
+                temperature: 0.7
+            })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            window.currentSmsConfig = data.config;
+            window.renderSmsConfigFields(data.config);
+            showToast("Valeurs par défaut restaurées avec succès !", "info");
+        }
+    } catch (e) {
+        showToast(e.message, "error");
+    }
+};
+
 window.saveLeadDetails = async (leadId) => {
     try {
         const getVal = (id) => (document.getElementById(id) ? document.getElementById(id).value.trim() : '');
@@ -1948,43 +3807,51 @@ window.saveLeadDetails = async (leadId) => {
         const headerTitle = document.querySelector('.detail-header .text-h');
         if (headerTitle) headerTitle.innerText = business_name;
 
-        // Update Local Cache ID Match to prevent stale data if we don't reload list immediately
-        if (window.allLeadsCache) {
-            const cached = window.allLeadsCache.find(l => l.id === leadId);
-            if (cached) {
-                Object.assign(cached, updateData);
-            }
-        }
-
-        // Update Actions Matrix (Sticky row)
-        const actionRow = document.getElementById('lead-actions-row');
-        if (actionRow) {
-            actionRow.innerHTML = `
-                <button class="btn btn-sm" onclick="sendLeadToSelf('${leadId}')" title="Send info to my phone" style="background:rgba(255,255,255,0.05); border:1px solid var(--border); padding: 0 12px;">
-                    <span class="material-icons" style="font-size:20px;">smartphone</span>
-                </button>
-                
-                ${email ?
-                    `<button class="btn btn-sm btn-secondary" onclick="openEmailComposer(document.getElementById('edit-email').value, document.getElementById('edit-business-name').value)" style="flex:1; display: flex; align-items:center; justify-content:center; gap: 8px;">
-                        <span class="material-icons" style="font-size:16px;">send</span> COMPOSE EMAIL
-                     </button>`
-                    : ''}
-                
-                <button class="btn btn-sm btn-primary" style="flex:1.5; box-shadow: 0 4px 15px rgba(223, 165, 58, 0.2);" onclick="saveLeadDetails('${leadId}')">SAVE UPDATES</button>
-            `;
-        }
+        // Update Local Cache ID Match across all caches
+        syncLeadInAllCaches(leadId, updateData);
 
         showToast("Lead details updated successfully!", "success");
 
         // Refresh Grid in background
         const activeFilter = document.querySelector('button[data-filter].active-filter');
         if (activeFilter) {
-            loadLeads(activeFilter.dataset.filter);
+            loadLeads(activeFilter.dataset.filter, true);
         }
 
     } catch (error) {
         console.error("Error saving lead:", error);
         showToast("Error updating lead: " + error.message, "error");
+    }
+};
+
+window.verifyLeadCasl = async (leadId) => {
+    if (!leadId) return;
+    try {
+        showToast("🔍 Vérification conformité LCAP / CASL en cours...", "info");
+        const user = auth.currentUser;
+        const token = user ? await user.getIdToken() : '';
+        const resp = await fetch(`${API_BASE}/api/leads/${leadId}/casl-verify`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        const res = await resp.json();
+        if (res.success && res.casl) {
+            const statusLabel = res.casl.status === 'ELIGIBLE' ? '🟢 ÉLIGIBLE' : (res.casl.status === 'INELIGIBLE' ? '🔴 REFUSÉ' : '🟠 À VÉRIFIER');
+            showToast(`LCAP / CASL : ${statusLabel}. ${res.casl.notes}`, res.casl.status === 'ELIGIBLE' ? 'success' : 'warning');
+            
+            // Sync in local caches
+            syncLeadInAllCaches(leadId, { casl: res.casl });
+
+            // Re-open lead details to refresh UI seamlessly
+            window.openLeadDetail(leadId);
+        } else {
+            showToast(res.error || "Erreur lors de la vérification LCAP", "error");
+        }
+    } catch (e) {
+        showToast("Erreur réseau vérification LCAP: " + e.message, "error");
     }
 };
 
@@ -2151,7 +4018,7 @@ window.saveNewLead = async () => {
         // Add to cache & update UI if in view
         // Ideally we reload, but for speed:
         closeNewLeadModal();
-        loadLeads('NEW');
+        loadLeads('NEW', true);
 
         // Show success
         // alert('Lead created!'); 
@@ -2303,19 +4170,584 @@ window.approveWithSelectedPain = async (id) => {
             window.showToast("Lead Approved & Saved!", "success");
         }
 
-        // Close overlay via URL reset
-        window.location.hash = '#leads';
-
-        // Refresh list
-        const activeBtn = document.querySelector('button[data-filter].active-filter');
-        if (activeBtn && activeBtn.dataset.filter === 'NEW') {
-            loadLeads('NEW');
-        } else {
-            if (activeBtn) loadLeads(activeBtn.dataset.filter);
+        // Update local status badge in current detail view
+        const statusBadge = document.getElementById('edit-lead-status');
+        if (statusBadge) {
+            statusBadge.value = 'INTERESTED';
+            statusBadge.className = 'badge status-interested';
         }
+
+        // --- NEW: Trigger Automation ---
+        if (typeof triggerWorkflowForLead === 'function') {
+            await triggerWorkflowForLead(id);
+        }
+
+        // Don't close overlay anymore, let them see the activity stream
+        // window.location.hash = '#leads'; 
+
+        // Refresh main list in background
+        const activeBtn = document.querySelector('button[data-filter].active-filter');
+        if (activeBtn) loadLeads(activeBtn.dataset.filter, true);
 
     } catch (e) {
         console.error(e);
         alert('Error approving lead: ' + e.message);
     }
 };
+
+// --- GMAIL & PHONE REACHOUT MODULES (ULTRA-CLEAN & 1-CLICK) ---
+
+window.getGmailTemplates = (lead) => {
+    const biz = lead.business_name || 'votre entreprise';
+    const dm = lead.dm_name || '';
+    const city = lead.city || 'votre région';
+    const rating = lead.google_rating ? `${lead.google_rating}★ (${lead.google_reviews_count || 0} avis)` : 'd\'excellents avis';
+    const site = lead.website || '';
+
+    return {
+        directory_only: {
+            title: "Indépendance vs Annuaire Tiers",
+            subject: `Votre fiche ${lead.directory_platform || 'Dash Booking'} vs Votre propre vitrine web • ${biz}`,
+            body: `Bonjour ${dm || "l'équipe de " + biz},
+
+J'ai remarqué votre fiche Google avec ${rating} à ${city}. Félicitations pour la solide réputation locale que vous avez bâtie !
+
+J'ai constaté que le bouton 'Site Web' de votre fiche redirige actuellement vers ${lead.directory_platform || 'une plateforme tierce'} (${site || 'annuaire en ligne'}). Bien que cela permette de réserver, cette configuration expose directement vos clients aux tarifs et profils de salons ou commerces concurrents situés juste à côté de vous, tout en prélevant des commissions ou frais récurrents.
+
+Chez Solutions Quasar, nous concevons des portails web indépendants à votre marque avec système de réservation direct et agent IA autonome, sans commission d'intermédiaire, pour fidéliser 100% de votre clientèle.
+
+Seriez-vous ouvert à un court appel découverte de 5 minutes cette semaine pour voir une démo concrète ?
+
+Bien cordialement,
+
+Benjamin S.
+Fondateur — Solutions Quasar Inc.
++1 (819) 300-2831
+info@solutionsquasar.ca | https://solutionsquasar.ca`
+        },
+        missing_gmb_website: {
+            title: "Site non relié à Google Maps",
+            subject: `Anomalie technique sur votre fiche Google Maps • ${biz}`,
+            body: `Bonjour ${dm || "l'équipe de " + biz},
+
+J'ai remarqué votre fiche d'entreprise Google avec ${rating} à ${city}. Félicitations pour votre solide réputation locale !
+
+En faisant une recherche plus poussée, j'ai trouvé votre site internet officiel (${site || 'en ligne'}), qui est très professionnel. Cependant, j'ai constaté une anomalie technique majeure : votre site n'est absolument pas relié à votre fiche Google Business / Google Maps (votre fiche affiche le bouton 'Ajouter un site web').
+
+Conséquence directe : les personnes qui vous cherchent sur Google ou Maps ne peuvent pas cliquer vers votre site, voir vos tarifs ou réserver en ligne. Vous perdez chaque semaine des dizaines de clients potentiels au profit de cliniques ou concurrents voisins.
+
+Chez Solutions Quasar, nous pouvons rapidement corriger et synchroniser votre fiche Google, et y connecter un tunnel de réservation automatique pour capturer ces clients perdus.
+
+Seriez-vous ouvert à un court appel de 5 minutes cette semaine pour régler ce point ?
+
+Bien cordialement,
+
+Benjamin S.
+Fondateur — Solutions Quasar Inc.
++1 (819) 300-2831
+info@solutionsquasar.ca | https://solutionsquasar.ca`
+        },
+        no_website: {
+            title: "Pack Présence Web (Sans site)",
+            subject: `Question rapide pour ${dm || biz} (Visibilité Google à ${city})`,
+            body: `Bonjour ${dm || "l'équipe de " + biz},
+
+J'ai remarqué votre fiche d'entreprise Google avec ${rating} à ${city}. Félicitations pour la solide réputation que vous avez bâtie !
+
+Par contre, j'ai constaté que vous n'aviez pas encore de site web officiel rattaché directement à votre fiche. Aujourd'hui, de nombreux clients potentiels cherchent vos services sur mobile et finissent par réserver chez un concurrent simplement parce qu'ils ne trouvent pas vos tarifs ou vos coordonnées en 1 clic.
+
+Chez Solutions Quasar, nous concevons des sites vitrines modernes, ultra-rapides et optimisés pour Google avec prise de rendez-vous automatique, livrés clé en main en 48 heures.
+
+Seriez-vous ouvert à ce que je vous montre un exemple concret adapté à votre secteur lors d'un bref échange de 5 minutes cette semaine ?
+
+Bien cordialement,
+
+Benjamin S.
+Fondateur — Solutions Quasar Inc.
++1 (819) 300-2831
+info@solutionsquasar.ca | https://solutionsquasar.ca`
+        },
+        audit_overhaul: {
+            title: "Refonte & Conversion Mobile",
+            subject: `Recommandations visuelles & mobile pour ${biz} (${city})`,
+            body: `Bonjour ${dm || "l'équipe de " + biz},
+
+Je vous contacte car je suis tombé sur votre site web (${site || 'actuel'}) en effectuant une recherche d'entreprises locales à ${city}.
+
+En analysant la version mobile, j'ai relevé 2 ou 3 points techniques (vitesse de chargement et clarté des appels à l'action sur téléphone) qui réduisent probablement votre taux de conversion actuel face à la concurrence.
+
+Nous avons préparé un audit rapide sans aucun engagement pour vous montrer comment doubler les demandes de devis/rendez-vous entrants avec une interface moderne et fluide.
+
+Auriez-vous 5 minutes ce jeudi ou vendredi pour que je vous partage ces recommandations ?
+
+Excellente journée,
+
+Benjamin S.
+Fondateur — Solutions Quasar Inc.
++1 (819) 300-2831
+info@solutionsquasar.ca | https://solutionsquasar.ca`
+        },
+        direct: {
+            title: "Court & Percutant",
+            subject: `Partenariat digital local • ${biz}`,
+            body: `Bonjour ${dm || "Bonjour"},
+
+Je fais court : je dirige l'agence Solutions Quasar et nous accompagnons les entreprises de ${city} dans l'acquisition de nouveaux clients et la mise en place d'outils automatisés (SMS, réservation en ligne, présence Google).
+
+Avez-vous 5 minutes dans les prochains jours pour un café virtuel rapide afin de voir si nous pouvons vous apporter de la valeur ?
+
+Cordialement,
+
+Benjamin S.
+Solutions Quasar Inc.
++1 (819) 300-2831
+info@solutionsquasar.ca`
+        }
+    };
+};
+
+window.openGmailPitchModal = async (leadId) => {
+    let lead = window.allLeadsCache?.find(l => l.id === leadId);
+    if (!lead) {
+        try {
+            const snap = await getDoc(doc(db, "leads", leadId));
+            if (snap.exists()) lead = { id: snap.id, ...snap.data() };
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    if (!lead) {
+        window.showToast ? window.showToast("Lead introuvable", "error") : null;
+        return;
+    }
+
+    const modalId = 'gmail-pitch-modal';
+    const oldModal = document.getElementById(modalId);
+    if (oldModal) oldModal.remove();
+
+    const templates = window.getGmailTemplates(lead);
+    const initialAngle = (lead.leadCategory === 'directory_only' || lead.has_directory_only)
+        ? 'directory_only'
+        : ((lead.leadCategory === 'missing_gmb_website' || lead.google_business_missing_website)
+            ? 'missing_gmb_website' 
+            : ((!lead.website || lead.leadCategory === 'no_website') ? 'no_website' : 'audit_overhaul'));
+    const defaultTpl = templates[initialAngle] || templates.no_website;
+    const initialEmail = lead.dm_email || lead.email || '';
+
+    const html = `
+    <div id="${modalId}" class="modal-overlay" style="display:flex; align-items:center; justify-content:center; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(11, 13, 16, 0.85); z-index:2200; backdrop-filter: blur(6px); padding: 1rem;">
+        <div class="card" style="width:620px; max-width:96vw; background:#14171D; border:1px solid rgba(223,165,58,0.3); border-radius:14px; box-shadow: 0 25px 60px rgba(0,0,0,0.8); overflow:hidden; display:flex; flex-direction:column; max-height:92vh;">
+            
+            <!-- Modal Header -->
+            <div style="background: #181C24; padding: 1.2rem 1.5rem; border-bottom: 1px solid rgba(255,255,255,0.08); display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <div style="width:34px; height:34px; border-radius:8px; background:rgba(96,165,250,0.12); color:#60A5FA; display:flex; align-items:center; justify-content:center;">
+                        ${SVG_ICONS.gmail}
+                    </div>
+                    <div>
+                        <div class="text-h" style="font-size:1.05rem; margin:0; color:#FFFFFF;">Reachout Gmail IA &bull; <span class="text-gold">${escapeHtml(lead.business_name)}</span></div>
+                        <div class="text-xs text-muted">1-Clic vers Gmail authentifié &bull; 100% Délivrabilité</div>
+                    </div>
+                </div>
+                <button class="btn icon-btn" onclick="document.getElementById('${modalId}').remove()" style="background:transparent; border:none; color:var(--text-muted); cursor:pointer;">
+                    ${SVG_ICONS.close}
+                </button>
+            </div>
+
+            <!-- Pitch Angle Pills -->
+            <div style="padding: 0.9rem 1.5rem 0.4rem; background:rgba(255,255,255,0.015); border-bottom:1px solid rgba(255,255,255,0.05); display:flex; gap:8px; align-items:center; overflow-x:auto;">
+                <span class="text-xs text-muted font-bold" style="text-transform:uppercase; font-size:0.68rem; letter-spacing:0.5px; flex-shrink:0;">Angle :</span>
+                ${(lead.leadCategory === 'directory_only' || lead.has_directory_only) ? `
+                <button type="button" class="btn btn-xs ${initialAngle === 'directory_only' ? 'btn-primary' : 'btn-secondary'}" onclick="window.switchGmailPitchAngle('${leadId}', 'directory_only')" id="btn-angle-directory_only" style="border-radius:16px; padding:3px 12px; font-size:0.75rem;">
+                    📋 Annuaire Tiers (${escapeHtml(lead.directory_platform || 'Plateforme')})
+                </button>` : ''}
+                ${(lead.leadCategory === 'missing_gmb_website' || lead.google_business_missing_website) ? `
+                <button type="button" class="btn btn-xs ${initialAngle === 'missing_gmb_website' ? 'btn-primary' : 'btn-secondary'}" onclick="window.switchGmailPitchAngle('${leadId}', 'missing_gmb_website')" id="btn-angle-missing_gmb_website" style="border-radius:16px; padding:3px 12px; font-size:0.75rem;">
+                    📍 Site non relié Google
+                </button>` : ''}
+                <button type="button" class="btn btn-xs ${initialAngle === 'no_website' ? 'btn-primary' : 'btn-secondary'}" onclick="window.switchGmailPitchAngle('${leadId}', 'no_website')" id="btn-angle-no_website" style="border-radius:16px; padding:3px 12px; font-size:0.75rem;">
+                    🚫 Sans Site Web
+                </button>
+                <button type="button" class="btn btn-xs ${initialAngle === 'audit_overhaul' ? 'btn-primary' : 'btn-secondary'}" onclick="window.switchGmailPitchAngle('${leadId}', 'audit_overhaul')" id="btn-angle-audit_overhaul" style="border-radius:16px; padding:3px 12px; font-size:0.75rem;">
+                    ⚡ Refonte & Audit
+                </button>
+                <button type="button" class="btn btn-xs ${initialAngle === 'direct' ? 'btn-primary' : 'btn-secondary'}" onclick="window.switchGmailPitchAngle('${leadId}', 'direct')" id="btn-angle-direct" style="border-radius:16px; padding:3px 12px; font-size:0.75rem;">
+                    🎯 Court & Direct
+                </button>
+            </div>
+
+            <!-- Modal Body -->
+            <div style="padding: 1.25rem 1.5rem; overflow-y:auto; display:flex; flex-direction:column; gap:12px;">
+                <div class="form-group" style="margin:0;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                        <label class="form-label text-xs uppercase text-muted font-bold" style="margin:0;">Destinataire (Email de contact ou dirigeant)</label>
+                        ${!initialEmail ? `<span class="badge" style="background:rgba(239,68,68,0.12); color:#F87171; font-size:0.68rem;">Email non détecté sur Google</span>` : ''}
+                    </div>
+                    <input type="email" id="gmail-to-input" class="form-input" value="${escapeHtml(initialEmail)}" placeholder="ex: contact@${(lead.business_name || 'entreprise').toLowerCase().replace(/[^a-z0-9]/g, '')}.com" style="background:#0F1217; border-color:rgba(255,255,255,0.1); font-size:0.85rem; height:36px;">
+                </div>
+
+                <div class="form-group" style="margin:0;">
+                    <label class="form-label text-xs uppercase text-muted font-bold" style="margin-bottom:4px;">Objet du courriel</label>
+                    <input type="text" id="gmail-subject-input" class="form-input" value="${escapeHtml(defaultTpl.subject)}" style="background:#0F1217; border-color:rgba(255,255,255,0.1); font-size:0.85rem; height:36px; font-weight:600;">
+                </div>
+
+                <div class="form-group" style="margin:0;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                        <label class="form-label text-xs uppercase text-gold font-bold" style="margin:0;">Pitch IA Pré-rempli</label>
+                        <button type="button" class="btn btn-xs" onclick="window.copyGmailPitchText()" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); font-size:0.72rem; display:flex; align-items:center; gap:4px; padding:2px 8px;">
+                            ${SVG_ICONS.copy} <span>Copier texte</span>
+                        </button>
+                    </div>
+                    <textarea id="gmail-body-input" class="form-input" rows="8" style="background:#0F1217; border-color:rgba(255,255,255,0.1); font-size:0.82rem; line-height:1.45; resize:vertical; font-family:inherit;">${escapeHtml(defaultTpl.body)}</textarea>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div style="padding: 1rem 1.5rem; background:#181C24; border-top:1px solid rgba(255,255,255,0.08); display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('${modalId}').remove()" style="font-size:0.8rem;">
+                    Fermer
+                </button>
+
+                <div style="display:flex; gap:8px;">
+                    <button type="button" class="btn btn-sm" onclick="window.sendEmailViaServer('${lead.id}')" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.15); font-size:0.8rem; display:flex; align-items:center; gap:5px;" title="Envoyer directement en arrière-plan via le serveur Resend">
+                        ${SVG_ICONS.send} <span>Envoi Serveur</span>
+                    </button>
+                    
+                    <button type="button" class="btn btn-primary btn-sm" onclick="window.launchGmailReachout('${lead.id}')" style="display:flex; align-items:center; gap:6px; font-weight:600; padding:0 16px; font-size:0.82rem; box-shadow: 0 4px 15px rgba(223, 165, 58, 0.25);">
+                        ${SVG_ICONS.gmail} <span>Ouvrir et Envoyer avec Gmail</span>
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', html);
+};
+
+window.switchGmailPitchAngle = (leadId, angleKey) => {
+    const lead = window.allLeadsCache?.find(l => l.id === leadId);
+    if (!lead) return;
+
+    const templates = window.getGmailTemplates(lead);
+    const tpl = templates[angleKey];
+    if (!tpl) return;
+
+    // Toggle button active classes
+    ['directory_only', 'missing_gmb_website', 'no_website', 'audit_overhaul', 'direct'].forEach(key => {
+        const btn = document.getElementById(`btn-angle-${key}`);
+        if (btn) {
+            btn.className = `btn btn-xs ${key === angleKey ? 'btn-primary' : 'btn-secondary'}`;
+        }
+    });
+
+    const subjectInput = document.getElementById('gmail-subject-input');
+    const bodyInput = document.getElementById('gmail-body-input');
+    if (subjectInput) subjectInput.value = tpl.subject;
+    if (bodyInput) bodyInput.value = tpl.body;
+};
+
+window.copyGmailPitchText = () => {
+    const bodyInput = document.getElementById('gmail-body-input');
+    if (bodyInput) {
+        navigator.clipboard.writeText(bodyInput.value);
+        window.showToast ? window.showToast("Texte du pitch copié !", "success") : null;
+    }
+};
+
+window.launchGmailReachout = async (leadId) => {
+    const to = (document.getElementById('gmail-to-input')?.value || '').trim();
+    const subject = (document.getElementById('gmail-subject-input')?.value || '').trim();
+    const body = (document.getElementById('gmail-body-input')?.value || '').trim();
+
+    if (!to) {
+        window.showToast ? window.showToast("Veuillez saisir une adresse courriel destinataire.", "warning") : null;
+        const toInput = document.getElementById('gmail-to-input');
+        if (toInput) toInput.focus();
+        return;
+    }
+
+    // Build standard Gmail Web Compose URL
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(to)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.open(gmailUrl, '_blank');
+
+    // Update Firestore status to CONTACTED immediately
+    try {
+        const updateData = {
+            status: 'CONTACTED',
+            email: to,
+            last_contact_channel: 'gmail',
+            last_contact_date: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        };
+
+        const ref = doc(db, "leads", leadId);
+        await updateDoc(ref, updateData);
+
+        // Update local cache
+        if (window.allLeadsCache) {
+            const cached = window.allLeadsCache.find(l => l.id === leadId);
+            if (cached) {
+                cached.status = 'CONTACTED';
+                cached.email = to;
+            }
+        }
+
+        // Close modal & notify
+        const modal = document.getElementById('gmail-pitch-modal');
+        if (modal) modal.remove();
+
+        window.showToast ? window.showToast("✓ Prêt dans Gmail ! Le lead a été marqué CONTACTÉ.", "success") : null;
+
+        // Re-render leads list to reflect updated badge
+        if (window.allLeadsCache) renderLeads(window.allLeadsCache);
+
+    } catch (e) {
+        console.error('Error recording contact state:', e);
+    }
+};
+
+window.sendEmailViaServer = async (leadId) => {
+    const to = (document.getElementById('gmail-to-input')?.value || '').trim();
+    const subject = (document.getElementById('gmail-subject-input')?.value || '').trim();
+    const body = (document.getElementById('gmail-body-input')?.value || '').trim();
+
+    if (!to || !subject || !body) {
+        window.showToast ? window.showToast("Veuillez renseigner le destinataire, l'objet et le message.", "warning") : null;
+        return;
+    }
+
+    try {
+        window.showToast ? window.showToast("Envoi en cours via le serveur...", "info") : null;
+        const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+
+        const response = await fetch(`${API_BASE}/api/send-email`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ to, subject, body })
+        });
+
+        const data = await response.json();
+        if (!data.success) throw new Error(data.message || data.error || 'Erreur serveur');
+
+        // Mark lead as contacted
+        await updateDoc(doc(db, "leads", leadId), {
+            status: 'CONTACTED',
+            email: to,
+            last_contact_channel: 'server_email',
+            last_contact_date: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        });
+
+        if (window.allLeadsCache) {
+            const cached = window.allLeadsCache.find(l => l.id === leadId);
+            if (cached) cached.status = 'CONTACTED';
+            renderLeads(window.allLeadsCache);
+        }
+
+        const modal = document.getElementById('gmail-pitch-modal');
+        if (modal) modal.remove();
+
+        window.showToast ? window.showToast("Courriel envoyé avec succès !", "success") : null;
+
+    } catch (e) {
+        console.error(e);
+        window.showToast ? window.showToast(`Échec de l'envoi serveur : ${e.message}`, "error") : null;
+    }
+};
+
+// --- CALL & PHONE OUTREACH MODAL ---
+window.openLeadCallModal = async (leadId) => {
+    let lead = window.allLeadsCache?.find(l => l.id === leadId);
+    if (!lead) {
+        try {
+            const snap = await getDoc(doc(db, "leads", leadId));
+            if (snap.exists()) lead = { id: snap.id, ...snap.data() };
+        } catch (e) {}
+    }
+
+    if (!lead) return;
+
+    const modalId = 'lead-call-modal';
+    const old = document.getElementById(modalId);
+    if (old) old.remove();
+
+    const phone = (lead.phone || '').trim();
+
+    const html = `
+    <div id="${modalId}" class="modal-overlay" style="display:flex; align-items:center; justify-content:center; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(11, 13, 16, 0.85); z-index:2200; backdrop-filter: blur(6px); padding:1rem;">
+        <div class="card" style="width:480px; max-width:95vw; background:#14171D; border:1px solid rgba(255,255,255,0.1); border-radius:14px; box-shadow:0 25px 50px rgba(0,0,0,0.8); overflow:hidden;">
+            
+            <div style="background:#181C24; padding:1.2rem 1.5rem; border-bottom:1px solid rgba(255,255,255,0.08); display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <div style="width:34px; height:34px; border-radius:8px; background:rgba(255,255,255,0.06); color:#CBD5E1; display:flex; align-items:center; justify-content:center;">
+                        ${SVG_ICONS.phone}
+                    </div>
+                    <div>
+                        <div class="text-h" style="font-size:1.05rem; margin:0; color:#FFFFFF;">Appel Téléphonique</div>
+                        <div class="text-xs text-muted">${escapeHtml(lead.business_name)} &bull; ${escapeHtml(lead.city || '')}</div>
+                    </div>
+                </div>
+                <button class="btn icon-btn" onclick="document.getElementById('${modalId}').remove()" style="background:transparent; border:none; color:var(--text-muted); cursor:pointer;">
+                    ${SVG_ICONS.close}
+                </button>
+            </div>
+
+            <div style="padding:1.5rem; display:flex; flex-direction:column; gap:14px;">
+                <div style="text-align:center; padding:1rem; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); border-radius:10px;">
+                    <div class="text-xs text-muted mb-1" style="text-transform:uppercase; font-size:0.7rem; letter-spacing:1px;">Numéro de Téléphone</div>
+                    <div style="font-size:1.35rem; font-weight:700; color:var(--gold); font-family:monospace; margin-bottom:8px;">
+                        ${phone || '<span style="color:var(--text-muted); font-size:1rem;">Non renseigné</span>'}
+                    </div>
+                    ${phone ? `
+                        <a href="tel:${phone}" class="btn btn-primary btn-sm" style="display:inline-flex; align-items:center; gap:6px; font-weight:600; padding:6px 18px;" onclick="window.markCallAttempt('${lead.id}')">
+                            ${SVG_ICONS.phone} <span>Composer ${phone}</span>
+                        </a>
+                    ` : `
+                        <div class="text-xs text-danger">Aucun numéro enregistré pour cette entreprise.</div>
+                    `}
+                </div>
+
+                <!-- Talking Points -->
+                <div style="background:rgba(223,165,58,0.04); border:1px solid rgba(223,165,58,0.15); border-radius:8px; padding:10px 14px; font-size:0.78rem; line-height:1.45;">
+                    <div class="text-gold font-bold mb-1" style="display:flex; align-items:center; gap:4px;">
+                        ${SVG_ICONS.sparkles} Points clés du pitch :
+                    </div>
+                    <ul style="margin:0; padding-left:16px; color:var(--text-main);">
+                        <li><strong>Accroche :</strong> "J'ai vu votre fiche Google avec ${lead.google_rating ? lead.google_rating + '★' : 'de super avis'} à ${lead.city || 'votre ville'}..."</li>
+                        <li><strong>Constat :</strong> ${(!lead.website || lead.leadCategory === 'no_website') ? '"Vous n\'avez pas encore de site web rattaché à votre fiche..."' : '"Votre site web met du temps à charger sur mobile..."'}</li>
+                        <li><strong>Offre :</strong> "On conçoit des sites vitrines modernes avec prise de RDV automatique livrés en 48h."</li>
+                        <li><strong>Clôture :</strong> "Auriez-vous 5 minutes pour un bref café virtuel cette semaine ?"</li>
+                    </ul>
+                </div>
+
+                <!-- Quick Status Update -->
+                <div style="display:flex; gap:8px;">
+                    <button class="btn btn-sm btn-block" onclick="window.updateLeadStatus('${lead.id}', 'CONTACTED')" style="flex:1; border:1px solid rgba(59,130,246,0.3); color:#60A5FA; background:rgba(59,130,246,0.08); font-size:0.75rem;">
+                        Marquer Contacté
+                    </button>
+                    <button class="btn btn-sm btn-block" onclick="window.updateLeadStatus('${lead.id}', 'INTERESTED')" style="flex:1; border:1px solid rgba(249,115,22,0.3); color:#FB923C; background:rgba(249,115,22,0.08); font-size:0.75rem;">
+                        Intéressé / Rappel
+                    </button>
+                </div>
+            </div>
+
+            <div style="padding:1rem 1.5rem; background:#181C24; border-top:1px solid rgba(255,255,255,0.08); display:flex; justify-content:space-between; align-items:center;">
+                <button class="btn btn-secondary btn-sm" onclick="document.getElementById('${modalId}').remove()">Fermer</button>
+                <button class="btn btn-outline-gold btn-sm" onclick="document.getElementById('${modalId}').remove(); window.location.hash='#coldcall';" style="font-size:0.78rem;">
+                    Ouvrir Cold Call Dialer &rarr;
+                </button>
+            </div>
+
+        </div>
+    </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', html);
+};
+
+window.markCallAttempt = async (leadId) => {
+    try {
+        await updateDoc(doc(db, "leads", leadId), {
+            last_call_date: new Date().toISOString(),
+            last_contact_channel: 'phone',
+            updated_at: new Date().toISOString()
+        });
+    } catch (e) {
+        console.error(e);
+    }
+};
+
+window.enrichLeadContactsFromWebsite = async (leadId) => {
+    try {
+        window.showToast("Scan du site web en cours (extraction téléphone & email)...", "info");
+        const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+        const resp = await fetch(`http://localhost:5000/api/leads/${leadId}/enrich-contacts`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await resp.json();
+        if (data.success) {
+            const ext = data.extracted;
+            let foundDetails = [];
+            
+            if (ext.primaryPhone) {
+                const phoneInput = document.getElementById('edit-phone');
+                if (phoneInput) phoneInput.value = ext.primaryPhone;
+                foundDetails.push(`Tél: ${ext.primaryPhoneFormatted || ext.primaryPhone}`);
+            }
+            if (ext.primaryEmail) {
+                const emailInput = document.getElementById('edit-email');
+                if (emailInput) emailInput.value = ext.primaryEmail;
+                foundDetails.push(`Email: ${ext.primaryEmail}`);
+            }
+            if (ext.instagram) {
+                foundDetails.push(`Insta: ${ext.instagram}`);
+            }
+            
+            if (foundDetails.length > 0) {
+                window.showToast(`✅ Trouvé sur le site : ${foundDetails.join(' | ')}`, "success");
+            } else {
+                window.showToast("Aucun téléphone ou email public n'a été détecté dans le code du site.", "warning");
+            }
+        } else {
+            throw new Error(data.error || data.reason || 'Erreur lors du scan');
+        }
+    } catch (e) {
+        window.showToast(`Erreur extraction : ${e.message}`, "error");
+    }
+};
+
+window.enrichLeadDecisionMakerWithPerplexity = async (leadId) => {
+    const btn = document.getElementById(`btn-enrich-dm-${leadId}`);
+    const originalText = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="material-icons" style="font-size:12px; display:inline-block; animation:spin 1s linear infinite;">sync</span> Recherche...`;
+    }
+
+    try {
+        window.showToast("🔎 Perplexity Agent API recherche le dirigeant sur le web en direct...", "info");
+        const token = await (window.auth?.currentUser?.getIdToken() || Promise.resolve(localStorage.getItem('authToken') || ''));
+        const resp = await fetch(`http://localhost:5000/api/leads/${leadId}/enrich-decision-maker`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        const data = await resp.json();
+        if (data.success && data.found) {
+            const dm = data.result;
+            window.showToast(`🎯 Décideur identifié : ${dm.dm_name} (${dm.dm_title || 'Dirigeant'})`, "success");
+
+            const nameInput = document.getElementById('edit-dm-name');
+            if (nameInput) nameInput.value = dm.dm_name;
+            const emailInput = document.getElementById('edit-dm-email');
+            if (emailInput && dm.dm_email) emailInput.value = dm.dm_email;
+            const phoneInput = document.getElementById('edit-dm-phone');
+            if (phoneInput && dm.dm_phone) phoneInput.value = dm.dm_phone;
+
+            const badgeSlot = document.getElementById(`dm-source-badge-${leadId}`);
+            if (badgeSlot && dm.source_summary) {
+                badgeSlot.innerHTML = `<div style="font-size:0.68rem; color:#94A3B8; margin-bottom:6px; font-style:italic; background:rgba(0,0,0,0.25); padding:3px 6px; border-radius:4px; border:1px solid rgba(223,165,58,0.2);">🔍 Source Perplexity : ${escapeHtml(dm.source_summary)}</div>`;
+            }
+        } else {
+            window.showToast("Perplexity n'a pas pu identifier formellement le dirigeant dans les registres publics.", "warning");
+        }
+    } catch (e) {
+        window.showToast(`Erreur Perplexity : ${e.message}`, "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+};
+
+

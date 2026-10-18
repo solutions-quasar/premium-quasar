@@ -130,8 +130,13 @@ async function loadClients() {
                         <div class="text-sm text-muted">${client.company} <span style="opacity:0.5; margin: 0 4px;">•</span> ${client.email || t('crm_no_email')}</div>
                     </div>
                 </div>
-                <div class="badge ${client.status === 'Active' ? 'badge-gold' : (client.status === 'Lead' ? 'badge-blue' : 'badge-grey')}" style="padding: 4px 12px; font-size: 11px;">
-                    ${client.status === 'Active' ? t('crm_status_active') : (client.status === 'Lead' ? t('crm_status_prospect') : (client.status === 'Inactive' ? t('crm_status_inactive') : client.status))}
+                <div style="display:flex; align-items:center; gap: 8px;">
+                    <span class="badge" style="background:rgba(223,165,58,0.12); color:var(--gold); font-size:10px; font-weight:700; padding:3px 7px; border-radius:4px; border:1px solid rgba(223,165,58,0.25);">
+                        🌐 ${(client.preferredLanguage || 'fr').toUpperCase()}
+                    </span>
+                    <div class="badge ${client.status === 'Active' ? 'badge-gold' : (client.status === 'Lead' ? 'badge-blue' : 'badge-grey')}" style="padding: 4px 12px; font-size: 11px;">
+                        ${client.status === 'Active' ? t('crm_status_active') : (client.status === 'Lead' ? t('crm_status_prospect') : (client.status === 'Inactive' ? t('crm_status_inactive') : client.status))}
+                    </div>
                 </div>
             `;
             listContainer.appendChild(card);
@@ -263,9 +268,24 @@ window.openCRMDetail = async (json) => {
                                 <div class="text-xs text-muted mt-1" style="font-style:italic;">Automatically applies taxes for this province in Invoices/Quotes.</div>
                             </div>
 
+                            <div class="form-group mb-4">
+                                <label class="form-label text-xs uppercase text-muted tracking-wider">Preferred Communication Language</label>
+                                <select id="edit-preferred-language" class="form-input" style="background:var(--bg-dark); border:1px solid var(--border); color:var(--text-main);">
+                                    <option value="fr" ${client.preferredLanguage === 'fr' || !client.preferredLanguage ? 'selected' : ''}>Français (French)</option>
+                                    <option value="en" ${client.preferredLanguage === 'en' ? 'selected' : ''}>English (Anglais)</option>
+                                </select>
+                                <div class="text-xs text-muted mt-1" style="font-style:italic;">All subscription invitations, invoices, and app communications will be sent in this language.</div>
+                            </div>
+
                              <button class="btn btn-primary btn-block" style="margin-top:20px; font-weight:bold; letter-spacing:1px;" id="btn-save-client" onclick="saveClientChanges('${client.id}')">
                                 <span class="material-icons" style="font-size:18px;">save</span> ${t('btn_save').toUpperCase()}
                             </button>
+
+                            ${client.phone ? `
+                            <button type="button" class="btn btn-outline-gold btn-block" style="margin-top:10px; font-weight:bold; letter-spacing:1px; display:flex; align-items:center; justify-content:center; gap:8px;" onclick="window.openSmsOutreachModal(null, '${(client.phone || '').replace(/'/g, "\\'")}', '${(client.name || client.company || '').replace(/'/g, "\\'")}', '${client.preferredLanguage || 'fr'}')">
+                                <span class="material-icons" style="font-size:18px;">textsms</span> ENVOYER UN SMS IA
+                            </button>
+                            ` : ''}
                         </div>
 
                         <!-- RIGHT COL: Financials -->
@@ -380,6 +400,15 @@ window.openNewClientModal = () => {
                         </select>
                     </div>
 
+                    <div class="form-group">
+                        <label class="form-label text-xs uppercase text-muted tracking-wider">Preferred Communication Language</label>
+                        <select id="new-client-preferred-language" class="form-input" style="background:var(--bg-dark); border:1px solid var(--border); color:var(--text-main);">
+                            <option value="fr" selected>Français (French)</option>
+                            <option value="en">English (Anglais)</option>
+                        </select>
+                        <div class="text-xs text-muted mt-1" style="font-style:italic;">All emails and subscription invitations will default to this language.</div>
+                    </div>
+
                     <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 15px;">
                         <button type="button" class="btn btn-secondary" onclick="document.getElementById('crm-modal-host').innerHTML=''">Cancel</button>
                         <button type="submit" class="btn btn-primary" id="btn-save-new-client">
@@ -400,6 +429,7 @@ window.handleNewClientSubmit = async (e) => {
     const phone = document.getElementById('new-client-phone').value;
     const status = document.getElementById('new-client-status').value;
     const defaultTaxProvince = document.getElementById('new-client-tax-province').value;
+    const preferredLanguage = document.getElementById('new-client-preferred-language')?.value || 'fr';
 
     const btn = document.getElementById('btn-save-new-client');
     btn.disabled = true;
@@ -407,7 +437,7 @@ window.handleNewClientSubmit = async (e) => {
 
     try {
         await addDoc(collection(db, "clients"), {
-            name, company, email, phone, status, defaultTaxProvince,
+            name, company, email, phone, status, defaultTaxProvince, preferredLanguage,
             createdAt: new Date().toISOString()
         });
         window.showToast(t('crm_add_success'), "success");
@@ -445,6 +475,7 @@ window.saveClientChanges = async (id) => {
     const state = document.getElementById('edit-state').value;
     const status = document.getElementById('edit-status').value;
     const defaultTaxProvince = document.getElementById('edit-tax-province').value;
+    const preferredLanguage = document.getElementById('edit-preferred-language')?.value || 'fr';
 
     const btn = document.getElementById('btn-save-client');
     const originalHtml = btn.innerHTML;
@@ -453,7 +484,7 @@ window.saveClientChanges = async (id) => {
 
     try {
         await updateDoc(doc(db, "clients", id), {
-            name, company, email, phone, address, city, state, status, defaultTaxProvince,
+            name, company, email, phone, address, city, state, status, defaultTaxProvince, preferredLanguage,
             updatedAt: new Date().toISOString()
         });
         window.showToast(t('crm_save_success'), "success");

@@ -986,8 +986,8 @@ footer {
 
 /* Mobile Bottom Bar (Fixed) */
 #mobile-bar {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    display: flex;
+    justify-content: space-around;
     align-items: center;
     position: fixed;
     bottom: 0;
@@ -1011,6 +1011,7 @@ footer {
 
 .bar-item {
     display: flex;
+    flex: 1;
     flex-direction: column;
     justify-content: center;
     align-items: center;

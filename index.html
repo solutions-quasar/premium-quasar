@@ -82,46 +82,11 @@
                         <p class="text-muted" style="margin-bottom:2rem;">Tell us what you need. We’ll reply with next
                             steps.</p>
 
-                        <form action="/api/contact" method="POST">
-                            <!-- Placeholder Formspree, should be updated by user or left as generic demo -->
-                            <div class="form-group">
-                                <label class="form-label" data-i18n="contact.form.name">Name</label>
-                                <input type="text" name="name" class="form-input" required
-                                    data-i18n-placeholder="contact.form.namePlaceholder" placeholder="John Doe">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" data-i18n="contact.form.company">Firm / Company</label>
-                                <input type="text" name="company" class="form-input"
-                                    data-i18n-placeholder="contact.form.companyPlaceholder"
-                                    placeholder="Miller Law Group">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" data-i18n="contact.form.contact">Phone or Email</label>
-                                <input type="text" name="contact_method" class="form-input" required
-                                    data-i18n-placeholder="contact.form.contactPlaceholder"
-                                    placeholder="john@example.com">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" data-i18n="contact.form.interest">Interest</label>
-                                <select name="interest" class="form-select">
-                                    <option data-i18n="contact.form.interestOptions.website">New Website</option>
-                                    <option data-i18n="contact.form.interestOptions.app">Custom App</option>
-                                    <option data-i18n="contact.form.interestOptions.ai">AI Integration</option>
-                                    <option data-i18n="contact.form.interestOptions.consult">Consultation</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" data-i18n="contact.form.message">Message</label>
-                                <textarea name="message" class="form-textarea"
-                                    data-i18n-placeholder="contact.form.messagePlaceholder"
-                                    placeholder="How can we help?"></textarea>
-                            </div>
-                            <!-- Honeypot -->
-                            <input type="text" name="_gotcha" style="display:none">
-
-                            <button type="submit" class="btn-primary" style="width:100%"
-                                data-i18n="contact.form.submit">Send Request</button>
-                        </form>
+                        <div style="margin-top: 2rem;">
+                            <a href="mailto:info@solutionsquasar.ca" class="btn-primary" style="display:inline-block; text-align:center; width:100%; text-decoration:none; padding: 15px 0; font-size: 1.1rem;">
+                                Envoyer un courriel à info@solutionsquasar.ca
+                            </a>
+                        </div>
                     </div>
 
                     <!-- Info -->
@@ -163,7 +128,7 @@
                 </div>
             </div>
         </button>
-        <a href="tel:14184100856" class="bar-item" id="btn-call" aria-label="Call Us">
+        <a href="tel:15062337006" class="bar-item" id="btn-call" aria-label="Call Us">
             <div>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                     stroke-linejoin="round">
@@ -193,6 +158,8 @@
         </div>
     </div>
 
+    <!-- LeadConnector Chat Widget -->
+    <script src="https://widgets.leadconnectorhq.com/loader.js" data-resources-url="https://widgets.leadconnectorhq.com/chat-widget/loader.js" data-widget-id="6ad00592a51ffe806a724c3b" data-source="WEB_USER"></script>
 </body>
 
 </html>

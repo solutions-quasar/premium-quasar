@@ -85,8 +85,8 @@ export async function initSales() {
             <div class="text-h text-gold" style="font-size: 1.5rem; display:flex; align-items:center; gap:10px;">
                 <span class="material-icons" style="font-size: 1.8rem;">receipt_long</span> <span data-i18n="sales_title">Sales & Billing</span>
             </div>
-            <div style="display:flex; gap:10px;">
-                <button class="btn btn-primary" onclick="openSalesEditor('new')" style="display:flex; align-items:center; gap:5px;">
+            <div id="sales-top-actions" style="display:flex; gap:10px;">
+                <button class="btn btn-primary" id="btn-sales-main-action" onclick="openSalesEditor('new')" style="display:flex; align-items:center; gap:5px;">
                     <span class="material-icons">add</span> ${t('sales_new_quote')}
                 </button>
             </div>
@@ -95,6 +95,7 @@ export async function initSales() {
         <div class="tabs-container" style="display:flex; gap:1rem; margin-bottom:1.5rem; border-bottom: 1px solid var(--border);">
             <button class="tab-btn ${currentTab === 'quotes' ? 'active' : ''}" id="tab-quotes" onclick="switchSalesTab('quotes')">${t('sales_quotes')}</button>
             <button class="tab-btn ${currentTab === 'invoices' ? 'active' : ''}" id="tab-invoices" onclick="switchSalesTab('invoices')">${t('sales_invoices')}</button>
+            <button class="tab-btn ${currentTab === 'subscriptions' ? 'active' : ''}" id="tab-subscriptions" onclick="switchSalesTab('subscriptions')">Subscriptions</button>
             <button class="tab-btn ${currentTab === 'settings' ? 'active' : ''}" id="tab-settings" onclick="switchSalesTab('settings')">${t('sales_settings')}</button>
         </div>
 
@@ -107,18 +108,21 @@ export async function initSales() {
 
     // Load Settings First (Async but don't block render of list)
     loadSalesSettings().then(() => {
-        if (currentTab !== 'settings') loadSalesList();
-        else renderSalesSettings();
+        if (currentTab === 'settings') renderSalesSettings();
+        else if (currentTab === 'subscriptions') loadSubscriptionsList();
+        else loadSalesList();
     });
 
     // Check for payment redirect feedback
     const urlParams = new URLSearchParams(window.location.hash.split('?')[1]);
     if (urlParams.get('payment') === 'success') {
         window.showToast("Payment Successful! Invoice updated.", "success");
-        // Clear params to avoid double toast
         window.location.hash = window.location.hash.split('?')[0];
     } else if (urlParams.get('payment') === 'cancelled') {
         window.showToast("Payment cancelled.", "normal");
+        window.location.hash = window.location.hash.split('?')[0];
+    } else if (urlParams.get('subscription') === 'cancelled') {
+        window.showToast("Subscription setup cancelled.", "normal");
         window.location.hash = window.location.hash.split('?')[0];
     }
 }
@@ -134,10 +138,28 @@ window.salesSettings = {
 window.switchSalesTab = (tab) => {
     currentTab = tab;
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById(`tab-${tab}`).classList.add('active');
+    const activeTabEl = document.getElementById(`tab-${tab}`);
+    if (activeTabEl) activeTabEl.classList.add('active');
+
+    const actionBtn = document.getElementById('btn-sales-main-action');
+    if (actionBtn) {
+        if (tab === 'subscriptions') {
+            actionBtn.innerHTML = '<span class="material-icons">add_card</span> New Subscription';
+            actionBtn.onclick = () => window.openNewSubscriptionModal();
+            actionBtn.style.display = 'flex';
+        } else if (tab === 'settings') {
+            actionBtn.style.display = 'none';
+        } else {
+            actionBtn.innerHTML = `<span class="material-icons">add</span> ${tab === 'quotes' ? t('sales_new_quote') : 'New Invoice'}`;
+            actionBtn.onclick = () => openSalesEditor('new');
+            actionBtn.style.display = 'flex';
+        }
+    }
 
     if (tab === 'settings') {
         renderSalesSettings();
+    } else if (tab === 'subscriptions') {
+        loadSubscriptionsList();
     } else {
         loadSalesList();
     }
@@ -378,7 +400,7 @@ async function loadSalesList() {
         querySnapshot.forEach(docSnap => {
             const data = docSnap.data();
             const id = docSnap.id;
-            const itemJson = encodeURIComponent(JSON.stringify({ ...data, id }));
+            const itemJson = encodeURIComponent(JSON.stringify({ ...data, id })).replace(/'/g, "%27");
 
             // Format Currency
             const total = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(data.total || 0);
@@ -517,7 +539,7 @@ window.injectSnippet = (index) => {
 
     let html = '<h3 class="text-gold" style="margin-top:0;">Select Snippet</h3><div style="display:grid; gap:10px;">';
     for (let key in snippets) {
-        html += `<button class="btn btn-sm" onclick="applySnippet(${index}, '${key}')" style="text-align:left;">${key}</button>`;
+        html += `<button class="btn btn-sm" onclick="applySnippet(${index}, '${key.replace(/'/g, "\\'")}')" style="text-align:left;">${key}</button>`;
     }
     html += '</div><button class="btn btn-sm text-danger mt-3" onclick="this.parentElement.remove()">Cancel</button>';
 
@@ -851,6 +873,7 @@ window.openSalesEditor = (data) => {
                     document.getElementById('sales-email').value = c.email || '';
                     document.getElementById('sales-phone').value = c.phone || '';
                     document.getElementById('sales-address').value = c.address || '';
+                    window.currentClientPreferredLanguage = c.preferredLanguage || 'fr';
 
                     // Format Location
                     let loc = c.city || '';
@@ -1129,6 +1152,7 @@ window.salesSaveItem = async (id) => {
         taxes: window.currentSalesTaxes,
         subtotal,
         total,
+        clientLanguage: window.currentClientPreferredLanguage || (item && item.clientLanguage) || 'fr',
         updatedAt: new Date().toISOString()
     };
 
@@ -1176,13 +1200,16 @@ window.salesSendEmail = async (event) => {
 
     window.showToast("Preparing email...", "info");
 
-    const subject = `${currentTab === 'quotes' ? 'Quote' : 'Invoice'} #${document.getElementById('sales-number').value} - Solutions Quasar Inc.`;
-    const docTypeLabel = currentTab === 'quotes' ? 'Quote' : 'Invoice';
+    const lang = (item.clientLanguage || item.preferredLanguage || window.currentClientPreferredLanguage || localStorage.getItem('erp_lang') || 'fr') === 'en' ? 'en' : 'fr';
+    const isFr = (lang === 'fr');
+    const docTypeLabel = currentTab === 'quotes' ? (isFr ? 'Devis' : 'Quote') : (isFr ? 'Facture' : 'Invoice');
     const isQuote = currentTab === 'quotes';
     // For quotes: show subtotal (before tax). For invoices: show grand total.
     const displayAmount = isQuote ? (item.subtotal || 0) : (item.total || 0);
-    const amountStr = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(displayAmount);
-    const lang = localStorage.getItem('erp_lang') || 'en';
+    const amountStr = new Intl.NumberFormat('en-CA', { style: 'currency', currency: item.currency || 'CAD' }).format(displayAmount);
+    const subject = isFr
+        ? `${docTypeLabel} #${document.getElementById('sales-number').value} - Solutions Quasar Inc.`
+        : `${docTypeLabel} #${document.getElementById('sales-number').value} - Solutions Quasar Inc.`;
 
     // Translations for email
     const copy = {
@@ -1547,7 +1574,7 @@ window.salesConvertToInvoice = async (quoteId) => {
 
         // Optional: Open the new invoice
         const newInvSnap = await getDoc(invRef);
-        const itemJson = encodeURIComponent(JSON.stringify({ ...newInvSnap.data(), id: newInvSnap.id }));
+        const itemJson = encodeURIComponent(JSON.stringify({ ...newInvSnap.data(), id: newInvSnap.id })).replace(/'/g, "%27");
         openSalesEditor(itemJson);
 
         window.showToast("Converted to Invoice successfully!", "success");
@@ -1605,3 +1632,588 @@ window.salesGeneratePaymentLink = async (invoiceId, amount, clientName, clientEm
         window.showToast(e.message, "error");
     }
 };
+
+// ==========================================
+// --- RECURRING STRIPE SUBSCRIPTION SUITE ---
+// ==========================================
+
+async function loadSubscriptionsList() {
+    const listContainer = document.getElementById('sales-list-container');
+    listContainer.innerHTML = `<div class="text-center text-muted" style="padding: 3rem; display:flex; flex-direction:column; align-items:center; gap:10px;"><span class="material-icons rotating">refresh</span> Fetching live subscriptions from Stripe...</div>`;
+
+    try {
+        const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+        const resp = await fetch(`${API_BASE}/api/subscriptions`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        const result = await resp.json();
+        if (!result.success) {
+            throw new Error(result.error || "Failed to fetch live subscriptions from Stripe.");
+        }
+
+        const subscriptions = result.subscriptions || [];
+
+        if (subscriptions.length === 0) {
+            listContainer.innerHTML = `
+                <div class="text-center text-muted" style="padding: 4rem; opacity: 0.6;">
+                    <span class="material-icons" style="font-size: 3rem; margin-bottom: 1rem;">autorenew</span>
+                    <br>
+                    No recurring client subscriptions found in Stripe.
+                    <div style="margin-top: 1.5rem;">
+                        <button class="btn btn-primary" onclick="openNewSubscriptionModal()">
+                            <span class="material-icons">add_card</span> Create First Subscription
+                        </button>
+                    </div>
+                </div>`;
+            return;
+        }
+
+        let html = '<div class="card" style="padding:0; overflow:hidden;">';
+        subscriptions.forEach(sub => {
+            const currency = sub.currency || 'CAD';
+            const intervalLabel = sub.interval === 'year' ? 'yr' : 'mo';
+            const formattedAmount = new Intl.NumberFormat('en-CA', { style: 'currency', currency: currency }).format(sub.amount || 0);
+            const date = sub.createdAt ? new Date(sub.createdAt).toLocaleDateString() : 'N/A';
+            const renewal = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toLocaleDateString() : null;
+
+            // Status Badge formatting (from live Stripe status)
+            let statusBadge = '';
+            const st = (sub.status || '').toLowerCase();
+            if (st === 'active') {
+                statusBadge = '<span class="badge-status status-paid">ACTIVE</span>';
+            } else if (st === 'pending') {
+                statusBadge = '<span class="badge-status status-sent">PENDING PAYMENT</span>';
+            } else if (st === 'past_due' || st === 'unpaid') {
+                statusBadge = '<span class="badge-status status-rejected">PAST DUE</span>';
+            } else if (st === 'trialing') {
+                statusBadge = '<span class="badge-status status-info">TRIAL</span>';
+            } else if (st === 'incomplete') {
+                statusBadge = '<span class="badge-status status-rejected">INCOMPLETE</span>';
+            } else {
+                statusBadge = '<span class="badge-status status-draft">CANCELED</span>';
+            }
+
+            html += `
+                <div class="sales-item" style="cursor: default;">
+                    <div style="display:flex; align-items:center; gap:15px; flex: 1;">
+                        <div style="width:45px; height:45px; border-radius:8px; background: rgba(223, 165, 58, 0.1); color: var(--gold); display:flex; align-items:center; justify-content:center;">
+                            <span class="material-icons">autorenew</span>
+                        </div>
+                        <div>
+                            <div class="text-h" style="font-size:1.05rem; margin:0; display:flex; align-items:center; gap:8px;">
+                                ${sub.planName || 'Recurring Subscription'}
+                                <span style="font-size:0.75rem; background:rgba(255,255,255,0.06); padding:2px 8px; border-radius:4px; color:var(--text-muted); text-transform:uppercase;">${sub.interval || 'month'}</span>
+                            </div>
+                            <div class="text-sm text-muted">Client: <strong>${sub.clientName || 'Client'}</strong> &bull; ${sub.clientEmail || ''} &bull; Created: ${date}</div>
+                            ${renewal ? `<div class="text-xs text-info" style="margin-top:2px;">Next Renewal: <strong>${renewal}</strong></div>` : ''}
+                        </div>
+                    </div>
+                    
+                    <div style="display:flex; align-items:center; gap:20px;">
+                        <div style="text-align:right;">
+                            <div class="text-gold" style="font-weight:bold; font-size:1.15rem; margin-bottom:4px;">${formattedAmount} <span style="font-size:0.8rem; color:var(--text-muted);">/ ${intervalLabel}</span></div>
+                            ${statusBadge}
+                        </div>
+
+                        <div style="display:flex; gap:6px;">
+                            ${sub.paymentLink ? `
+                                <button class="btn btn-xs" style="background:rgba(255,255,255,0.06); border:1px solid var(--border);" onclick="window.copySubscriptionLink('${sub.paymentLink}')" title="Copy Stripe Checkout Link">
+                                    <span class="material-icons" style="font-size:16px;">content_copy</span> Link
+                                </button>
+                                <button class="btn btn-xs btn-outline-gold" onclick="window.resendSubscriptionEmail('${sub.clientEmail}', '${(sub.clientName || 'Client').replace(/'/g, "\\'")}', '${(sub.planName || 'Subscription').replace(/'/g, "\\'")}', ${sub.amount}, '${sub.currency}', '${sub.interval}', '${sub.paymentLink}', '${sub.preferredLanguage || 'fr'}')" title="Send Email Invitation to Client">
+                                    <span class="material-icons" style="font-size:16px;">mail</span> Send
+                                </button>
+                                <button class="btn btn-xs btn-outline-gold" onclick="window.open('${sub.paymentLink}', '_blank')" title="Open Checkout Page">
+                                    <span class="material-icons" style="font-size:16px;">open_in_new</span>
+                                </button>
+                            ` : ''}
+
+                            ${sub.latestInvoiceUrl ? `
+                                <button class="btn btn-xs" style="background:rgba(255,255,255,0.06); border:1px solid var(--border);" onclick="window.open('${sub.latestInvoiceUrl}', '_blank')" title="View Latest Stripe Invoice / Receipt">
+                                    <span class="material-icons" style="font-size:16px;">receipt</span>
+                                </button>
+                            ` : ''}
+
+                            ${sub.stripeCustomerId ? `
+                                <button class="btn btn-xs btn-secondary" onclick="window.openSubscriptionPortal('${sub.stripeCustomerId}', '${sub.clientId || ''}')" title="Open Stripe Customer Billing Portal">
+                                    <span class="material-icons" style="font-size:16px;">credit_card</span> Portal
+                                </button>
+                            ` : ''}
+
+                            ${st === 'active' || st === 'trialing' || st === 'past_due' ? `
+                                <button class="btn btn-xs" style="background:rgba(193,0,21,0.1); border:1px solid var(--danger); color:var(--danger);" onclick="window.cancelSubscriptionPlan('${sub.stripeSubscriptionId}', null)" title="Cancel Subscription in Stripe">
+                                    <span class="material-icons" style="font-size:16px;">close</span>
+                                </button>
+                            ` : ''}
+
+                            ${st === 'pending' && sub.stripeCheckoutSessionId ? `
+                                <button class="btn btn-xs" style="background:rgba(193,0,21,0.1); border:1px solid var(--danger); color:var(--danger);" onclick="window.cancelSubscriptionPlan(null, '${sub.stripeCheckoutSessionId}')" title="Expire Checkout Session">
+                                    <span class="material-icons" style="font-size:16px;">close</span>
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        listContainer.innerHTML = html;
+
+    } catch (e) {
+        console.error("Error loading live Stripe subscriptions:", e);
+        listContainer.innerHTML = `<div class="text-danger text-center p-4">Error loading subscriptions from Stripe: ${e.message}</div>`;
+    }
+}
+
+window.loadSubscriptionsList = loadSubscriptionsList;
+
+// Modal for Creating New Recurring Subscription
+window.openNewSubscriptionModal = async () => {
+    let clients = [];
+    try {
+        const clientSnap = await getDocs(collection(db, 'clients'));
+        clientSnap.forEach(d => clients.push({ id: d.id, ...d.data() }));
+    } catch (err) {
+        console.warn("Could not load clients list", err);
+    }
+
+    const modalId = 'modal-new-subscription';
+    let host = document.getElementById(modalId);
+    if (host) host.remove();
+
+    host = document.createElement('div');
+    host.id = modalId;
+    host.className = 'erp-modal-backdrop show';
+
+    const clientOptionsHtml = clients.map(c => `
+        <option value="${c.id}" data-name="${c.name || c.displayName || ''}" data-email="${c.email || ''}" data-lang="${c.preferredLanguage || 'fr'}">
+            ${c.name || c.displayName || 'Client'} (${c.email || 'No email'}) [${(c.preferredLanguage || 'fr').toUpperCase()}]
+        </option>
+    `).join('');
+
+    host.innerHTML = `
+        <div class="erp-modal-card" style="max-width: 520px; width: 95%;">
+            <div class="erp-modal-title" style="display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span class="material-icons text-gold">add_card</span>
+                    <span>New Client Subscription Plan</span>
+                </div>
+                <button class="icon-btn text-muted" onclick="window.closeNewSubscriptionModal()"><span class="material-icons">close</span></button>
+            </div>
+            
+            <div class="erp-modal-body" style="display:flex; flex-direction:column; gap:16px; padding: 1.5rem 0;">
+                <div class="form-group">
+                    <label class="form-label text-xs uppercase text-muted font-bold">Select Client</label>
+                    <select id="sub-client-select" class="form-input" onchange="window.handleSubscriptionClientSelect(this)">
+                        <option value="">-- Choose Existing Client (Optional) --</option>
+                        ${clientOptionsHtml}
+                    </select>
+                </div>
+
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+                    <div class="form-group">
+                        <label class="form-label text-xs uppercase text-muted font-bold">Client Name *</label>
+                        <input type="text" id="sub-client-name" class="form-input" placeholder="Acme Law Firm">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label text-xs uppercase text-muted font-bold">Client Email *</label>
+                        <input type="email" id="sub-client-email" class="form-input" placeholder="billing@acme.com">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label text-xs uppercase text-muted font-bold">Preferred Communication Language</label>
+                    <select id="sub-preferred-language" class="form-input">
+                        <option value="fr" selected>Français (French)</option>
+                        <option value="en">English (Anglais)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label text-xs uppercase text-muted font-bold">Plan / Retainer Name *</label>
+                    <input type="text" id="sub-plan-name" class="form-input" value="Monthly Web & AI Maintenance Retainer" placeholder="e.g. Website Hosting & Maintenance">
+                </div>
+
+                <div style="display:grid; grid-template-columns: 1.5fr 1fr 1fr; gap:12px;">
+                    <div class="form-group">
+                        <label class="form-label text-xs uppercase text-muted font-bold">Amount *</label>
+                        <input type="number" id="sub-amount" class="form-input" value="350" min="1" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label text-xs uppercase text-muted font-bold">Interval</label>
+                        <select id="sub-interval" class="form-input">
+                            <option value="month" selected>Monthly</option>
+                            <option value="year">Yearly</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label text-xs uppercase text-muted font-bold">Currency</label>
+                        <select id="sub-currency" class="form-input">
+                            <option value="cad" selected>CAD ($)</option>
+                            <option value="usd">USD ($)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="text-xs text-muted" style="background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:6px; padding:10px;">
+                    <span class="text-gold font-bold">Stripe Recurring Billing:</span> A secured Stripe Checkout link will be created. Once the client enters their card, Stripe will automatically bill them every cycle and record paid invoices in your ERP.
+                </div>
+            </div>
+
+            <div class="erp-modal-actions" style="display:flex; justify-content:flex-end; gap:10px; align-items:center;">
+                <button class="btn btn-secondary" onclick="window.closeNewSubscriptionModal()">${t('btn_cancel')}</button>
+                <button class="btn btn-outline-gold" id="btn-copy-subscription" onclick="window.submitNewSubscription(false)" title="Generate link and copy to clipboard">
+                    <span class="material-icons">content_copy</span> Copy Link Only
+                </button>
+                <button class="btn btn-primary" id="btn-submit-subscription" onclick="window.submitNewSubscription(true)" title="Generate link and email directly to client">
+                    <span class="material-icons">send</span> Send Link to Client
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(host);
+};
+
+window.closeNewSubscriptionModal = () => {
+    const host = document.getElementById('modal-new-subscription');
+    if (host) host.remove();
+};
+
+window.handleSubscriptionClientSelect = (selectEl) => {
+    const selectedOption = selectEl.options[selectEl.selectedIndex];
+    if (!selectedOption || !selectedOption.value) return;
+
+    const name = selectedOption.getAttribute('data-name');
+    const email = selectedOption.getAttribute('data-email');
+    const lang = selectedOption.getAttribute('data-lang') || 'fr';
+
+    if (name) document.getElementById('sub-client-name').value = name;
+    if (email) document.getElementById('sub-client-email').value = email;
+    const langSelect = document.getElementById('sub-preferred-language');
+    if (langSelect) langSelect.value = lang;
+};
+
+/**
+ * Builds localized subscription invitation email HTML & subject
+ */
+function renderSubscriptionInvitationEmail(clientName, planName, amount, currency, interval, checkoutUrl, lang = 'fr') {
+    const isEn = lang === 'en';
+    const currencyCode = (currency || 'CAD').toUpperCase();
+    const formattedAmount = `$${Number(amount).toFixed(2)}`;
+
+    if (isEn) {
+        const intervalLabel = interval === 'year' ? 'year' : 'month';
+        return {
+            subject: `Subscription Setup: ${planName}`,
+            body: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 580px; margin: 0 auto; background-color: #0B0D10; color: #F0F2F5; border: 1px solid rgba(223, 165, 58, 0.25); border-radius: 12px; overflow: hidden;">
+                <div style="background: linear-gradient(135deg, #15171C 0%, #0B0D10 100%); padding: 32px 24px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); text-align: center;">
+                    <h2 style="color: #DFA53A; margin: 0; font-size: 22px; font-weight: 700; letter-spacing: 0.5px;">Solutions Quasar Inc.</h2>
+                    <p style="color: #A0A5B0; margin: 6px 0 0 0; font-size: 13px;">Recurring Service Retainer</p>
+                </div>
+                <div style="padding: 32px 24px;">
+                    <p style="font-size: 15px; margin: 0 0 16px 0;">Hello <strong>${clientName || 'Valued Client'}</strong>,</p>
+                    <p style="color: #A0A5B0; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
+                        A recurring service subscription plan has been generated for your account. Please click the button below to review your plan details and activate payment securely via Stripe.
+                    </p>
+                    <div style="background: #15171C; border-radius: 8px; padding: 20px; border: 1px solid rgba(255, 255, 255, 0.06); margin-bottom: 28px;">
+                        <div style="font-size: 16px; font-weight: 600; color: #F0F2F5; margin-bottom: 6px;">${planName}</div>
+                        <div style="font-size: 22px; font-weight: 700; color: #DFA53A;">${formattedAmount} <span style="font-size: 14px; color: #A0A5B0; font-weight: normal;">/ ${intervalLabel} (${currencyCode})</span></div>
+                    </div>
+                    <div style="text-align: center; margin: 28px 0;">
+                        <a href="${checkoutUrl}" target="_blank" style="background-color: #DFA53A; color: #000000; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 700; font-size: 15px; display: inline-block;">
+                            Activate Subscription &rarr;
+                        </a>
+                    </div>
+                    <p style="font-size: 12px; color: #6c757d; text-align: center; margin: 24px 0 0 0; line-height: 1.5;">
+                        Secured 256-bit SSL encrypted checkout powered by Stripe.<br>
+                        If the button doesn't work, copy and paste this link into your browser:<br>
+                        <a href="${checkoutUrl}" style="color: #DFA53A; word-break: break-all;">${checkoutUrl}</a>
+                    </p>
+                </div>
+            </div>`
+        };
+    } else {
+        const intervalLabel = interval === 'year' ? 'an' : 'mois';
+        return {
+            subject: `Activation de votre forfait d'abonnement : ${planName}`,
+            body: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 580px; margin: 0 auto; background-color: #0B0D10; color: #F0F2F5; border: 1px solid rgba(223, 165, 58, 0.25); border-radius: 12px; overflow: hidden;">
+                <div style="background: linear-gradient(135deg, #15171C 0%, #0B0D10 100%); padding: 32px 24px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); text-align: center;">
+                    <h2 style="color: #DFA53A; margin: 0; font-size: 22px; font-weight: 700; letter-spacing: 0.5px;">Solutions Quasar Inc.</h2>
+                    <p style="color: #A0A5B0; margin: 6px 0 0 0; font-size: 13px;">Forfait d'entretien récurrent</p>
+                </div>
+                <div style="padding: 32px 24px;">
+                    <p style="font-size: 15px; margin: 0 0 16px 0;">Bonjour <strong>${clientName || 'Cher Client'}</strong>,</p>
+                    <p style="color: #A0A5B0; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
+                        Un forfait d'abonnement et d'entretien récurrent a été configuré pour votre compte. Veuillez cliquer sur le bouton ci-dessous pour confirmer les détails et activer votre paiement en toute sécurité via Stripe.
+                    </p>
+                    <div style="background: #15171C; border-radius: 8px; padding: 20px; border: 1px solid rgba(255, 255, 255, 0.06); margin-bottom: 28px;">
+                        <div style="font-size: 16px; font-weight: 600; color: #F0F2F5; margin-bottom: 6px;">${planName}</div>
+                        <div style="font-size: 22px; font-weight: 700; color: #DFA53A;">${formattedAmount} <span style="font-size: 14px; color: #A0A5B0; font-weight: normal;">/ ${intervalLabel} (${currencyCode})</span></div>
+                    </div>
+                    <div style="text-align: center; margin: 28px 0;">
+                        <a href="${checkoutUrl}" target="_blank" style="background-color: #DFA53A; color: #000000; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 700; font-size: 15px; display: inline-block;">
+                            Activer l'abonnement &rarr;
+                        </a>
+                    </div>
+                    <p style="font-size: 12px; color: #6c757d; text-align: center; margin: 24px 0 0 0; line-height: 1.5;">
+                        Paiement sécurisé et chiffré SSL 256 bits propulsé par Stripe.<br>
+                        Si le bouton ne fonctionne pas, copiez et collez ce lien dans votre navigateur :<br>
+                        <a href="${checkoutUrl}" style="color: #DFA53A; word-break: break-all;">${checkoutUrl}</a>
+                    </p>
+                </div>
+            </div>`
+        };
+    }
+}
+
+window.submitNewSubscription = async (sendEmail = false) => {
+    const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+    if (!token) return window.showToast("Unauthorized. Please sign in.", "error");
+
+    const clientSelect = document.getElementById('sub-client-select');
+    const clientId = clientSelect ? clientSelect.value : '';
+    const clientName = document.getElementById('sub-client-name').value.trim();
+    const clientEmail = document.getElementById('sub-client-email').value.trim();
+    const planName = document.getElementById('sub-plan-name').value.trim();
+    const amount = parseFloat(document.getElementById('sub-amount').value);
+    const interval = document.getElementById('sub-interval').value;
+    const currency = document.getElementById('sub-currency').value;
+    const preferredLanguage = document.getElementById('sub-preferred-language')?.value || 'fr';
+
+    if (!clientEmail || !clientEmail.includes('@')) {
+        return window.showToast("Please enter a valid client email address.", "warning");
+    }
+    if (!amount || amount <= 0) {
+        return window.showToast("Please enter a valid recurring amount.", "warning");
+    }
+    if (!planName) {
+        return window.showToast("Please enter a plan name.", "warning");
+    }
+
+    const activeBtn = sendEmail ? document.getElementById('btn-submit-subscription') : document.getElementById('btn-copy-subscription');
+    const originalText = activeBtn ? activeBtn.innerHTML : '';
+    if (activeBtn) {
+        activeBtn.innerHTML = '<span class="material-icons rotating">refresh</span> Creating Stripe Plan...';
+        activeBtn.disabled = true;
+    }
+
+    try {
+        const resp = await fetch(`${API_BASE}/api/subscriptions/create-checkout-session`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                clientId,
+                clientName: clientName || clientEmail,
+                clientEmail,
+                planName,
+                amount,
+                interval,
+                currency,
+                lang: preferredLanguage
+            })
+        });
+
+        const data = await resp.json();
+        if (!data.success || !data.url) {
+            throw new Error(data.error || "Failed to create subscription checkout session.");
+        }
+
+        // Copy link to clipboard
+        if (navigator.clipboard) {
+            try { await navigator.clipboard.writeText(data.url); } catch (_) {}
+        }
+
+        // Send email directly to client if requested
+        if (sendEmail) {
+            if (activeBtn) activeBtn.innerHTML = '<span class="material-icons rotating">refresh</span> Sending Email...';
+            const { subject, body } = renderSubscriptionInvitationEmail(clientName, planName, amount, currency, interval, data.url, preferredLanguage);
+
+            try {
+                await fetch(`${API_BASE}/api/send-email`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        to: clientEmail,
+                        subject,
+                        body
+                    })
+                });
+            } catch (mailErr) {
+                console.warn("Email dispatch notice:", mailErr);
+            }
+        }
+
+        window.closeNewSubscriptionModal();
+        if (sendEmail) {
+            window.showToast(`Subscription link created & emailed to ${clientEmail}!`, "success");
+        } else {
+            window.showToast("Subscription link created & copied to clipboard!", "success");
+        }
+
+        // Reload list
+        loadSubscriptionsList();
+
+    } catch (err) {
+        console.error("Error creating subscription:", err);
+        window.showToast(err.message, "error");
+        if (activeBtn) {
+            activeBtn.innerHTML = originalText;
+            activeBtn.disabled = false;
+        }
+    }
+};
+
+window.resendSubscriptionEmail = async (clientEmail, clientName, planName, amount, currency, interval, checkoutUrl, lang = 'fr') => {
+    if (!clientEmail || !checkoutUrl) return;
+    const confirmPrompt = lang === 'en'
+        ? `Send direct Stripe payment invitation to ${clientEmail}?`
+        : `Envoyer le courriel d'activation Stripe à ${clientEmail} ?`;
+    const confirmTitle = lang === 'en' ? "Send Email to Client" : "Envoyer le courriel au client";
+
+    const confirmed = await erpConfirm(confirmPrompt, confirmTitle);
+    if (!confirmed) return;
+
+    const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+    if (!token) return window.showToast("Unauthorized.", "error");
+
+    window.showToast("Dispatching invitation email...", "info");
+    const { subject, body } = renderSubscriptionInvitationEmail(clientName, planName, amount, currency, interval, checkoutUrl, lang);
+
+    try {
+        const resp = await fetch(`${API_BASE}/api/send-email`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                to: clientEmail,
+                subject,
+                body
+            })
+        });
+        const d = await resp.json();
+        if (d.success) {
+            window.showToast(`Email sent successfully to ${clientEmail}!`, "success");
+        } else {
+            throw new Error(d.message || "Failed to send email");
+        }
+    } catch (e) {
+        console.error(e);
+        window.showToast(`Error sending email: ${e.message}`, "error");
+    }
+};
+
+window.copySubscriptionLink = async (link) => {
+    if (!link) return;
+    try {
+        if (navigator.clipboard) {
+            await navigator.clipboard.writeText(link);
+            window.showToast("Payment link copied to clipboard!", "success");
+            return;
+        }
+    } catch (e) {
+        console.warn("Clipboard write failed:", e);
+    }
+
+    // App-native popup modal (Strictly NO native browser prompt)
+    const modalId = 'modal-copy-link';
+    let host = document.getElementById(modalId);
+    if (host) host.remove();
+    host = document.createElement('div');
+    host.id = modalId;
+    host.className = 'erp-modal-backdrop show';
+    host.innerHTML = `
+        <div class="erp-modal-card" style="max-width: 480px; width:95%;">
+            <div class="erp-modal-title" style="display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span class="material-icons text-gold">link</span>
+                    <span>Stripe Checkout Link</span>
+                </div>
+                <button class="icon-btn text-muted" onclick="document.getElementById('${modalId}').remove()"><span class="material-icons">close</span></button>
+            </div>
+            <div class="erp-modal-body" style="padding: 1.5rem 0;">
+                <p class="text-sm text-muted" style="margin-bottom: 8px;">Copy and send this direct payment link to your client:</p>
+                <input type="text" class="form-input" value="${link}" readonly onclick="this.select()" style="font-family:monospace; font-size:0.85rem;">
+            </div>
+            <div class="erp-modal-actions" style="display:flex; justify-content:flex-end;">
+                <button class="btn btn-secondary" onclick="document.getElementById('${modalId}').remove()">${typeof t === 'function' ? t('btn_close') : 'Close'}</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(host);
+};
+
+window.openSubscriptionPortal = async (stripeCustomerId, clientId) => {
+    const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+    if (!token) return window.showToast("Unauthorized.", "error");
+
+    try {
+        window.showToast("Generating customer billing portal link...", "info");
+        const resp = await fetch(`${API_BASE}/api/subscriptions/portal-session`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ stripeCustomerId, clientId })
+        });
+        const data = await resp.json();
+        if (data.success && data.url) {
+            window.open(data.url, '_blank');
+        } else {
+            throw new Error(data.error || "Could not open billing portal.");
+        }
+    } catch (err) {
+        console.error(err);
+        window.showToast(err.message, "error");
+    }
+};
+
+window.cancelSubscriptionPlan = async (stripeSubscriptionId, stripeCheckoutSessionId) => {
+    const promptMsg = stripeSubscriptionId 
+        ? "Are you sure you want to cancel this recurring subscription in Stripe? The client will no longer be charged automatically."
+        : "Are you sure you want to expire this pending checkout link?";
+    const titleMsg = stripeSubscriptionId ? "Cancel Stripe Subscription" : "Expire Checkout Link";
+
+    const confirmed = await erpConfirm(promptMsg, titleMsg);
+    if (!confirmed) return;
+
+    const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+    if (!token) return window.showToast("Unauthorized.", "error");
+
+    try {
+        window.showToast("Updating Stripe...", "info");
+        const resp = await fetch(`${API_BASE}/api/subscriptions/cancel`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ stripeSubscriptionId, stripeCheckoutSessionId })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            window.showToast("Subscription cancelled successfully in Stripe.", "success");
+            loadSubscriptionsList();
+        } else {
+            throw new Error(data.error || "Failed to cancel subscription.");
+        }
+    } catch (err) {
+        console.error(err);
+        window.showToast(err.message, "error");
+    }
+};
+
