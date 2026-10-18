@@ -47,7 +47,10 @@ Ton rôle est d'analyser les données collectées d'une entreprise (fiche Google
    - 'social_only' : Pas de site web propre, mais présence active sur Facebook, Instagram ou LinkedIn.
    - 'franchise' : Grande chaîne ou réseau de franchises.
 
-4. DIAGNOSTIC ET ANGLE COMMERCIAL :
+4. DIAGNOSTIC, VITESSE GOOGLE PAGESPEED ET ANGLE COMMERCIAL :
+   - Si des métriques Google PageSpeed sont fournies (crawled_signals.pagespeed) :
+     -> Si performance_score < 60 : mentionne explicitement le score et le temps LCP dans les painPoints et l'auditSummary (ex: 'Score Google PageSpeed mobile faible de X/100', 'Temps de chargement mobile excessif de Ys'). C'est un argument commercial décisif !
+     -> Si performance_score >= 85 : valorise la vitesse du site et oriente le diagnostic sur l'absence d'agent conversationnel IA 24/7, d'automatisation des réservations ou d'ERP.
    - Liste 2 à 4 'painPoints' concrets (ex: 'Absence de site web dédié officiel', 'Aucun agent conversationnel IA 24/7 pour capturer les réservations hors heures d'ouverture', 'Prise de rendez-vous manuelle sans automatisation intelligente', 'Dépendance à une plateforme tierce', etc.).
    - Rédige un 'auditSummary' clair en 2 phrases pour le CRM.
    - Rédige un 'recommendedAngle' pour personnaliser la séquence SMS.
@@ -805,6 +808,69 @@ class LeadAuditService {
     }
 
     /**
+     * Fetch real Google Lighthouse & Core Web Vitals metrics via PageSpeed Insights API
+     */
+    async fetchPageSpeedMetrics(targetUrl) {
+        if (!targetUrl || typeof targetUrl !== 'string') return null;
+
+        let cleanUrl = targetUrl.trim();
+        if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+            cleanUrl = `https://${cleanUrl}`;
+        }
+
+        try {
+            const hunterDoc = await db.collection('settings').doc('hunter_autopilot_config').get();
+            const apiKey = (hunterDoc.exists && hunterDoc.data().apiKey) ? hunterDoc.data().apiKey : process.env.GOOGLE_PLACES_API_KEY;
+
+            if (!apiKey) {
+                console.log('[LeadAuditService] No Google API key available for PageSpeed Insights.');
+                return null;
+            }
+
+            console.log(`[LeadAuditService] ⚡ Running Google PageSpeed Insights on ${cleanUrl}...`);
+
+            const endpoint = `https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(cleanUrl)}&key=${apiKey}&strategy=mobile&category=performance`;
+
+            const response = await axios.get(endpoint, {
+                headers: {
+                    'Referer': 'http://localhost:3002/'
+                },
+                timeout: 18000 // PageSpeed tests take ~10-15 seconds
+            });
+
+            const data = response.data;
+            if (data?.lighthouseResult?.categories?.performance) {
+                const perf = data.lighthouseResult.categories.performance;
+                const score = Math.round((perf.score || 0) * 100);
+                const audits = data.lighthouseResult.audits || {};
+
+                const fcp = audits['first-contentful-paint']?.displayValue || null;
+                const lcp = audits['largest-contentful-paint']?.displayValue || null;
+                const speedIndex = audits['speed-index']?.displayValue || null;
+                const tbt = audits['total-blocking-time']?.displayValue || null;
+                const cls = audits['cumulative-layout-shift']?.displayValue || null;
+
+                console.log(`[LeadAuditService] ⚡ PageSpeed Insights for ${cleanUrl}: Score ${score}/100 (FCP: ${fcp}, LCP: ${lcp})`);
+
+                return {
+                    score,
+                    fcp,
+                    lcp,
+                    speedIndex,
+                    tbt,
+                    cls,
+                    testedUrl: cleanUrl,
+                    testedAt: new Date().toISOString()
+                };
+            }
+        } catch (err) {
+            console.warn(`[LeadAuditService] PageSpeed Insights note for ${cleanUrl}:`, err.response?.data?.error?.message || err.message);
+        }
+
+        return null;
+    }
+
+    /**
      * CASL / LCAP Compliance Verification (Article 10(9)(b) - Conspicuous Publication)
      * Verifies whether a Canadian prospect's phone is conspicuously published on their
      * official business website without any no-solicitation restrictions.
@@ -1065,7 +1131,7 @@ class LeadAuditService {
     /**
      * Fallback Heuristic Classifier (When OpenAI is unavailable)
      */
-    fallbackClassification(lead, crawlResult, triangulation) {
+    fallbackClassification(lead, crawlResult, triangulation, pagespeedMetrics) {
         // 0. Directory Only Check (Merchant is on Dash Booking, Fresha, Booksy, Pages Jaunes, etc. without proprietary website)
         if (lead.has_directory_only || (crawlResult?.isDirectoryProfile && !lead.google_business_missing_website)) {
             const platformName = lead.directory_platform || crawlResult?.directoryPlatform || 'un annuaire tiers';
@@ -1132,16 +1198,18 @@ class LeadAuditService {
             };
         }
 
-        // 3. Outdated Website (Copyright < 2022, no viewport, or no SSL)
+        // 3. Outdated Website (Copyright < 2022, no viewport, no SSL, or poor PageSpeed score < 50)
         const currentYear = new Date().getFullYear();
         const isOldCopyright = crawlResult.copyrightYear && crawlResult.copyrightYear < (currentYear - 3);
-        const isOutdated = !crawlResult.hasViewport || !crawlResult.isHttps || isOldCopyright;
+        const isPoorPageSpeed = pagespeedMetrics && typeof pagespeedMetrics.score === 'number' && pagespeedMetrics.score < 50;
+        const isOutdated = !crawlResult.hasViewport || !crawlResult.isHttps || isOldCopyright || isPoorPageSpeed;
 
         if (isOutdated) {
             const painPoints = [];
             if (!crawlResult.hasViewport) painPoints.push('Non optimisé pour mobiles et téléphones');
             if (!crawlResult.isHttps) painPoints.push('Connexion non sécurisée (absence de SSL/HTTPS)');
             if (isOldCopyright) painPoints.push(`Copyright ancien (${crawlResult.copyrightYear}) indiquant un site non mis à jour`);
+            if (isPoorPageSpeed) painPoints.push(`Score Google PageSpeed mobile critique (${pagespeedMetrics.score}/100 - LCP ${pagespeedMetrics.lcp || 'lent'})`);
 
             return {
                 category: 'outdated_website',
@@ -1150,8 +1218,10 @@ class LeadAuditService {
                 confidenceScore: triangulation.confidenceScore,
                 antiHomonymMatched: triangulation.antiHomonymMatched,
                 painPoints: painPoints.length ? painPoints : ['Design web vieillissant'],
-                auditSummary: "Site web obsolète et peu adapté aux standards mobiles actuels.",
-                recommendedAngle: "Refonte moderne complète avec tunnel de conversion et expérience mobile premium."
+                auditSummary: isPoorPageSpeed
+                    ? `Site web officiel (${crawlResult.finalUrl || lead.website}) lent sur mobile (score Google PageSpeed ${pagespeedMetrics.score}/100), pénalisant son référencement.`
+                    : "Site web obsolète et peu adapté aux standards mobiles actuels.",
+                recommendedAngle: "Refonte moderne complète avec tunnel de conversion et expérience mobile premium ultra-rapide (garantie 95+ PageSpeed)."
             };
         }
 
@@ -1284,6 +1354,22 @@ class LeadAuditService {
             crawlResult.directoryPlatform = dirInfo.platformName;
         }
 
+        // 2a. Real Google PageSpeed Insights Analysis
+        let pagespeedMetrics = null;
+        const validSiteUrl = crawlResult.finalUrl || websiteToCrawl;
+        if (crawlResult.reachable && !isDirectoryOnly && !crawlResult.isDirectoryProfile && validSiteUrl) {
+            pagespeedMetrics = await this.fetchPageSpeedMetrics(validSiteUrl);
+            if (pagespeedMetrics) {
+                aiActivityService.log({
+                    category: 'audit',
+                    type: 'pagespeed_tested',
+                    level: 'info',
+                    title: `Google PageSpeed mesuré : ${pagespeedMetrics.score}/100`,
+                    detail: `Site : ${validSiteUrl} • LCP: ${pagespeedMetrics.lcp || 'N/A'} • FCP: ${pagespeedMetrics.fcp || 'N/A'}`
+                });
+            }
+        }
+
         // Pre-fill missing contacts from website before triangulation & AI payload
         if (crawlResult.extractedContacts) {
             const ext = crawlResult.extractedContacts;
@@ -1357,6 +1443,15 @@ class LeadAuditService {
                         reachable: crawlResult.reachable,
                         google_business_missing_website: googleBusinessMissingWebsite,
                         website_discovered_via_google: isDiscoveredViaGoogleSearch,
+                        pagespeed: pagespeedMetrics ? {
+                            performance_score: pagespeedMetrics.score,
+                            fcp: pagespeedMetrics.fcp,
+                            lcp: pagespeedMetrics.lcp,
+                            speed_index: pagespeedMetrics.speedIndex,
+                            tbt: pagespeedMetrics.tbt,
+                            cls: pagespeedMetrics.cls,
+                            assessment: pagespeedMetrics.score < 50 ? 'LENT / Mauvais (Pénalisé sur mobile)' : (pagespeedMetrics.score < 85 ? 'Moyen (Amélioration requise)' : 'Rapide / Bon')
+                        } : null,
                         title: crawlResult.title || '',
                         meta_description: crawlResult.metaDescription || '',
                         has_viewport: isDirectoryOnly ? false : crawlResult.hasViewport,
@@ -1389,7 +1484,7 @@ class LeadAuditService {
 
         // Fallback if OpenAI failed or not configured
         if (!auditResult || !auditResult.category) {
-            auditResult = this.fallbackClassification(lead, crawlResult, triangulation);
+            auditResult = this.fallbackClassification(lead, crawlResult, triangulation, pagespeedMetrics);
         }
 
         // Deterministic Safety Net 1: Directory-Only Leads (No dedicated website)
@@ -1492,12 +1587,22 @@ class LeadAuditService {
             carrier_name: lead.carrier_name || null,
             sms_eligible: lead.sms_eligible !== undefined ? lead.sms_eligible : null,
             recommended_channel: lead.recommended_channel || null,
+            pagespeed: pagespeedMetrics ? {
+                score: pagespeedMetrics.score,
+                fcp: pagespeedMetrics.fcp,
+                lcp: pagespeedMetrics.lcp,
+                speed_index: pagespeedMetrics.speedIndex,
+                tbt: pagespeedMetrics.tbt,
+                cls: pagespeedMetrics.cls,
+                tested_at: pagespeedMetrics.testedAt
+            } : null,
             crawl_signals: {
                 reachable: crawlResult.reachable,
                 copyrightYear: crawlResult.copyrightYear || null,
                 hasChatWidget: crawlResult.hasChatWidget || false,
                 hasViewport: crawlResult.hasViewport || false,
-                isHttps: crawlResult.isHttps || false
+                isHttps: crawlResult.isHttps || false,
+                pagespeed_score: pagespeedMetrics ? pagespeedMetrics.score : null
             }
         };
 
@@ -1669,6 +1774,7 @@ class LeadAuditService {
             status: updatedStatus,
             sequenceTriggered,
             auditResult,
+            pagespeed: pagespeedMetrics || null,
             website: websiteToCrawl || null,
             discoveredWebsite: isDiscoveredViaGoogleSearch ? websiteToCrawl : null,
             googleBusinessMissingWebsite,
