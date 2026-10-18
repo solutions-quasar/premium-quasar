@@ -1,17 +1,56 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // Portal client check: users created via client portal have token.role == 'client'
+    function isClient() {
+      return request.auth != null && request.auth.token.role == 'client';
+    }
+    
+    // Internal Quasar staff check: authenticated users who are NOT external portal clients
+    function isStaff() {
+      return request.auth != null && (!('role' in request.auth.token) || request.auth.token.role != 'client');
+    }
+
+    // Public Demos & Mockup Appointments
     match /demos/{demoId} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if isStaff();
       
       match /mockup_appointments/{appId} {
         allow read, write: if true;
       }
     }
-    
+
+    // AI Agents: Staff can manage all; Clients can only read their own project's agents
+    match /ai_agents/{agentId} {
+      allow read: if isStaff() || (isClient() && resource.data.projectId == request.auth.token.projectId);
+      allow write: if isStaff();
+    }
+
+    // Explicitly lock down sensitive collections from any client access
+    match /ai_projects/{projectId} {
+      allow read, write: if isStaff();
+    }
+    match /ai_invitations/{token} {
+      allow read, write: if isStaff();
+    }
+    match /leads/{leadId} {
+      allow read, write: if isStaff();
+    }
+    match /clients/{clientId} {
+      allow read, write: if isStaff();
+    }
+    match /invoices/{invoiceId} {
+      allow read, write: if isStaff();
+    }
+    match /team/{memberId} {
+      allow read, write: if isStaff();
+    }
+
+    // Default rule: All other internal collections are accessible ONLY by internal staff
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isStaff();
     }
   }
 }

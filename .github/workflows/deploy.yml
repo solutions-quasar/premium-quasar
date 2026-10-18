@@ -20,9 +20,18 @@ jobs:
           mkdir dist
           # Copy Landing Page Root Files
           cp *.* dist/ 2>/dev/null || :
+
+          # Copy Demo Folder
+          cp -r demo dist/ 2>/dev/null || :
           
           # Copy ERP Folder (Recursively)
           cp -r erp dist/
+          
+          # CRITICAL SECURITY: Never expose backend source code or configs on static GitHub Pages
+          rm -rf dist/erp/backend
+
+          # Remove logs, debug dumps and heavy raw files
+          rm -f dist/*.log dist/log_output.* dist/logo.b64
           
           # Ensure no CNAME conflicts if present
           cp CNAME dist/ 2>/dev/null || :

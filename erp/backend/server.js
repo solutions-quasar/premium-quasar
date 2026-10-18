@@ -80,9 +80,17 @@ app.use(async (req, res, next) => {
                 logEntry.error = true;
             }
 
-            // Persist to project-specific logs collection
-            const app = await getApp(projectId);
-            await app.firestore().collection('logs').add(logEntry);
+            // Persist to logs collection (isolated tenant if specified and not 'main', otherwise system database)
+            if (projectId && projectId !== 'main') {
+                try {
+                    const app = await getApp(projectId);
+                    await app.firestore().collection('logs').add(logEntry);
+                } catch (e) {
+                    await db.collection('logs').add(logEntry);
+                }
+            } else {
+                await db.collection('logs').add(logEntry);
+            }
         } catch (err) {
             console.error("[Logger Error]", err.message);
         }
@@ -1397,7 +1405,7 @@ app.get('/api/integrations/google/callback', async (req, res) => {
                 googleEmail,
                 googleConnectedAt: new Date().toISOString()
             });
-            const targetUrl = returnTo || `${SERVER_URL}/erp/portal.html?pid=${projectId}`;
+            const targetUrl = returnTo || `${SERVER_URL}/portal.html?pid=${projectId}`;
             const finalRedirect = targetUrl.includes('?') ? `${targetUrl}&google=connected` : `${targetUrl}?google=connected`;
             res.redirect(finalRedirect);
         }
@@ -1478,7 +1486,7 @@ app.post('/api/projects/:projectId/invite-client', verifyToken, async (req, res)
         });
 
         // 3. Send Email
-        const inviteLink = `${PROD_URL}/erp/portal.html?invite=${token}`;
+        const inviteLink = `${PROD_URL}/portal.html?invite=${token}`;
         const isFr = lang === 'fr';
 
         const htmlContent = `
