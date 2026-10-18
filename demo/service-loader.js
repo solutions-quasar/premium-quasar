@@ -87,7 +87,14 @@ function applyServiceData(data, index) {
     const imgEl = document.getElementById('service-detail-image');
     const descEl = document.getElementById('service-detail-description');
 
-    if (titleEl) titleEl.textContent = service.title;
+    if (titleEl) {
+        titleEl.textContent = service.title;
+        if (service.title_fr && window.translations && window.translations.fr) {
+            titleEl.setAttribute('data-i18n', `service_detail_title_${index}`);
+            window.translations.fr[`service_detail_title_${index}`] = service.title_fr;
+        }
+    }
+
     if (priceEl) {
         if (service.price) {
             priceEl.textContent = service.price;
@@ -98,18 +105,38 @@ function applyServiceData(data, index) {
     }
     if (imgEl) imgEl.src = service.image;
 
-    if (descEl && service.description) {
-        descEl.innerHTML = service.description.split('\n')
-            .filter(p => p.trim() !== '')
-            .map(p => `<p style="margin-bottom: 1rem;">${p}</p>`)
-            .join('');
-    } else if (descEl) {
-        descEl.innerHTML = '<p>No description provided for this service.</p>';
+    if (descEl) {
+        if (service.description) {
+            descEl.innerHTML = service.description.split('\n')
+                .filter(p => p.trim() !== '')
+                .map(p => `<p style="margin-bottom: 1rem;">${p}</p>`)
+                .join('');
+        } else {
+            descEl.innerHTML = '<p>No description provided for this service.</p>';
+        }
+
+        if (service.description_fr && window.translations && window.translations.fr) {
+            descEl.setAttribute('data-i18n', `service_detail_desc_${index}`);
+            window.translations.fr[`service_detail_desc_${index}`] = service.description_fr.split('\n')
+                .filter(p => p.trim() !== '')
+                .map(p => `<p style="margin-bottom: 1rem;">${p}</p>`)
+                .join('');
+        }
     }
 
     // 3. Update "Back to Home" Link
     const backBtn = document.getElementById('back-home-btn');
-    if (backBtn) backBtn.href = `index.html?id=${data.id || new URLSearchParams(window.location.search).get('id')}`;
+    if (backBtn) {
+        let backUrl = `index.html?id=${data.id || new URLSearchParams(window.location.search).get('id')}`;
+        const langStr = new URLSearchParams(window.location.search).get('lang');
+        if (langStr) backUrl += `&lang=${langStr}`;
+        backBtn.href = backUrl;
+    }
+
+    // 4. Trigger translations for injected content
+    if (window.translate) {
+        window.translate();
+    }
 }
 
 // Utility: Darken Hex Color

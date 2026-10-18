@@ -108,9 +108,18 @@ function applyDemoData(data) {
         document.querySelectorAll('.demo-address').forEach(el => el.textContent = data.address);
         document.querySelectorAll('.demo-itinerary-btn').forEach(el => el.href = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(data.address)}`);
     }
-    if (data.heroHeadline) document.querySelectorAll('.demo-hero-headline').forEach(el => el.textContent = data.heroHeadline);
-    if (data.heroSubhead) document.querySelectorAll('.demo-hero-subhead').forEach(el => el.textContent = data.heroSubhead);
-    if (data.heroCta) document.querySelectorAll('.demo-hero-cta').forEach(el => el.textContent = data.heroCta);
+    if (data.heroHeadline) {
+        document.querySelectorAll('.demo-hero-headline').forEach(el => el.textContent = data.heroHeadline);
+        if (data.heroHeadline_fr && window.translations && window.translations.fr) window.translations.fr['hero_headline'] = data.heroHeadline_fr;
+    }
+    if (data.heroSubhead) {
+        document.querySelectorAll('.demo-hero-subhead').forEach(el => el.textContent = data.heroSubhead);
+        if (data.heroSubhead_fr && window.translations && window.translations.fr) window.translations.fr['hero_subhead'] = data.heroSubhead_fr;
+    }
+    if (data.heroCta) {
+        document.querySelectorAll('.demo-hero-cta').forEach(el => el.textContent = data.heroCta);
+        if (data.heroCta_fr && window.translations && window.translations.fr) window.translations.fr['hero_cta'] = data.heroCta_fr;
+    }
 
     // 6. Update About Section Text
     if (data.aboutText) {
@@ -120,6 +129,13 @@ function applyDemoData(data) {
                 .map(p => `<p>${p}</p>`)
                 .join('');
         });
+
+        if (data.aboutText_fr && window.translations && window.translations.fr) {
+            window.translations.fr['about_text'] = data.aboutText_fr.split('\n')
+                .filter(p => p.trim() !== '')
+                .map(p => `<p>${p}</p>`)
+                .join('');
+        }
     }
 
 
@@ -141,18 +157,26 @@ function applyDemoData(data) {
 
         if (servicesGrid) {
             servicesGrid.innerHTML = data.services.map((service, index) => {
+                // Register dynamic translations for the service card
+                if (window.translations && window.translations.fr) {
+                    if (service.title_fr) window.translations.fr[`dynamic_service_${index}_title`] = service.title_fr;
+                    if (service.description_fr) window.translations.fr[`dynamic_service_${index}_desc`] = service.description_fr;
+                }
+
                 // Fallback images if not provided
                 const imgNum = (index % 3) + 1;
                 const imgSrc = service.image || `assets/images/service_${imgNum}.png`;
+                const urlParams = new URLSearchParams(window.location.search);
+                const langParam = urlParams.get('lang') ? `&lang=${urlParams.get('lang')}` : '';
                 return `
                 <article class="service-card">
                     <div class="card-image">
                         <img src="${imgSrc}" alt="${service.title}">
                     </div>
                     <div class="card-content">
-                        <h3>${service.title}</h3>
-                        <p>Premium aesthetic solution tailored for your exact needs.</p>
-                        <a href="service-detail.html?id=${data.id || new URLSearchParams(window.location.search).get('id')}&serviceIndex=${index}" class="text-link">Learn More</a>
+                        <h3 data-i18n="dynamic_service_${index}_title">${service.title}</h3>
+                        <p data-i18n="dynamic_service_${index}_desc">${service.description || 'Premium aesthetic solution tailored for your exact needs.'}</p>
+                        <a href="service-detail.html?id=${data.id || urlParams.get('id')}&serviceIndex=${index}${langParam}" class="text-link" data-i18n="service_learn_more">Learn More</a>
                     </div>
                 </article>
                 `;
@@ -160,8 +184,11 @@ function applyDemoData(data) {
         }
 
         if (serviceSelect) {
-            serviceSelect.innerHTML = `<option value="">Select a service...</option>` +
-                data.services.map(s => `<option value="${s.title}">${s.title}</option>`).join('');
+            serviceSelect.innerHTML = `<option value="" data-i18n="form_service_default">Select a service...</option>` +
+                data.services.map(s => {
+                    const title = (new URLSearchParams(window.location.search).get('lang') === 'fr' && s.title_fr) ? s.title_fr : s.title;
+                    return `<option value="${s.title}">${title}</option>`
+                }).join('');
         }
     }
 
@@ -193,18 +220,31 @@ function applyDemoData(data) {
 
         if (reviewsSection && reviewsSlider) {
             reviewsSection.style.display = 'block';
-            reviewsSlider.innerHTML = data.reviews.map(r => `
+            reviewsSlider.innerHTML = data.reviews.map((r, index) => {
+                // Register dynamic translations for the review card
+                if (window.translations && window.translations.fr) {
+                    if (r.quote_fr) window.translations.fr[`dynamic_review_${index}_quote`] = `"${r.quote_fr}"`;
+                    if (r.role_fr) window.translations.fr[`dynamic_review_${index}_role`] = `- ${r.author}${r.role_fr ? ', ' + r.role_fr : ''}`;
+                }
+
+                return `
                 <div class="review-card text-center">
                     <div class="stars">${'★'.repeat(r.rating || 5)}${'☆'.repeat(5 - (r.rating || 5))}</div>
-                    <blockquote>"${r.quote}"</blockquote>
-                    <cite>- ${r.author}${r.role ? ', ' + r.role : ''}</cite>
+                    <blockquote data-i18n="dynamic_review_${index}_quote">"${r.quote}"</blockquote>
+                    <cite data-i18n="dynamic_review_${index}_role">- ${r.author}${r.role ? ', ' + r.role : ''}</cite>
                 </div>
-            `).join('');
+                `
+            }).join('');
         }
     }
 
     // 9. Set up Booking Form listener
     setupBookingForm(data.id || new URLSearchParams(window.location.search).get('id'), data);
+
+    // 10. Trigger translations for any newly injected dynamic elements
+    if (window.translate) {
+        window.translate();
+    }
 }
 
 function setupBookingForm(demoId, demoData) {
@@ -214,7 +254,10 @@ function setupBookingForm(demoId, demoData) {
     // Set footer ERP link
     const erpLink = document.getElementById('footer-erp-link');
     if (erpLink) {
-        erpLink.href = `/demo/erp.html?id=${demoId}`;
+        let erpUrl = `/demo/erp.html?id=${demoId}`;
+        const langStr = new URLSearchParams(window.location.search).get('lang');
+        if (langStr) erpUrl += `&lang=${langStr}`;
+        erpLink.href = erpUrl;
     }
 
     form.addEventListener('submit', async (e) => {
@@ -248,7 +291,10 @@ function setupBookingForm(demoId, demoData) {
             document.getElementById('booking-success-state').style.display = 'block';
 
             // Set ERP View link
-            document.getElementById('view-in-erp-btn').href = `/demo/erp.html?id=${demoId}`;
+            let viewErpUrl = `/demo/erp.html?id=${demoId}`;
+            const langStr = new URLSearchParams(window.location.search).get('lang');
+            if (langStr) viewErpUrl += `&lang=${langStr}`;
+            document.getElementById('view-in-erp-btn').href = viewErpUrl;
 
         } catch (error) {
             console.error("Error submitting booking:", error);
@@ -310,7 +356,7 @@ function generateMockupEmailHtml(bookingData, demoData) {
                 <p style="color: #666666; font-size: 16px; line-height: 1.6;">Our team will review your request and contact you shortly to confirm the exact date and time.</p>
                 
                 <div style="text-align: center; margin-top: 40px;">
-                    <a href="https://${window.location.host}/demo?id=${new URLSearchParams(window.location.search).get('id')}" style="background-color: ${primaryColor}; color: #ffffff; padding: 12px 25px; text-decoration: none; border-radius: 4px; font-weight: bold; display: inline-block;">Return to Website</a>
+                    <a href="https://${window.location.host}/demo?id=${new URLSearchParams(window.location.search).get('id')}${new URLSearchParams(window.location.search).get('lang') ? '&lang=' + new URLSearchParams(window.location.search).get('lang') : ''}" style="background-color: ${primaryColor}; color: #ffffff; padding: 12px 25px; text-decoration: none; border-radius: 4px; font-weight: bold; display: inline-block;">Return to Website</a>
                 </div>
             </div>
             

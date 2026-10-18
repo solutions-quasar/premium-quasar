@@ -28,6 +28,7 @@ export class LeadFilterService {
 
         const painPointsMap = {
             'NO_WEBSITE': 'No Website',
+            'DIRECTORY_ONLY': 'Pas de site dédié (Annuaire / Booking)',
             'BAD_DESIGN': 'Bad Design/UX',
             'BAD_SEO': 'Weak SEO/Visibility',
             'SLOW_SPEED': 'Slow Load Speed',

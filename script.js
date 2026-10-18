@@ -53,8 +53,8 @@ const CONFIG = {
     business: {
         name: "Solutions Quasar Inc.",
         tagline: { en: "Ultra-Premium Digital Architecture", fr: "Architecture Numérique Ultra-Premium" },
-        phone: "418-410-0856",
-        phoneClean: "14184100856",
+        phone: "+1 506 233 7006",
+        phoneClean: "15062337006",
         email: "info@solutionsquasar.ca",
         address: { en: "Quebec & New Brunswick, Canada", fr: "Québec & Nouveau-Brunswick, Canada" },
         offices: [
@@ -74,6 +74,7 @@ const CONFIG = {
     nav: [
         { label: { en: "Home", fr: "Accueil" }, href: "#top", icon: ICONS.home },
         { label: { en: "Services", fr: "Services" }, href: "#services", icon: ICONS.layers },
+        { label: { en: "Our Work", fr: "Nos Réalisations" }, href: "clients.html", icon: ICONS.star },
         { label: { en: "About", fr: "À Propos" }, href: "about.html", icon: ICONS.info },
         { label: { en: "Contact", fr: "Contact" }, href: "#contact", icon: ICONS.message },
         { label: { en: "Client Portal", fr: "Portail Client" }, href: "portal.html", icon: ICONS.layers }
@@ -479,6 +480,96 @@ const CONFIG = {
         sitemap: { en: "Sitemap", fr: "Plan du Site" },
         rights: { en: "All Rights Reserved.", fr: "Tous Droits Réservés." },
         designedBy: { en: "Designed by Solutions Quasar Inc.", fr: "Conçu par Solutions Quasar Inc." }
+    },
+    privacy: {
+        title: { en: "Privacy Policy", fr: "Politique de Confidentialité" },
+        updated: { en: "Last updated: October 2026", fr: "Dernière mise à jour : Octobre 2026" },
+        badge: { en: "Legal & Data Protection", fr: "Mentions Légales & Protection des Données" },
+        intro_title: { en: "1. Introduction", fr: "1. Introduction" },
+        intro_desc: {
+            en: "Solutions Quasar Inc. (\"we,\" \"us,\" or \"our\") is dedicated to protecting the privacy, confidentiality, and security of personal information entrusted to us. This Privacy Policy details our practices concerning the collection, use, disclosure, and protection of information obtained through our website (solutionsquasar.ca), client communication channels, and associated digital services.",
+            fr: "Solutions Quasar Inc. (« nous » ou « notre ») s'engage à protéger la vie privée, la confidentialité et la sécurité des renseignements personnels qui lui sont confiés. Cette politique de confidentialité détaille nos pratiques concernant la collecte, l'utilisation, la divulgation et la protection des informations obtenues via notre site web (solutionsquasar.ca), nos canaux de communication et nos services numériques associés."
+        },
+        collect_title: { en: "2. Information We Collect", fr: "2. Renseignements Recueillis" },
+        collect_p1: {
+            en: "We collect information you voluntarily provide when requesting a strategy call, submitting project briefs, contacting us by email or telephone, or engaging with our live chat widget. This includes your full name, business or corporate email address, phone number, company or law firm name, and project specifications.",
+            fr: "Nous recueillons les renseignements que vous nous fournissez volontairement lors de demandes d'appel stratégique, de soumission de projets, de prise de contact par courriel ou téléphone, ou via notre widget de clavardage. Cela inclut votre nom, courriel professionnel, numéro de téléphone, nom d'entreprise ou de cabinet, et spécifications de projet."
+        },
+        collect_p2: {
+            en: "Technical Data & Analytics: When browsing our site, our infrastructure may automatically collect technical diagnostics including IP addresses, device identifiers, browser types, and navigation timestamps to monitor platform security, protect against automated abuse, and maintain optimal performance.",
+            fr: "Données Techniques & Analytique : Lors de votre navigation, notre infrastructure peut consigner automatiquement des diagnostics techniques incluant adresses IP, identifiants d'appareil, types de navigateur et horodatages afin d'assurer la sécurité, prévenir les abus automatisés et maintenir des performances optimales."
+        },
+        use_title: { en: "3. How We Use Your Information", fr: "3. Utilisation de vos Renseignements" },
+        use_desc: {
+            en: "Your information is used strictly for legitimate commercial purposes: evaluating and responding to project inquiries, architecting customized software and web solutions, managing client accounts and billing, scheduling consultations, and ensuring compliance with applicable Canadian legal obligations.",
+            fr: "Vos renseignements sont utilisés strictement à des fins professionnelles légitimes : évaluer et répondre à vos demandes de projets, concevoir des solutions logicielles et web sur mesure, gérer les comptes clients et la facturation, planifier les consultations et respecter nos obligations légales canadiennes."
+        },
+        thirdparty_title: { en: "4. Third-Party Integrations & Processing", fr: "4. Intégrations Tiers & Traitement" },
+        thirdparty_desc: {
+            en: "We do not sell, rent, or trade your personal information. To deliver premium digital architecture, we rely on trusted, enterprise-grade third-party infrastructure adhering to strict security standards: Google Cloud / Firebase (hosting and database infrastructure), Stripe (PCI-DSS Level 1 compliant payment processing), and LeadConnector (live customer communication and appointment booking tools).",
+            fr: "Nous ne vendons, ne louons et ne commercialisons jamais vos renseignements personnels. Pour offrir des architectures numériques de premier ordre, nous nous appuyons sur des infrastructures tierces de niveau entreprise respectant des normes de sécurité rigoureuses : Google Cloud / Firebase (hébergement et bases de données), Stripe (traitement des paiements certifié PCI-DSS Niveau 1) et LeadConnector (outils de communication et prise de rendez-vous)."
+        },
+        security_title: { en: "5. Data Security & Retention", fr: "5. Sécurité & Conservation des Données" },
+        security_desc: {
+            en: "We implement rigorous technical, organizational, and physical safeguards—including SSL/TLS 256-bit data encryption in transit, strict role-based access controls, and serverless isolation—to protect against unauthorized access, loss, or alteration. We retain personal data only as long as necessary to fulfill the operational purpose or legal retention requirements.",
+            fr: "Nous mettons en œuvre des mesures techniques, organisationnelles et physiques rigoureuses — incluant le chiffrement SSL/TLS 256 bits en transit, des contrôles d'accès stricts et des environnements isolés — pour prévenir tout accès non autorisé, perte ou altération. Nous ne conservons les données que le temps nécessaire aux finalités prévues ou aux exigences légales."
+        },
+        rights_title: { en: "6. Your Rights & Data Deletion", fr: "6. Vos Droits & Suppression des Données" },
+        rights_desc: {
+            en: "Under Canadian privacy laws (PIPEDA, Quebec Law 25) and applicable international frameworks, you have the right to request access to your stored personal information, request corrections, or request complete deletion of your records. To submit a request, contact our Privacy Officer at info@solutionsquasar.ca with the subject line 'Privacy Request'.",
+            fr: "Conformément aux lois canadiennes sur la vie privée (LPRPDE, Loi 25 du Québec) et aux cadres internationaux applicables, vous avez le droit de demander l'accès à vos renseignements stockés, d'en exiger la rectification ou la suppression complète. Pour soumettre une demande, contactez notre responsable à info@solutionsquasar.ca avec l'objet « Demande de Confidentialité »."
+        },
+        contact_title: { en: "7. Contact Us", fr: "7. Nous Contacter" },
+        contact_desc: {
+            en: "If you have any questions about this Privacy Policy or our security standards, contact Solutions Quasar Inc., Quebec & New Brunswick, Canada. Email: info@solutionsquasar.ca | Tel: +1 506 233 7006.",
+            fr: "Si vous avez des questions concernant cette politique de confidentialité ou nos standards de sécurité, contactez Solutions Quasar Inc., Québec & Nouveau-Brunswick, Canada. Courriel : info@solutionsquasar.ca | Tél : +1 506 233 7006."
+        },
+        cta: { en: "← Return to Home", fr: "← Retour à l'Accueil" }
+    },
+    p404: {
+        title: { en: "Page Not Found", fr: "Page Non Trouvée" },
+        desc: { en: "The digital asset you are looking for has been moved or does not exist.", fr: "L'actif numérique que vous recherchez a été déplacé ou n'existe pas." },
+        cta: { en: "Return to Home", fr: "Retour à l'Accueil" }
+    },
+    clientsPage: {
+        hero: {
+            subtitle: { en: "Our Work", fr: "Nos Réalisations" },
+            h1: { en: "Premium Digital Experiences we built", fr: "Expériences Numériques Premium que nous avons conçues" },
+            desc: { en: "Explore the systems and architectures that power some of our most demanding clients.", fr: "Explorez les systèmes et architectures qui propulsent certains de nos clients les plus exigeants." }
+        },
+        showcase: {
+            subtitle: { en: "Portfolio", fr: "Portfolio" },
+            title: { en: "Trusted by Professionals", fr: "La Confiance des Professionnels" },
+            items: [
+                { title: "Clinique TN", desc: { en: "Healthcare & Wellness Platform", fr: "Plateforme de Santé et Bien-être" }, url: "https://cliniquetn.ca", image: "client_cliniquetn.png", detail: { en: "Custom appointments and patient portal.", fr: "Rendez-vous sur mesure et portail patient." } },
+                { title: "Caissie Cape Oasis", desc: { en: "Retreat & Booking System", fr: "Système de Réservation et Retraite" }, url: "https://caissiecapeoasis.com", image: "client_caissiecape.png", detail: { en: "Premium booking experience with seamless calendar integration.", fr: "Expérience de réservation premium avec intégration transparente du calendrier." } },
+                { title: "CRMAEQ/ATQ", desc: { en: "Institutional Web Portal", fr: "Portail Web Institutionnel" }, url: "https://crmaeqatq.ca", image: "client_crmaeq.png", detail: { en: "Member directory and secure fast-access resources.", fr: "Répertoire des membres et ressources à accès rapide et sécurisé." } },
+                { title: "Celtics de l'Ouest", desc: { en: "Sports Organization App", fr: "Application d'Organisation Sportive" }, url: "https://celticsdelouest.org", image: "client_soccer.png", detail: { en: "Interactive schedules, rosters, and community hub.", fr: "Horaires interactifs, équipes et centre communautaire." } }
+            ]
+        }
+    },
+    privacy: {
+        title: { en: "Privacy Policy", fr: "Politique de Confidentialité" },
+        updated: { en: "Last updated: December 30, 2025", fr: "Dernière mise à jour : 30 Décembre 2025" },
+        sections: [
+            {
+                title: { en: "1. Introduction", fr: "1. Introduction" },
+                content: { en: "Solutions Quasar Inc. (\"we,\" \"us,\" or \"our\") respects your privacy. This Privacy Policy explains how we collect, use, and share information about you when you visit our website.", fr: "Solutions Quasar Inc. (« nous », « notre » ou « nos ») respecte votre vie privée. Cette politique de confidentialité explique comment nous recueillons, utilisons et partageons les informations vous concernant lorsque vous visitez notre site web." }
+            },
+            {
+                title: { en: "2. Information We Collect", fr: "2. Informations Que Nous Collectons" },
+                content: { en: "We may collect personal information that you voluntarily provide to us when you fill out a contact form, such as your name, email address, and phone number.", fr: "Nous pouvons collecter des informations personnelles que vous nous fournissez volontairement lorsque vous remplissez un formulaire de contact, comme votre nom, adresse e-mail et numéro de téléphone." }
+            },
+            {
+                title: { en: "3. How We Use Your Information", fr: "3. Comment Nous Utilisons Vos Informations" },
+                content: { en: "We use the information we collect to reply to your inquiries, provide services, and improve our website.", fr: "Nous utilisons les informations que nous collectons pour répondre à vos demandes, fournir des services et améliorer notre site web." }
+            },
+            {
+                title: { en: "4. Contact Us", fr: "4. Contactez-nous" },
+                content: { en: "If you have any questions about this Privacy Policy, please contact us at info@solutionsquasar.ca", fr: "Si vous avez des questions concernant cette politique de confidentialité, veuillez nous contacter à info@solutionsquasar.ca" }
+            }
+        ],
+        cta: { en: "Return to Home", fr: "Retour à l'Accueil" }
     }
 };
 
@@ -493,6 +584,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Render About page if on about.html
     if (window.location.pathname.includes('about.html')) {
         renderAboutPage();
+    }
+
+    // Render Clients page if on clients.html
+    if (window.location.pathname.includes('clients.html')) {
+        renderClientsPage();
     }
 });
 
@@ -550,6 +646,44 @@ function renderAboutPage() {
     if (ctaTitle) ctaTitle.textContent = t(CONFIG.about.cta.title);
     if (ctaDesc) ctaDesc.textContent = t(CONFIG.about.cta.desc);
     if (ctaBtn) ctaBtn.textContent = t(CONFIG.hero.cta);
+}
+
+function renderClientsPage() {
+    // Hero
+    const heroSubtitle = document.querySelector('[data-i18n="clientsPage.hero.subtitle"]');
+    const heroH1 = document.querySelector('[data-i18n="clientsPage.hero.h1"]');
+    const heroDesc = document.querySelector('[data-i18n="clientsPage.hero.desc"]');
+    if (heroSubtitle) heroSubtitle.textContent = t(CONFIG.clientsPage.hero.subtitle);
+    if (heroH1) heroH1.textContent = t(CONFIG.clientsPage.hero.h1);
+    if (heroDesc) heroDesc.textContent = t(CONFIG.clientsPage.hero.desc);
+
+    // Showcase
+    const showcaseSubtitle = document.querySelector('[data-i18n="clientsPage.showcase.subtitle"]');
+    const showcaseTitle = document.querySelector('[data-i18n="clientsPage.showcase.title"]');
+    if (showcaseSubtitle) showcaseSubtitle.textContent = t(CONFIG.clientsPage.showcase.subtitle);
+    if (showcaseTitle) showcaseTitle.textContent = t(CONFIG.clientsPage.showcase.title);
+
+    const grid = document.getElementById('clients-grid');
+    if (grid) {
+        grid.innerHTML = CONFIG.clientsPage.showcase.items.map(client => `
+            <div class="service-card" onclick="window.open('${client.url}', '_blank')" style="cursor: pointer;">
+                <div class="service-image-header">
+                    <img src="${client.image}" alt="${client.title}" loading="lazy">
+                </div>
+                <div class="service-content">
+                    <h3 style="margin-bottom: 0.5rem; font-size: 1.5rem;">${client.title}</h3>
+                    <p class="text-gold" style="margin-bottom: 1rem; font-weight: 500;">${t(client.desc)}</p>
+                    <p class="text-muted" style="margin-bottom: 1.5rem;">${t(client.detail)}</p>
+                    <div style="margin-top: auto;">
+                        <span style="color: var(--gold); font-weight: 600; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; gap: 0.5rem;">
+                            View Live Project
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
 }
 
 
@@ -720,22 +854,18 @@ function renderSite() {
         contactActions.appendChild(langToggle);
     }
 
-    // Add Language Toggle to Mobile Top Bar (Compact)
-    const mobileBar = document.querySelector('.mobile-top-bar');
-    if (mobileBar && !mobileBar.querySelector('.lang-toggle-mobile')) {
-        const langToggle = document.createElement('div');
-        langToggle.className = 'lang-toggle-mobile';
-        langToggle.innerHTML = `
-            <button class="lang-opt ${currentLang === 'en' ? 'active' : ''}" onclick="setLanguage('en')">EN</button>
-            <button class="lang-opt ${currentLang === 'fr' ? 'active' : ''}" onclick="setLanguage('fr')">FR</button>
+    // Add Language Toggle to Mobile Bottom Bar
+    const mobileBottomBar = document.getElementById('mobile-bar');
+    if (mobileBottomBar && !mobileBottomBar.querySelector('.lang-toggle-mobile')) {
+        const langToggleContainer = document.createElement('div');
+        langToggleContainer.className = 'bar-item';
+        langToggleContainer.innerHTML = `
+            <div class="lang-toggle-mobile">
+                <button class="lang-opt ${currentLang === 'en' ? 'active' : ''}" onclick="setLanguage('en')">EN</button>
+                <button class="lang-opt ${currentLang === 'fr' ? 'active' : ''}" onclick="setLanguage('fr')">FR</button>
+            </div>
         `;
-        // Insert before call button (which is typically last)
-        const callBtn = mobileBar.querySelector('.mobile-call-btn');
-        if (callBtn) {
-            mobileBar.insertBefore(langToggle, callBtn);
-        } else {
-            mobileBar.appendChild(langToggle);
-        }
+        mobileBottomBar.appendChild(langToggleContainer);
     }
 
     // Mobile Top Bar
@@ -890,7 +1020,7 @@ function renderSite() {
                     <li><a href="${getLinkHref('#why-us')}">${t(CONFIG.footer.whyUs)}</a></li>
                     <li><a href="${getLinkHref('#reviews')}">${t(CONFIG.footer.caseStudies)}</a></li>
                     <li><a href="#">${t(CONFIG.footer.careers)}</a></li>
-                    <li><a href="#">${t(CONFIG.footer.privacy)}</a></li>
+                    <li><a href="privacy.html">${t(CONFIG.footer.privacy)}</a></li>
                 </ul>
             </div>
 
@@ -908,7 +1038,7 @@ function renderSite() {
         <div class="footer-bottom">
             <div class="footer-cred">&copy; ${new Date().getFullYear()} ${CONFIG.business.name} • ${t(CONFIG.footer.rights)}</div>
             <div class="footer-links">
-                <a href="#">${t(CONFIG.footer.terms)}</a> &nbsp;•&nbsp; <a href="#">${t(CONFIG.footer.sitemap)}</a> &nbsp;•&nbsp; <a href="/erp/" class="text-muted" style="text-decoration:none; opacity:0.5; font-size:0.8rem;">ERP Login</a> &nbsp;•&nbsp; <span style="opacity:0.5">${t(CONFIG.footer.designedBy)}</span>
+                <a href="privacy.html">${t(CONFIG.footer.privacy)}</a> &nbsp;•&nbsp; <a href="/erp/" class="text-muted" style="text-decoration:none; opacity:0.5; font-size:0.8rem;">ERP Login</a> &nbsp;•&nbsp; <span style="opacity:0.5">${t(CONFIG.footer.designedBy)}</span>
             </div>
         </div>
     `;
@@ -964,6 +1094,23 @@ function renderContactForm() {
             value = value[k];
         }
         if (value) el.placeholder = t(value);
+    });
+
+    // Translate select options but keep their original value for form submission
+    document.querySelectorAll('select.form-select option[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        const keys = key.split('.');
+        let value = CONFIG;
+        for (const k of keys) {
+            value = value[k];
+        }
+        if (value) {
+            // Store original english value if not already stored
+            if (!el.hasAttribute('value')) {
+                el.setAttribute('value', el.textContent);
+            }
+            el.textContent = t(value);
+        }
     });
 
     // Update contact info
@@ -1128,8 +1275,16 @@ function setupForm() {
         btn.disabled = true;
 
         const formData = new FormData(form);
-        const data = Object.fromEntries(formData.entries());
-        data.lang = currentLang; // Send language context
+        // --- HANDLE SUBMISSION ---
+        const payload = {
+            name: formData.get('name'),
+            company: formData.get('company'),
+            contact_method: formData.get('contact_method') || formData.get('contact'),
+            interest: formData.get('interest'),
+            message: formData.get('message'),
+            lang: currentLang, // PASS LANGUAGE
+            _gotcha: formData.get('_gotcha')
+        };
 
         // Determine API URL
         const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -1141,9 +1296,10 @@ function setupForm() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Accept': 'application/json'
+                    'Accept': 'application/json',
+                    'x-quasar-client': 'pq-secure-form-v1'
                 },
-                body: JSON.stringify(data)
+                body: JSON.stringify(payload)
             });
 
             if (response.ok) {

@@ -232,6 +232,23 @@
 </head>
 
 <body>
+    <!-- Protocol Warning -->
+    <script>
+        if (window.location.protocol === 'file:') {
+            document.addEventListener("DOMContentLoaded", () => {
+                document.body.innerHTML = `
+                    <div style="display:flex; height:100vh; align-items:center; justify-content:center; flex-direction:column; text-align:center; padding:2rem; background-color:#121418;">
+                        <h2 style="color:#dfa53a; margin-bottom:1rem;">Local Server Required</h2>
+                        <p style="color:#94a3b8; max-width:450px; line-height:1.6; font-size:1.1rem;">
+                            The Client Portal uses advanced ES Modules and Firebase Authentication, which are blocked by browsers when opening files directly from your hard drive (<code>file://</code>). 
+                            <br><br>
+                            Please run this project using a local web server (like VS Code's <strong>Live Server</strong>) or deploy it to see the Portal in action.
+                        </p>
+                    </div>
+                `;
+            });
+        }
+    </script>
 
     <!-- 0. SPLASH SECTION -->
     <!-- 0. SPLASH SECTION REMOVED -->

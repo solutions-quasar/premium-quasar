@@ -11,10 +11,11 @@ const API_BASE = window.location.hostname.includes('localhost') || window.locati
 // Imports
 import { initDashboard } from './modules/dashboard.js';
 import { initCRM, addClient } from './modules/crm.js';
-import { initCalendar } from './modules/calendar.js';
+import { initCalendar } from './modules/calendar.js?v=35';
 import { initSales } from './modules/sales.js';
-import { initLeads } from './modules/leads.js';
-import { initLeadHunter } from './modules/leadhunter.js';
+import { initLeads } from './modules/leads.js?v=52';
+import { initSms } from './modules/sms.js';
+import { initLeadHunter } from './modules/leadhunter.js?v=42';
 import { initColdCall } from './modules/coldcall.js';
 import { initFollowup } from './modules/followup.js';
 import { initAccount } from './modules/account.js';
@@ -24,6 +25,8 @@ import { initEmails } from './modules/emails.js';
 import { initCashflow } from './modules/cashflow.js';
 import { initAutomations } from './modules/automations.js';
 import { initDemos } from './modules/demos.js';
+import { openSequencesConfigModal, initProspectionView } from './modules/sequences.js?v=56';
+import { openAuditConfigModal } from './modules/audit.js?v=46';
 import { applyTranslations, setLanguage, t } from './services/translationService.js';
 
 // --- UTILS ---
@@ -154,7 +157,9 @@ const routes = {
     '#crm': initCRM,
     '#calendar': initCalendar,
     '#sales': initSales,
+    '#prospection': initProspectionView,
     '#leads': initLeads,
+    '#sms': initSms,
     '#leadhunter': initLeadHunter,
     '#coldcall': initColdCall,
     '#followup': initFollowup,
@@ -361,6 +366,35 @@ window.showToast = (message, type = 'normal') => {
         toast.classList.remove('show');
         setTimeout(() => toast.remove(), 300);
     }, 4000);
+};
+
+window.showConfirmModal = ({ title = 'Confirmation', message, confirmText = 'Confirmer', cancelText = 'Annuler', onConfirm }) => {
+    const existing = document.getElementById('app-native-confirm-modal');
+    if (existing) existing.remove();
+
+    const modalHtml = `
+    <div id="app-native-confirm-modal" class="crm-modal-overlay" style="z-index:9999; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.85); position:fixed; top:0; left:0; width:100vw; height:100vh; backdrop-filter:blur(8px);">
+        <div class="crm-modal-content" style="width:90%; max-width:440px; background:#12141A; border:1px solid rgba(223,165,58,0.4); border-radius:14px; padding:24px; box-shadow:0 20px 60px rgba(0,0,0,0.9); text-align:center;">
+            <div style="width:48px; height:48px; border-radius:50%; background:rgba(223,165,58,0.15); border:1px solid var(--gold); display:inline-flex; align-items:center; justify-content:center; color:var(--gold); margin-bottom:14px;">
+                <span class="material-icons" style="font-size:26px;">help_outline</span>
+            </div>
+            <h4 style="margin:0 0 10px 0; color:var(--text-main); font-size:1.15rem; font-weight:700;">${title}</h4>
+            <div style="color:var(--text-muted); font-size:0.9rem; line-height:1.5; margin-bottom:22px;">${message}</div>
+            <div style="display:flex; justify-content:center; gap:12px;">
+                <button class="btn btn-secondary" id="app-confirm-cancel-btn" style="padding:8px 20px;">${cancelText}</button>
+                <button class="btn btn-primary" id="app-confirm-ok-btn" style="padding:8px 20px; font-weight:700;">${confirmText}</button>
+            </div>
+        </div>
+    </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    document.getElementById('app-confirm-cancel-btn').onclick = () => {
+        document.getElementById('app-native-confirm-modal')?.remove();
+    };
+    document.getElementById('app-confirm-ok-btn').onclick = () => {
+        document.getElementById('app-native-confirm-modal')?.remove();
+        if (typeof onConfirm === 'function') onConfirm();
+    };
 };
 
 window.performLogout = async () => {

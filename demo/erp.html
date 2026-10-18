@@ -356,7 +356,7 @@
 
     <div id="demo-loader">
         <div class="spinner"></div>
-        <div style="color: var(--text-muted); font-size: 0.9rem;">Initializing Secure ERP...</div>
+        <div style="color: var(--text-muted); font-size: 0.9rem;" data-i18n="loader">Initializing Secure ERP...</div>
     </div>
 
     <!-- Sidebar -->
@@ -366,31 +366,44 @@
             <span class="demo-erp-name">Quasar ERP</span>
         </div>
 
-        <div
-            style="padding: 0 24px 10px; font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase;">
+        <div style="padding: 0 24px 10px; font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase;"
+            data-i18n="erp_workspace">
             Workspace</div>
-        <a href="#" class="nav-link"><span class="material-icons">dashboard</span> Dashboard</a>
-        <a href="#" class="nav-link active" id="nav-crm"><span class="material-icons">people</span> CRM / Leads</a>
-        <a href="#" class="nav-link" id="nav-calendar"><span class="material-icons">event</span> Calendar</a>
+        <a href="#" class="nav-link"><span class="material-icons">dashboard</span> <span
+                data-i18n="erp_dashboard">Dashboard</span></a>
+        <a href="#" class="nav-link active" id="nav-crm"><span class="material-icons">people</span> <span
+                data-i18n="erp_crm">CRM / Leads</span></a>
+        <a href="#" class="nav-link" id="nav-calendar"><span class="material-icons">event</span> <span
+                data-i18n="erp_calendar">Calendar</span></a>
 
-        <div
-            style="padding: 20px 24px 10px; font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase;">
+        <div style="padding: 20px 24px 10px; font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase;"
+            data-i18n="erp_ai_tools">
             AI Tools</div>
-        <a href="#" class="nav-link"><span class="material-icons">mic</span> Voice Agents</a>
-        <a href="#" class="nav-link"><span class="material-icons">smart_toy</span> Workflow Autopilot</a>
+        <a href="#" class="nav-link"><span class="material-icons">mic</span> <span data-i18n="erp_voice">Voice
+                Agents</span></a>
+        <a href="#" class="nav-link"><span class="material-icons">smart_toy</span> <span
+                data-i18n="erp_workflow">Workflow Autopilot</span></a>
     </aside>
 
     <!-- Main Content -->
     <main class="main-content">
         <div class="demo-mode-banner">
             <span class="material-icons" style="font-size: 16px;">info</span>
-            This is a mockup ERP environment linked to your demo template.
-            <a href="#" id="back-to-site" target="_blank">View Live Site -></a>
+            <span data-i18n="erp_demo_mode">This is a mockup ERP environment linked to your demo template.</span>
+            <a href="#" id="back-to-site" target="_blank" data-i18n="erp_view_site">View Live Site -></a>
         </div>
 
         <header class="topbar">
-            <h2 style="font-size: 1.25rem; font-weight: 600;">Lead Management</h2>
+            <h2 style="font-size: 1.25rem; font-weight: 600;" data-i18n="erp_lead_management">Lead Management</h2>
             <div style="display: flex; align-items: center; gap: 20px;">
+                <!-- Language Toggle -->
+                <div class="lang-toggle"
+                    style="display:inline-flex; align-items:center; background: rgba(0,0,0,0.05); padding: 4px; border-radius: 20px; border: 1px solid var(--border);">
+                    <button onclick="switchLang('en')" id="btn-lang-en"
+                        style="background: none; border: none; font-size: 0.75rem; font-weight: 700; cursor: pointer; color: var(--text-muted); padding: 4px 8px; border-radius: 12px; transition: all 0.2s;">EN</button>
+                    <button onclick="switchLang('fr')" id="btn-lang-fr"
+                        style="background: none; border: none; font-size: 0.75rem; font-weight: 700; cursor: pointer; color: var(--text-muted); padding: 4px 8px; border-radius: 12px; transition: all 0.2s;">FR</button>
+                </div>
                 <span class="material-icons text-muted">notifications</span>
                 <div
                     style="width: 35px; height: 35px; border-radius: 50%; background: var(--border); display: flex; align-items: center; justify-content: center; font-weight: 600;">
@@ -405,15 +418,15 @@
                 <!-- KPIs -->
                 <div class="grid-kpi">
                     <div class="card" style="border-top: 3px solid var(--color-primary);">
-                        <div class="kpi-title">Mockup Appointments</div>
+                        <div class="kpi-title" data-i18n="erp_kpi_appointments">Mockup Appointments</div>
                         <div class="kpi-value" id="kpi-appointments">0</div>
                     </div>
                     <div class="card">
-                        <div class="kpi-title">Conversion Rate</div>
+                        <div class="kpi-title" data-i18n="erp_kpi_conversion">Conversion Rate</div>
                         <div class="kpi-value">68%</div>
                     </div>
                     <div class="card">
-                        <div class="kpi-title">Pipeline Value</div>
+                        <div class="kpi-title" data-i18n="erp_kpi_value">Pipeline Value</div>
                         <div class="kpi-value">$24,500</div>
                     </div>
                 </div>
@@ -421,18 +434,20 @@
                 <!-- Leads Table -->
                 <div class="table-container">
                     <div class="table-header">
-                        <h3 style="font-size: 1.1rem; font-weight: 600;">Recent Website Leads</h3>
+                        <h3 style="font-size: 1.1rem; font-weight: 600;" data-i18n="erp_recent_leads">Recent Website
+                            Leads</h3>
                         <button class="btn-primary" onclick="alert('Demo Mode: Cannot add manually.')"><span
-                                class="material-icons">add</span> New Lead</button>
+                                class="material-icons">add</span> <span data-i18n="erp_new_lead">New
+                                Lead</span></button>
                     </div>
                     <table>
                         <thead>
                             <tr>
-                                <th>Name</th>
-                                <th>Contact</th>
-                                <th>Service Interest</th>
-                                <th>Date</th>
-                                <th>Status</th>
+                                <th data-i18n="erp_th_name">Name</th>
+                                <th data-i18n="erp_th_contact">Contact</th>
+                                <th data-i18n="erp_th_service">Service Interest</th>
+                                <th data-i18n="erp_th_date">Date</th>
+                                <th data-i18n="erp_th_status">Status</th>
                             </tr>
                         </thead>
                         <tbody id="leads-tbody">
@@ -440,7 +455,8 @@
                                 <td colspan="5" style="text-align: center; padding: 40px; color: var(--text-muted);">
                                     <span class="material-icons"
                                         style="font-size: 48px; opacity: 0.5;">hourglass_empty</span>
-                                    <div style="margin-top: 10px;">Loading bookings...</div>
+                                    <div style="margin-top: 10px;" data-i18n="erp_loading_bookings">Loading bookings...
+                                    </div>
                                 </td>
                             </tr>
                         </tbody>
@@ -460,6 +476,8 @@
     </main>
 
     <!-- Firebase SDKs -->
+    <script src="translations.js"></script>
+    <script src="i18n.js"></script>
     <script type="module" src="erp.js"></script>
 
 </body>

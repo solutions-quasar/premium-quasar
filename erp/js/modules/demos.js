@@ -291,24 +291,36 @@ window.openDemoModal = (existingDemo = null) => {
                                     <span class="material-icons" style="font-size:18px;">auto_awesome</span> Main Content
                                 </div>
                                 <div class="form-group mb-4">
-                                    <label class="form-label text-xs uppercase text-muted tracking-wider">Hero Headline</label>
+                                    <label class="form-label text-xs uppercase text-muted tracking-wider">Hero Headline (EN)</label>
                                     <input type="text" id="demo-hero-headline" class="form-input" placeholder="Elevate your beauty..." value="${existingDemo?.heroHeadline || ''}">
                                 </div>
                                 <div class="form-group mb-4">
-                                    <label class="form-label text-xs uppercase text-muted tracking-wider">Hero Sub-headline</label>
-                                    <textarea id="demo-hero-subhead" class="form-input" rows="2" placeholder="Description...">${existingDemo?.heroSubhead || ''}</textarea>
+                                    <label class="form-label text-xs uppercase text-muted tracking-wider">Hero Headline (FR)</label>
+                                    <input type="text" id="demo-hero-headline-fr" class="form-input" placeholder="Élevez votre beauté..." value="${existingDemo?.heroHeadline_fr || ''}">
+                                </div>
+                                <div class="form-group mb-4">
+                                    <label class="form-label text-xs uppercase text-muted tracking-wider">Hero Sub-headline (EN)</label>
+                                    <textarea id="demo-hero-subhead" class="form-input" rows="2" placeholder="Description (EN)...">${existingDemo?.heroSubhead || ''}</textarea>
+                                </div>
+                                <div class="form-group mb-4">
+                                    <label class="form-label text-xs uppercase text-muted tracking-wider">Hero Sub-headline (FR)</label>
+                                    <textarea id="demo-hero-subhead-fr" class="form-input" rows="2" placeholder="Description (FR)...">${existingDemo?.heroSubhead_fr || ''}</textarea>
                                 </div>
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                                     <div class="form-group">
-                                        <label class="form-label text-xs uppercase text-muted tracking-wider">CTA Text</label>
+                                        <label class="form-label text-xs uppercase text-muted tracking-wider">CTA Text (EN)</label>
                                         <input type="text" id="demo-hero-cta" class="form-input" placeholder="Book Now" value="${existingDemo?.heroCta || ''}">
                                     </div>
                                     <div class="form-group">
-                                        <label class="form-label text-xs uppercase text-muted tracking-wider">Hero Image URL</label>
-                                        <div style="display:flex; gap:10px;">
-                                            <input type="url" id="demo-hero-image" class="form-input" placeholder="https://..." value="${existingDemo?.heroImage || ''}" style="flex:1;">
-                                            <button type="button" class="btn btn-secondary" onclick="triggerImageUpload(this)"><span class="material-icons">upload</span></button>
-                                        </div>
+                                        <label class="form-label text-xs uppercase text-muted tracking-wider">CTA Text (FR)</label>
+                                        <input type="text" id="demo-hero-cta-fr" class="form-input" placeholder="Réserver" value="${existingDemo?.heroCta_fr || ''}">
+                                    </div>
+                                </div>
+                                <div class="form-group mt-4">
+                                    <label class="form-label text-xs uppercase text-muted tracking-wider">Hero Image URL</label>
+                                    <div style="display:flex; gap:10px;">
+                                        <input type="url" id="demo-hero-image" class="form-input" placeholder="https://..." value="${existingDemo?.heroImage || ''}" style="flex:1;">
+                                        <button type="button" class="btn btn-secondary" onclick="triggerImageUpload(this)"><span class="material-icons">upload</span></button>
                                     </div>
                                 </div>
                                 <div class="form-group mt-4">
@@ -319,8 +331,12 @@ window.openDemoModal = (existingDemo = null) => {
                                     </div>
                                 </div>
                                 <div class="form-group mt-4">
-                                    <label class="form-label text-xs uppercase text-muted tracking-wider">About Section Text</label>
-                                    <textarea id="demo-about-text" class="form-input" rows="4" placeholder="About us description... (New lines create new paragraphs)">${existingDemo?.aboutText || ''}</textarea>
+                                    <label class="form-label text-xs uppercase text-muted tracking-wider">About Section Text (EN)</label>
+                                    <textarea id="demo-about-text" class="form-input" rows="4" placeholder="About us description (EN)...">${existingDemo?.aboutText || ''}</textarea>
+                                </div>
+                                <div class="form-group mt-4">
+                                    <label class="form-label text-xs uppercase text-muted tracking-wider">About Section Text (FR)</label>
+                                    <textarea id="demo-about-text-fr" class="form-input" rows="4" placeholder="About us description (FR)...">${existingDemo?.aboutText_fr || ''}</textarea>
                                 </div>
                             </div>
 
@@ -334,13 +350,15 @@ window.openDemoModal = (existingDemo = null) => {
                                     </button>
                                 </div>
                                 <div id="services-list-container" style="display:flex; flex-direction:column; gap:10px; max-height: 200px; overflow-y: auto; padding-right: 5px;">
-                                    ${(existingDemo?.services || [{ title: '', description: '', price: '', image: '' }]).map((s, idx) => `
+                                    ${(existingDemo?.services || [{ title: '', title_fr: '', description: '', description_fr: '', price: '', image: '' }]).map((s, idx) => `
                                         <div class="service-row" style="background: rgba(0,0,0,0.2); padding:15px; border-radius:8px; position:relative; border: 1px solid var(--border); margin-bottom:10px;">
                                             <div style="display:flex; gap:10px;">
-                                                <input type="text" class="form-input service-title-input mb-2" placeholder="Service Name" value="${s.title}" style="flex:2;">
+                                                <input type="text" class="form-input service-title-input mb-2" placeholder="Service Name (EN)" value="${s.title}" style="flex:2;">
+                                                <input type="text" class="form-input service-title-fr-input mb-2" placeholder="Service Name (FR)" value="${s.title_fr || ''}" style="flex:2;">
                                                 <input type="text" class="form-input service-price-input mb-2" placeholder="Price (e.g. $199)" value="${s.price || ''}" style="flex:1;">
                                             </div>
-                                            <textarea class="form-input service-desc-input mb-2" rows="3" placeholder="Service Detailed Description (for inner page)">${s.description || ''}</textarea>
+                                            <textarea class="form-input service-desc-input mb-2" rows="3" placeholder="Service Detailed Description (EN)">${s.description || ''}</textarea>
+                                            <textarea class="form-input service-desc-fr-input mb-2" rows="3" placeholder="Service Detailed Description (FR)">${s.description_fr || ''}</textarea>
                                             <div style="display:flex; gap:10px;">
                                                 <input type="url" class="form-input service-img-input" placeholder="Image URL" value="${s.image}" style="flex:1;">
                                                 <button type="button" class="btn btn-secondary" onclick="triggerImageUpload(this)"><span class="material-icons" style="font-size:18px;">upload</span></button>
@@ -363,10 +381,12 @@ window.openDemoModal = (existingDemo = null) => {
                                 <div id="reviews-list-container" style="display:flex; flex-direction:column; gap:15px; max-height: 350px; overflow-y: auto; padding-right: 5px;">
                                     ${(existingDemo?.reviews || []).map((r) => `
                                         <div class="review-row" style="background: rgba(0,0,0,0.2); padding:15px; border-radius:8px; position:relative; border: 1px solid var(--border);">
-                                            <textarea class="form-input review-quote-input mb-2" rows="2" placeholder="Patient Quote (e.g., 'Amazing service!')">${r.quote}</textarea>
-                                            <div style="display:grid; grid-template-columns: 1fr 1fr 80px; gap:10px;">
+                                            <textarea class="form-input review-quote-input mb-2" rows="2" placeholder="Patient Quote (EN)">${r.quote}</textarea>
+                                            <textarea class="form-input review-quote-fr-input mb-2" rows="2" placeholder="Patient Quote (FR)">${r.quote_fr || ''}</textarea>
+                                            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr 80px; gap:10px;">
                                                 <input type="text" class="form-input review-author-input" placeholder="Author Name" value="${r.author}">
-                                                <input type="text" class="form-input review-role-input" placeholder="Role / Location" value="${r.role}">
+                                                <input type="text" class="form-input review-role-input" placeholder="Role/Loc (EN)" value="${r.role}">
+                                                <input type="text" class="form-input review-role-fr-input" placeholder="Role/Loc (FR)" value="${r.role_fr || ''}">
                                                 <input type="number" class="form-input review-rating-input" placeholder="Stars" value="${r.rating || 5}" min="1" max="5">
                                             </div>
                                             <button type="button" class="icon-btn text-danger" onclick="this.parentElement.remove()" style="position:absolute; top:8px; right:8px;"><span class="material-icons">close</span></button>
@@ -436,10 +456,12 @@ window.addServiceFieldRow = () => {
     row.style.cssText = 'background: rgba(0,0,0,0.2); padding:15px; border-radius:8px; position:relative; border: 1px solid var(--border); margin-bottom:10px;';
     row.innerHTML = `
         <div style="display:flex; gap:10px;">
-            <input type="text" class="form-input service-title-input mb-2" placeholder="Service Name" style="flex:2;">
+            <input type="text" class="form-input service-title-input mb-2" placeholder="Service Name (EN)" style="flex:2;">
+            <input type="text" class="form-input service-title-fr-input mb-2" placeholder="Service Name (FR)" style="flex:2;">
             <input type="text" class="form-input service-price-input mb-2" placeholder="Price (e.g. $199)" style="flex:1;">
         </div>
-        <textarea class="form-input service-desc-input mb-2" rows="3" placeholder="Service Detailed Description (for inner page)"></textarea>
+        <textarea class="form-input service-desc-input mb-2" rows="3" placeholder="Service Detailed Description (EN)"></textarea>
+        <textarea class="form-input service-desc-fr-input mb-2" rows="3" placeholder="Service Detailed Description (FR)"></textarea>
         <div style="display:flex; gap:10px;">
             <input type="url" class="form-input service-img-input" placeholder="Image URL" style="flex:1;">
             <button type="button" class="btn btn-secondary" onclick="triggerImageUpload(this)"><span class="material-icons" style="font-size:18px;">upload</span></button>
@@ -456,10 +478,12 @@ window.addReviewFieldRow = () => {
     row.className = 'review-row';
     row.style.cssText = 'background: rgba(0,0,0,0.2); padding:15px; border-radius:8px; position:relative; border: 1px solid var(--border); margin-bottom:15px;';
     row.innerHTML = `
-        <textarea class="form-input review-quote-input mb-2" rows="2" placeholder="Patient Quote (e.g., 'Amazing service!')"></textarea>
-        <div style="display:grid; grid-template-columns: 1fr 1fr 80px; gap:10px;">
+        <textarea class="form-input review-quote-input mb-2" rows="2" placeholder="Patient Quote (EN)"></textarea>
+        <textarea class="form-input review-quote-fr-input mb-2" rows="2" placeholder="Patient Quote (FR)"></textarea>
+        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr 80px; gap:10px;">
             <input type="text" class="form-input review-author-input" placeholder="Author Name">
-            <input type="text" class="form-input review-role-input" placeholder="Role / Location">
+            <input type="text" class="form-input review-role-input" placeholder="Role/Loc (EN)">
+            <input type="text" class="form-input review-role-fr-input" placeholder="Role/Loc (FR)">
             <input type="number" class="form-input review-rating-input" placeholder="Stars" value="5" min="1" max="5">
         </div>
         <button type="button" class="icon-btn text-danger" onclick="this.parentElement.remove()" style="position:absolute; top:8px; right:8px;"><span class="material-icons">close</span></button>
@@ -495,15 +519,19 @@ window.handleDemoSubmit = async (e) => {
         const services = Array.from(document.querySelectorAll('.service-row')).map(row => ({
             id: row.querySelector('.service-title-input').value.toLowerCase().replace(/[^a-z0-9]/g, '-'),
             title: row.querySelector('.service-title-input').value,
+            title_fr: row.querySelector('.service-title-fr-input').value,
             price: row.querySelector('.service-price-input') ? row.querySelector('.service-price-input').value : '',
             description: row.querySelector('.service-desc-input').value,
+            description_fr: row.querySelector('.service-desc-fr-input').value,
             image: row.querySelector('.service-img-input').value
         })).filter(s => s.title.trim() !== '');
 
         const reviews = Array.from(document.querySelectorAll('.review-row')).map(row => ({
             quote: row.querySelector('.review-quote-input').value,
+            quote_fr: row.querySelector('.review-quote-fr-input').value,
             author: row.querySelector('.review-author-input').value,
             role: row.querySelector('.review-role-input').value || '',
+            role_fr: row.querySelector('.review-role-fr-input').value || '',
             rating: parseInt(row.querySelector('.review-rating-input').value) || 5
         })).filter(r => r.quote.trim() !== '' && r.author.trim() !== '');
 
@@ -526,11 +554,15 @@ window.handleDemoSubmit = async (e) => {
             address: document.getElementById('demo-address').value,
             logoUrl: document.getElementById('demo-logo').value,
             heroHeadline: document.getElementById('demo-hero-headline').value,
+            heroHeadline_fr: document.getElementById('demo-hero-headline-fr').value,
             heroSubhead: document.getElementById('demo-hero-subhead').value,
+            heroSubhead_fr: document.getElementById('demo-hero-subhead-fr').value,
             heroCta: document.getElementById('demo-hero-cta').value,
+            heroCta_fr: document.getElementById('demo-hero-cta-fr').value,
             heroImage: document.getElementById('demo-hero-image').value,
             aboutImage: document.getElementById('demo-about-image').value,
             aboutText: document.getElementById('demo-about-text').value,
+            aboutText_fr: document.getElementById('demo-about-text-fr').value,
             services: services,
             reviews: reviews,
             gallery: gallery,
