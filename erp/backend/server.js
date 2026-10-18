@@ -3738,6 +3738,18 @@ app.post('/api/leads/:id/casl-verify', verifyToken, async (req, res) => {
     }
 });
 
+// 5d-ps. Test Google PageSpeed Insights on demand
+app.post('/api/audit/pagespeed', verifyToken, async (req, res) => {
+    try {
+        const { url } = req.body;
+        if (!url) return res.status(400).json({ success: false, error: 'URL requise' });
+        const metrics = await leadAuditService.fetchPageSpeedMetrics(url);
+        res.json({ success: Boolean(metrics), metrics });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // 5d. Scrape Contacts from a Website URL (Used by Lead Hunter in real-time)
 app.post('/api/leads/enrich-website', async (req, res) => {
     try {
