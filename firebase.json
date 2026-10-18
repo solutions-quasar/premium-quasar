@@ -24,7 +24,15 @@
     "rewrites": [
       {
         "source": "/portal",
-        "destination": "/erp/portal.html"
+        "destination": "/portal.html"
+      },
+      {
+        "source": "/erp/portal",
+        "destination": "/portal.html"
+      },
+      {
+        "source": "/erp/portal.html",
+        "destination": "/portal.html"
       },
       {
         "source": "/api/**",
