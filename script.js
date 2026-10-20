@@ -120,7 +120,7 @@ const CONFIG = {
             {
                 icon: "search",
                 title: { en: "Digital Marketing", fr: "Marketing Numérique" },
-                desc: { en: "Data-driven strategies to dominate search results and capture high-value leads.", fr: "Stratégies axées sur les données pour dominer les résultats de recherche et capturer des prospects." },
+                desc: { en: "Data-driven strategies to dominate search results and attract high-value commercial clients.", fr: "Stratégies axées sur les données pour dominer les résultats de recherche et attirer des clients qualifiés." },
                 detail: { en: "SEO, PPC, and localized growth campaigns.", fr: "SEO, PPC et campagnes de croissance localisées." },
                 url: "marketing.html",
                 image: "hero_bg_marketing.png"
@@ -141,7 +141,7 @@ const CONFIG = {
         title: { en: "Client Words", fr: "Témoignages Clients" },
         items: [
             { text: { en: "Solutions Quasar transformed our online image. Professional, fast, and the design is simply stunning.", fr: "Solutions Quasar a transformé notre image en ligne. Professionnel, rapide, et le design est tout simplement magnifique." }, author: { en: "James M., Partner at Law Firm", fr: "James M., Associé dans un Cabinet d'Avocats" } },
-            { text: { en: "Finally a web agency that understands business needs. The new site generated leads in week one.", fr: "Enfin une agence web qui comprend les besoins d'affaires. Le nouveau site a généré des prospects dès la première semaine." }, author: { en: "Sarah L., Financial Consultant", fr: "Sarah L., Consultante Financière" } }
+            { text: { en: "Finally a web agency that understands business needs. The new site generated qualified client inquiries in week one.", fr: "Enfin une agence web qui comprend les besoins d'affaires. Le nouveau site a généré des demandes clients qualifiées dès la première semaine." }, author: { en: "Sarah L., Financial Consultant", fr: "Sarah L., Consultante Financière" } }
         ]
     },
     why: {
@@ -194,22 +194,21 @@ const CONFIG = {
         title: { en: "Book a Strategy Call", fr: "Réserver un Appel Stratégique" },
         subtitle: { en: "Tell us what you need. We'll reply with next steps.", fr: "Dites-nous ce dont vous avez besoin. Nous vous répondrons avec les prochaines étapes." },
         form: {
-            name: { en: "Name", fr: "Nom" },
+            name: { en: "Full Name *", fr: "Nom Complet *" },
             namePlaceholder: { en: "John Doe", fr: "Jean Dupont" },
-            company: { en: "Firm / Company", fr: "Cabinet / Entreprise" },
+            email: { en: "Email Address *", fr: "Adresse Courriel *" },
+            emailPlaceholder: { en: "john@example.com", fr: "jean@exemple.com" },
+            phone: { en: "Phone / Mobile *", fr: "Téléphone / Mobile *" },
+            phonePlaceholder: { en: "+1 (506) 233-7006", fr: "+1 (506) 233-7006" },
+            company: { en: "Firm / Company (Optional)", fr: "Cabinet / Entreprise (Optionnel)" },
             companyPlaceholder: { en: "Miller Law Group", fr: "Cabinet Juridique Miller" },
-            contact: { en: "Phone or Email", fr: "Téléphone ou Courriel" },
-            contactPlaceholder: { en: "john@example.com", fr: "jean@exemple.com" },
-            interest: { en: "Interest", fr: "Intérêt" },
-            interestOptions: {
-                website: { en: "New Website", fr: "Nouveau Site Web" },
-                app: { en: "Custom App", fr: "Application Personnalisée" },
-                ai: { en: "AI Integration", fr: "Intégration IA" },
-                consult: { en: "Consultation", fr: "Consultation" }
+            message: { en: "Project Details", fr: "Détails du Projet" },
+            messagePlaceholder: { en: "Tell us about your project...", fr: "Parlez-nous de vos objectifs..." },
+            smsConsent: {
+                en: "I consent to receive text messages (SMS) from Solutions Quasar Inc. at the phone number provided above regarding my inquiry, appointment confirmations, and project follow-ups. Message frequency varies. Standard message and data rates may apply. Reply STOP to cancel at any time, reply HELP for customer assistance. View our <a href=\"privacy.html\" target=\"_blank\" style=\"color: var(--gold); text-decoration: underline;\">Privacy Policy</a> and <a href=\"terms.html\" target=\"_blank\" style=\"color: var(--gold); text-decoration: underline;\">Terms of Service</a>.",
+                fr: "J'accepte de recevoir des messages texte (SMS) de la part de Solutions Quasar Inc. au numéro fourni ci-dessus concernant ma demande, confirmations de rendez-vous et suivis de projet. La fréquence des messages varie. Des frais standard de messagerie et de données peuvent s'appliquer. Répondez STOP pour annuler à tout moment, ou HELP pour obtenir de l'aide. Consultez notre <a href=\"privacy.html\" target=\"_blank\" style=\"color: var(--gold); text-decoration: underline;\">Politique de Confidentialité</a> et nos <a href=\"terms.html\" target=\"_blank\" style=\"color: var(--gold); text-decoration: underline;\">Conditions d'Utilisation</a>."
             },
-            message: { en: "Message", fr: "Message" },
-            messagePlaceholder: { en: "How can we help?", fr: "Comment pouvons-nous vous aider?" },
-            submit: { en: "Send Request", fr: "Envoyer la Demande" }
+            submit: { en: "Book Strategy Call", fr: "Réserver un Appel Stratégique" }
         },
         info: {
             title: { en: "Contact", fr: "Contact" },
@@ -330,7 +329,7 @@ const CONFIG = {
             concierge: {
                 tag: { en: "Smart Automation", fr: "Automatisation Intelligente" },
                 title: { en: "24/7 Smart Concierge", fr: "Concierge Intelligent 24/7" },
-                desc: { en: "Your firm never sleeps. Our AI agents handle inquiries, schedule appointments, and qualify leads instantly, ensuring no opportunity is missed even after hours.", fr: "Votre firme ne dort jamais. Nos agents IA gèrent les demandes et qualifient les prospects instantanément, même après les heures d'ouverture." },
+                desc: { en: "Your firm never sleeps. Our AI agents handle inquiries, schedule appointments, and qualify client requests instantly, ensuring no opportunity is missed even after hours.", fr: "Votre firme ne dort jamais. Nos agents IA gèrent les demandes et qualifient les requêtes clients instantanément, même après les heures d'ouverture." },
                 list: [
                     { en: "Natural Language Processing", fr: "Traitement du Langage Naturel" },
                     { en: "Multi-Channel Integration", fr: "Intégration Multi-Canaux" },
@@ -349,8 +348,8 @@ const CONFIG = {
             },
             score: {
                 tag: { en: "Predictive Analytics", fr: "Analyse Prédictive" },
-                title: { en: "Predictive Lead Scoring", fr: "Scoring Prédictif de Prospects" },
-                desc: { en: "Not all leads are equal. Our algorithms analyze user behavior, firmographics, and engagement to identify high-value prospects before they even reach out.", fr: "Nos algorithmes analysent le comportement et l'engagement pour identifier les prospects à haute valeur avant même qu'ils ne vous contactent." },
+                title: { en: "Predictive Client Insights", fr: "Analytique Prédictive Client" },
+                desc: { en: "Not all client inquiries are equal. Our algorithms analyze user behavior, firmographics, and engagement to identify high-value opportunities before they even reach out.", fr: "Nos algorithmes analysent le comportement et l'engagement pour identifier les opportunités commerciales prioritaires avant même qu'elles ne vous contactent." },
                 list: [
                     { en: "Propensity to Buy Models", fr: "Modèles de Propension d'Achat" },
                     { en: "Real-Time Scoring Updates", fr: "Mises à Jour de Scoring en Temps Réel" },
@@ -506,8 +505,8 @@ const CONFIG = {
         },
         thirdparty_title: { en: "4. Third-Party Integrations & Processing", fr: "4. Intégrations Tiers & Traitement" },
         thirdparty_desc: {
-            en: "We do not sell, rent, or trade your personal information. To deliver premium digital architecture, we rely on trusted, enterprise-grade third-party infrastructure adhering to strict security standards: Google Cloud / Firebase (hosting and database infrastructure), Stripe (PCI-DSS Level 1 compliant payment processing), and LeadConnector (live customer communication and appointment booking tools).",
-            fr: "Nous ne vendons, ne louons et ne commercialisons jamais vos renseignements personnels. Pour offrir des architectures numériques de premier ordre, nous nous appuyons sur des infrastructures tierces de niveau entreprise respectant des normes de sécurité rigoureuses : Google Cloud / Firebase (hébergement et bases de données), Stripe (traitement des paiements certifié PCI-DSS Niveau 1) et LeadConnector (outils de communication et prise de rendez-vous)."
+            en: "We do not sell, rent, or trade your personal information. To deliver premium digital architecture, we rely on trusted, enterprise-grade third-party infrastructure adhering to strict security standards: Google Cloud / Firebase (hosting and database infrastructure), Stripe (PCI-DSS Level 1 compliant payment processing), and carrier communication infrastructure. No mobile information will be shared with third parties/affiliates for marketing/promotional purposes. All the above categories exclude text messaging originator opt-in data and consent; this information will not be shared with any third parties.",
+            fr: "Nous ne vendons, ne louons et ne commercialisons jamais vos renseignements personnels. Pour offrir des architectures numériques de premier ordre, nous nous appuyons sur des infrastructures tierces de niveau entreprise respectant des normes de sécurité rigoureuses : Google Cloud / Firebase (hébergement et bases de données), Stripe (traitement des paiements certifié PCI-DSS Niveau 1) et des infrastructures de télécommunication sécurisées. Aucun renseignement mobile ou consentement SMS ne sera partagé, vendu ou loué à des tiers ou affiliés à des fins promotionnelles ou de marketing. Toutes les catégories susmentionnées excluent les données d'adhésion et le consentement à la messagerie texte ; ces renseignements ne seront en aucun cas transmis à des tiers."
         },
         security_title: { en: "5. Data Security & Retention", fr: "5. Sécurité & Conservation des Données" },
         security_desc: {
@@ -1148,18 +1147,25 @@ function renderContactForm() {
         const keys = key.split('.');
         let value = CONFIG;
         for (const k of keys) {
-            value = value[k];
+            value = value ? value[k] : undefined;
         }
-        if (value) el.textContent = t(value);
+        if (value) {
+            const translated = t(value);
+            if (typeof translated === 'string' && (translated.includes('<a ') || translated.includes('<span '))) {
+                el.innerHTML = translated;
+            } else {
+                el.textContent = translated;
+            }
+        }
     });
 
-    // Translate placeholders
-    document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-        const key = el.getAttribute('data-i18n-placeholder');
+    // Translate placeholders (supports both data-i18n-placeholder and data-i18n-ph)
+    document.querySelectorAll('[data-i18n-placeholder], [data-i18n-ph]').forEach(el => {
+        const key = el.getAttribute('data-i18n-placeholder') || el.getAttribute('data-i18n-ph');
         const keys = key.split('.');
         let value = CONFIG;
         for (const k of keys) {
-            value = value[k];
+            value = value ? value[k] : undefined;
         }
         if (value) el.placeholder = t(value);
     });
@@ -1346,8 +1352,11 @@ function setupForm() {
         // --- HANDLE SUBMISSION ---
         const payload = {
             name: formData.get('name'),
+            email: formData.get('email'),
+            phone: formData.get('phone'),
             company: formData.get('company'),
-            contact_method: formData.get('contact_method') || formData.get('contact'),
+            contact_method: formData.get('phone') || formData.get('email') || formData.get('contact_method') || formData.get('contact'),
+            sms_consent: formData.get('sms_consent') === 'on' || formData.get('sms_consent') === 'true',
             interest: formData.get('interest'),
             message: formData.get('message'),
             lang: currentLang, // PASS LANGUAGE

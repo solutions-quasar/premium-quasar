@@ -340,6 +340,9 @@ function renderSmsModuleLayout(container) {
     renderEmptyThreadPane();
 }
 
+let unsubscribeActiveDoc = null;
+let smsPollingTimer = null;
+
 /**
  * Setup Realtime Firestore Snapshot on conversations collection (channel == 'sms')
  */
@@ -347,6 +350,14 @@ function setupRealtimeListener() {
     if (unsubscribeSnapshot) {
         unsubscribeSnapshot();
         unsubscribeSnapshot = null;
+    }
+    if (unsubscribeActiveDoc) {
+        unsubscribeActiveDoc();
+        unsubscribeActiveDoc = null;
+    }
+    if (smsPollingTimer) {
+        clearInterval(smsPollingTimer);
+        smsPollingTimer = null;
     }
 
     try {
@@ -395,10 +406,118 @@ function setupRealtimeListener() {
                 listEl.innerHTML = `<div class="text-danger" style="text-align:center; padding:1.5rem; font-size:0.85rem;">Erreur de connexion en temps réel: ${error.message}</div>`;
             }
         });
+
+        // Background Fallback Polling (every 4 seconds) to guarantee instant sync even across background tab suspensions
+        smsPollingTimer = setInterval(pollSmsConversationsFallback, 4000);
     } catch (e) {
         console.error("[SMS Snapshot Init Error]", e);
     }
 }
+
+/**
+ * Dedicated Real-Time Document Listener for the currently active conversation
+ */
+function listenToActiveConversation(conversationId) {
+    if (unsubscribeActiveDoc) {
+        unsubscribeActiveDoc();
+        unsubscribeActiveDoc = null;
+    }
+    if (!conversationId) return;
+
+    try {
+        const docRef = doc(db, 'conversations', conversationId);
+        unsubscribeActiveDoc = onSnapshot(docRef, (docSnap) => {
+            if (!docSnap.exists()) return;
+            const data = docSnap.data();
+            const msgs = data.messages || [];
+
+            if (activeConversationId !== conversationId) return;
+
+            const cached = conversationsCache.find(c => c.id === conversationId);
+            if (cached) {
+                cached.messages = msgs;
+                cached.lastMessage = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+                cached.aiEnabled = data.aiEnabled !== false;
+                cached.unread = data.unread || false;
+                cached.updatedAt = data.updatedAt || new Date().toISOString();
+            }
+
+            // Immediately re-render active messages
+            renderActiveThreadMessages({
+                ...data,
+                id: conversationId,
+                messages: msgs
+            });
+
+            // Update live AI toggle state in header if changed externally
+            const aiToggle = document.getElementById('sms-ai-toggle');
+            const aiLabel = document.getElementById('ai-toggle-label');
+            const isAiOn = data.aiEnabled !== false;
+            if (aiToggle && aiToggle.checked !== isAiOn) {
+                aiToggle.checked = isAiOn;
+                if (aiLabel) {
+                    aiLabel.innerHTML = `
+                        <span class="material-icons" style="font-size:16px;">${isAiOn ? 'smart_toy' : 'person'}</span>
+                        ${isAiOn ? 'Mode IA Automatique' : 'Reprise Humaine (IA Pause)'}
+                    `;
+                    aiLabel.style.color = isAiOn ? '#21BA45' : '#F2C037';
+                }
+            }
+        }, (err) => {
+            console.warn("[SMS Active Doc Listener Error]", err);
+        });
+    } catch (e) {
+        console.warn("[SMS Active Doc Listener Init Error]", e);
+    }
+}
+
+/**
+ * Fallback Poller for bulletproof background synchronization
+ */
+async function pollSmsConversationsFallback() {
+    try {
+        const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+        const resp = await fetch(`${API_BASE}/api/sms/conversations`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await resp.json();
+        if (data.success && data.conversations) {
+            let hasChanged = false;
+            if (data.conversations.length !== conversationsCache.length) {
+                hasChanged = true;
+            } else {
+                for (let i = 0; i < data.conversations.length; i++) {
+                    const fresh = data.conversations[i];
+                    const cached = conversationsCache.find(c => c.id === fresh.id);
+                    if (!cached || cached.updatedAt !== fresh.updatedAt || cached.unread !== fresh.unread || cached.aiEnabled !== fresh.aiEnabled) {
+                        hasChanged = true;
+                        break;
+                    }
+                }
+            }
+
+            if (hasChanged) {
+                if (activeConversationId) {
+                    const activeDoc = await fetch(`${API_BASE}/api/sms/conversations/${activeConversationId}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    }).then(r => r.json()).catch(() => null);
+
+                    if (activeDoc && activeDoc.success && activeDoc.conversation) {
+                        const target = conversationsCache.find(c => c.id === activeConversationId);
+                        if (target) {
+                            target.messages = activeDoc.conversation.messages || [];
+                            target.lastMessage = target.messages[target.messages.length - 1] || null;
+                            target.aiEnabled = activeDoc.conversation.aiEnabled !== false;
+                            renderActiveThreadMessages(target);
+                        }
+                    }
+                }
+                renderConversationsList();
+            }
+        }
+    } catch (_) {}
+}
+
 
 /**
  * Render the list of conversations in the left pane based on current search & filter
@@ -507,6 +626,7 @@ window.selectSmsConversation = (id) => selectConversation(id);
 export async function selectConversation(conversationId) {
     activeConversationId = conversationId;
     renderConversationsList();
+    listenToActiveConversation(conversationId);
 
     const conv = conversationsCache.find(c => c.id === conversationId);
     if (!conv) {
@@ -857,6 +977,21 @@ async function handleSendReply(conversationId) {
     btnSend.disabled = true;
     btnSend.innerHTML = `<span class="material-icons rotating" style="font-size:18px;">refresh</span> <span>Envoi...</span>`;
 
+    // Optimistic UI update: render message immediately in thread
+    const conv = conversationsCache.find(c => c.id === conversationId);
+    if (conv) {
+        if (!conv.messages) conv.messages = [];
+        conv.messages.push({
+            role: 'assistant',
+            author: 'human',
+            senderName: 'Vous',
+            content: message,
+            timestamp: new Date().toISOString()
+        });
+        renderActiveThreadMessages(conv);
+    }
+    input.value = '';
+
     try {
         const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
         const resp = await fetch(`${API_BASE}/api/sms/conversations/${conversationId}/reply`, {
@@ -869,7 +1004,6 @@ async function handleSendReply(conversationId) {
         });
         const data = await resp.json();
         if (data.success) {
-            input.value = '';
             const counterEl = document.getElementById('sms-char-counter');
             if (counterEl) counterEl.textContent = '0 / 160 car. (1 SMS)';
             window.showToast("SMS transmis avec succès via Twilio !", "success");

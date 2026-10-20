@@ -13,7 +13,7 @@ import { initDashboard } from './modules/dashboard.js';
 import { initCRM, addClient } from './modules/crm.js';
 import { initCalendar } from './modules/calendar.js?v=35';
 import { initSales } from './modules/sales.js';
-import { initLeads } from './modules/leads.js?v=52';
+import { initLeads, cleanupLeadsRealtime } from './modules/leads.js?v=65';
 import { initSms } from './modules/sms.js';
 import { initLeadHunter } from './modules/leadhunter.js?v=42';
 import { initColdCall } from './modules/coldcall.js';
@@ -25,9 +25,10 @@ import { initEmails } from './modules/emails.js';
 import { initCashflow } from './modules/cashflow.js';
 import { initAutomations } from './modules/automations.js';
 import { initDemos } from './modules/demos.js';
-import { openSequencesConfigModal, initProspectionView } from './modules/sequences.js?v=56';
+import { openSequencesConfigModal, initProspectionView } from './modules/sequences.js?v=63';
 import { openAuditConfigModal } from './modules/audit.js?v=46';
 import { applyTranslations, setLanguage, t } from './services/translationService.js';
+import { initProspectionAlertService } from './services/prospectionAlertService.js?v=66';
 
 // --- UTILS ---
 
@@ -136,6 +137,7 @@ async function startApp() {
                 }
                 handleRoute();
                 setupUI();
+                initProspectionAlertService(db);
 
                 window.removeEventListener('hashchange', handleRoute);
                 window.addEventListener('hashchange', handleRoute);
@@ -182,6 +184,18 @@ function handleRoute() {
 
     let viewId = 'view-' + baseHash.replace('#', '');
     const isSameView = (baseHash === activeBaseHash);
+
+    // Teardown leads listener when leaving leads module
+    if (activeBaseHash === '#leads' && baseHash !== '#leads') {
+        cleanupLeadsRealtime();
+    }
+
+    if (isSameView) {
+        // Staying within the same module (only query parameters changed, e.g. #leads?filter=...&id=...)
+        // Do not hide views or re-initialize the module DOM!
+        return;
+    }
+
     activeBaseHash = baseHash;
 
     // Hide all views
@@ -230,19 +244,27 @@ function setupUI() {
     const menuBtn = document.getElementById('menu-btn');
     const closeBtn = document.getElementById('close-drawer');
 
-    if (menuBtn && !menuBtn.dataset.init) {
-        menuBtn.onclick = () => {
-            if (window.innerWidth >= 1024) return;
-            drawer.classList.add('open');
-            overlay.classList.add('active');
-        };
-        menuBtn.dataset.init = 'true';
-    }
-
     const closeDrawerFunc = () => {
         if (drawer) drawer.classList.remove('open');
         if (overlay) overlay.classList.remove('active');
+        if (menuBtn) menuBtn.classList.remove('active');
     };
+
+    if (menuBtn && !menuBtn.dataset.init) {
+        menuBtn.onclick = (e) => {
+            if (e) e.preventDefault();
+            if (window.innerWidth >= 1024) return;
+            const isOpen = drawer && drawer.classList.contains('open');
+            if (isOpen) {
+                closeDrawerFunc();
+            } else {
+                if (drawer) drawer.classList.add('open');
+                if (overlay) overlay.classList.add('active');
+                menuBtn.classList.add('active');
+            }
+        };
+        menuBtn.dataset.init = 'true';
+    }
 
     if (closeBtn) closeBtn.onclick = closeDrawerFunc;
     if (overlay) overlay.onclick = closeDrawerFunc;
@@ -272,8 +294,10 @@ function setupUI() {
 function closeDrawer() {
     const d = document.getElementById('drawer');
     const o = document.getElementById('drawer-overlay');
+    const m = document.getElementById('menu-btn');
     if (d) d.classList.remove('open');
     if (o) o.classList.remove('active');
+    if (m) m.classList.remove('active');
 }
 
 window.toggleSidebar = () => {

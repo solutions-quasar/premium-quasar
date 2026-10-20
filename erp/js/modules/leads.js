@@ -1,6 +1,6 @@
 import { db, auth } from '../firebase-config.js';
 import { collection, query, where, getDocs, getDoc, updateDoc, doc, addDoc, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { triggerLeadSequenceFromUI, openSequencesConfigModal } from './sequences.js';
+import { triggerLeadSequenceFromUI, openSequencesConfigModal, openTriggerSequenceModal } from './sequences.js';
 import { auditSingleLeadNow } from './audit.js';
 import { getTeamDropdownOptions } from './team.js';
 import { LeadFilterService } from '../services/LeadFilterService.js';
@@ -35,26 +35,149 @@ export const SVG_ICONS = {
     bolt: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`
 };
 
-// Monitor hash changes to handle browser "Back" and "Forward" buttons
-window.addEventListener('hashchange', () => {
-    const hash = window.location.hash;
+// --- MODULE STATE & PERSISTENCE ---
+let currentSubfilter = 'ALL';
+let currentMainFilter = 'NEW';
 
-    // 1. Clean route (Close Overlay)
-    if (!hash.startsWith('#leads?id=')) {
-        const overlay = document.getElementById('lead-detail-overlay');
-        if (overlay) overlay.innerHTML = '';
+export function getLeadsUrlParams() {
+    const rawHash = window.location.hash || '';
+    const qIndex = rawHash.indexOf('?');
+    if (qIndex === -1) {
+        return { filter: null, sub: null, id: null };
+    }
+    const queryString = rawHash.slice(qIndex + 1);
+    const params = new URLSearchParams(queryString);
+    return {
+        filter: params.get('filter') ? params.get('filter').toUpperCase() : null,
+        sub: params.get('sub') ? params.get('sub').toUpperCase() : null,
+        id: params.get('id') || null
+    };
+}
+window.getLeadsUrlParams = getLeadsUrlParams;
 
-        if (hash === '#leads') return;
+export function updateLeadsUrlParams(newParams = {}, replace = false) {
+    const rawHash = window.location.hash || '#leads';
+    const base = rawHash.split('?')[0] || '#leads';
+    if (base !== '#leads') return;
+
+    const current = getLeadsUrlParams();
+
+    let nextFilter = current.filter;
+    if (newParams.filter !== undefined) {
+        nextFilter = newParams.filter;
+    }
+    if (!nextFilter) {
+        nextFilter = localStorage.getItem('erp_leads_active_tab') || currentMainFilter || 'NEW';
     }
 
-    // 2. ID route (Open Overlay)
-    if (hash.startsWith('#leads?id=')) {
-        const id = hash.split('id=')[1];
-        if (window.allLeadsCache) {
-            const lead = window.allLeadsCache.find(l => l.id === id);
+    let nextSub = current.sub;
+    if (newParams.sub !== undefined) {
+        nextSub = newParams.sub;
+    }
+    if (!nextSub && (nextFilter === 'APPROVED' || nextFilter === 'AUDITED' || nextFilter === 'ALL')) {
+        nextSub = localStorage.getItem('erp_leads_active_subfilter') || currentSubfilter || 'ALL';
+    }
+
+    let nextId = current.id;
+    if (newParams.id !== undefined) {
+        nextId = newParams.id;
+    }
+
+    const searchParams = new URLSearchParams();
+    if (nextFilter) {
+        searchParams.set('filter', nextFilter);
+    }
+    if (nextSub && nextSub !== 'ALL' && (nextFilter === 'APPROVED' || nextFilter === 'AUDITED' || nextFilter === 'ALL')) {
+        searchParams.set('sub', nextSub);
+    }
+    if (nextId) {
+        searchParams.set('id', nextId);
+    }
+
+    const queryStr = searchParams.toString();
+    const newHash = queryStr ? `${base}?${queryStr}` : base;
+
+    if (window.location.hash !== newHash) {
+        if (replace) {
+            history.replaceState({ leadId: nextId || null }, '', newHash);
+        } else {
+            history.pushState({ leadId: nextId || null }, '', newHash);
+        }
+    }
+}
+window.updateLeadsUrlParams = updateLeadsUrlParams;
+
+export function switchLeadsTab(filter, syncUrl = true) {
+    const validFilters = ['ALL', 'NEW', 'AUDITED', 'APPROVED', 'CONTACTED', 'INTERESTED', 'MEETING_SCHEDULED', 'CLIENT', 'REJECTED'];
+    const targetFilter = validFilters.includes(filter) ? filter : 'NEW';
+
+    currentMainFilter = targetFilter;
+    localStorage.setItem('erp_leads_active_tab', targetFilter);
+
+    const buttons = document.querySelectorAll('button[data-filter]');
+    buttons.forEach(b => {
+        if (b.dataset.filter === targetFilter) {
+            b.classList.add('btn-primary', 'active-filter');
+            b.classList.remove('btn-secondary');
+        } else {
+            b.classList.remove('btn-primary', 'active-filter');
+        }
+    });
+
+    if (syncUrl) {
+        updateLeadsUrlParams({ filter: targetFilter });
+    }
+
+    loadLeads(targetFilter);
+}
+window.switchLeadsTab = switchLeadsTab;
+
+window.closeLeadDetailOverlay = () => {
+    const overlay = document.getElementById('lead-detail-overlay');
+    if (overlay) overlay.innerHTML = '';
+    updateLeadsUrlParams({ id: null });
+};
+
+// Monitor hash changes to handle browser "Back" and "Forward" buttons
+window.addEventListener('hashchange', () => {
+    const rawHash = window.location.hash || '';
+    if (!rawHash.startsWith('#leads')) return;
+
+    const { filter, sub, id } = getLeadsUrlParams();
+    const overlay = document.getElementById('lead-detail-overlay');
+
+    // 1. Overlay state sync:
+    if (!id) {
+        if (overlay && overlay.innerHTML.trim() !== '') {
+            overlay.innerHTML = '';
+        }
+    } else {
+        const currentDetailEl = overlay ? overlay.querySelector(`[data-lead-detail-id="${id}"]`) : null;
+        if (!currentDetailEl) {
+            const lead = (window.allLeadsCache || []).find(l => l.id === id) || (window.masterLeadsCache || []).find(l => l.id === id);
             if (lead) {
-                openLeadDetail(lead);
+                openLeadDetail(lead, false);
             }
+        }
+    }
+
+    // 2. Tab filter state sync:
+    if (filter && filter !== currentMainFilter) {
+        switchLeadsTab(filter, false);
+    }
+
+    // 3. Subfilter state sync:
+    if (sub && sub !== currentSubfilter && typeof window.setLeadsSubfilter === 'function') {
+        window.setLeadsSubfilter(sub, false);
+    }
+});
+
+// Close lead detail overlay on Escape key
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        const overlay = document.getElementById('lead-detail-overlay');
+        if (overlay && overlay.innerHTML.trim() !== '') {
+            window.closeLeadDetailOverlay();
         }
     }
 });
@@ -108,6 +231,13 @@ function formatRegionBadge(data) {
 
     const locationText = [city, state].filter(Boolean).join(', ') || 'Localisation N/A';
     return `<span class="lead-pill-subtle" title="${escapeHtml(locationText)}">${flag} ${escapeHtml(state || city || 'Zone')}</span>`;
+}
+
+// Helper: Format Language Badge
+function formatLanguageBadge(data) {
+    const lang = data.preferredLanguage || (window.detectLeadLanguage ? window.detectLeadLanguage(data) : 'en');
+    const isFr = String(lang).toLowerCase().startsWith('fr');
+    return `<span class="lead-pill-subtle" title="Langue de contact : ${isFr ? 'Français' : 'English'}" style="background:rgba(255,255,255,0.05); border-color:rgba(255,255,255,0.12); font-size:0.71rem; padding:1px 6px;">${isFr ? '🇫🇷 FR' : '🇺🇸 EN'}</span>`;
 }
 
 // Helper: Format Category Badge
@@ -174,16 +304,19 @@ function formatSequenceBadge(data) {
         'seq_modern_no_ai': 'Agent IA 24/7'
     };
 
-    if (seqStatus === 'ACTIVE' || seqId) {
-        const shortName = seqNames[seqId] || 'Séquence';
-        const modeLabel = data.smsStatus ? ` (${data.smsStatus})` : '';
-        return `<span class="lead-pill-subtle" style="background:rgba(223,165,58,0.12); border-color:rgba(223,165,58,0.3); color:var(--gold);" title="Séquence SMS active : ${shortName} (Étape ${step}/4${modeLabel})">${SVG_ICONS.sms} Seq: ${shortName} (Étape ${step})</span>`;
+    if (seqStatus === 'STOPPED_MEETING' || data.status === 'MEETING_SCHEDULED') {
+        return `<span class="lead-pill-subtle" style="background:rgba(192,132,252,0.15); border-color:rgba(192,132,252,0.3); color:#C084FC;" title="Rendez-vous fixé avec le prospect">${SVG_ICONS.calendar || '📅'} RDV Fixé</span>`;
     }
-    if (seqStatus === 'STOPPED_REPLIED') {
+    if (seqStatus === 'STOPPED_REPLIED' || data.smsStatus === 'Replied' || data.status === 'INTERESTED') {
         return `<span class="lead-pill-subtle" style="background:rgba(56,189,248,0.1); border-color:rgba(56,189,248,0.3); color:#38BDF8;" title="Le prospect a répondu">${SVG_ICONS.sms} ✋ Répondu</span>`;
     }
     if (seqStatus === 'BLOCKED_LANDLINE') {
         return `<span class="lead-pill-subtle" style="background:rgba(148,163,184,0.1); border-color:rgba(148,163,184,0.25); color:#94A3B8;" title="Ligne fixe : SMS bloqué pour protéger votre réputation">${SVG_ICONS.phone} Fixe (Pas de SMS)</span>`;
+    }
+    if (seqStatus === 'ACTIVE') {
+        const shortName = seqNames[seqId] || 'Séquence';
+        const modeLabel = data.smsStatus ? ` (${data.smsStatus})` : '';
+        return `<span class="lead-pill-subtle" style="background:rgba(223,165,58,0.12); border-color:rgba(223,165,58,0.3); color:var(--gold);" title="Séquence SMS active : ${shortName} (Étape ${step}/4${modeLabel})">${SVG_ICONS.sms} Seq: ${shortName} (Étape ${step})</span>`;
     }
     if (data.status === 'CONTACTED') {
         return `<span class="lead-pill-subtle" style="background:rgba(59,130,246,0.1); border-color:rgba(59,130,246,0.2); color:#60A5FA;">${SVG_ICONS.gmail} Contacté</span>`;
@@ -220,8 +353,22 @@ function formatLeadScheduleTime(date, timezone) {
 
 // Helper: Format Next Send Badge for Leads Table Row
 function formatNextSendBadge(data) {
+    // 0. Lead has an active Autonomous AI Follow-up scheduled (100% Autonome)
+    if (data.hasScheduledFollowup && data.nextFollowupDue) {
+        const fuDate = new Date(data.nextFollowupDue);
+        if (!isNaN(fuDate.getTime())) {
+            const timeStr = formatLeadScheduleTime(fuDate, data.timezone);
+            return `
+            <div class="lead-schedule-pill" style="display:inline-flex; align-items:center; gap:4px; font-size:0.71rem; font-weight:700; color:var(--gold); background:rgba(223,165,58,0.12); border:1px solid rgba(223,165,58,0.35); border-radius:5px; padding:2px 7px; margin-top:3px; white-space:nowrap;" title="Suivi IA 100% Autonome : ${escapeHtml(data.nextFollowupReason || 'Relance convenue')} (${timeStr})">
+                <span class="material-icons" style="font-size:11px;">smart_toy</span>
+                <span>Relance IA : <strong>${timeStr}</strong></span>
+            </div>
+            `;
+        }
+    }
+
     // 1. Lead has an active next send timestamp
-    if (data.nextStepDue && (data.sequenceStatus === 'ACTIVE' || data.activeSequenceId)) {
+    if (data.nextStepDue && data.sequenceStatus === 'ACTIVE' && data.status !== 'MEETING_SCHEDULED' && data.status !== 'INTERESTED') {
         const d = new Date(data.nextStepDue);
         if (!isNaN(d.getTime())) {
             const timeStr = formatLeadScheduleTime(d, data.timezone);
@@ -402,37 +549,58 @@ export async function initLeads() {
         btn.addEventListener('click', (e) => {
             const targetBtn = e.target.closest('button[data-filter]');
             if (!targetBtn) return;
-            buttons.forEach(b => {
-                b.classList.remove('btn-primary');
-                b.classList.remove('active-filter');
-            });
-            targetBtn.classList.add('btn-primary');
-            targetBtn.classList.add('active-filter');
-            loadLeads(targetBtn.dataset.filter);
+            switchLeadsTab(targetBtn.dataset.filter, true);
         });
     });
 
-    // Default load - check if deep linked
-    let initialFilter = 'NEW';
-    const hash = window.location.hash;
-    if (hash.includes('?id=')) {
+    // Resolve initial filter & subfilter: URL params > localStorage > defaults
+    const urlParams = getLeadsUrlParams();
+    const storedTab = localStorage.getItem('erp_leads_active_tab');
+    const storedSub = localStorage.getItem('erp_leads_active_subfilter');
+
+    const validFilters = ['ALL', 'NEW', 'AUDITED', 'APPROVED', 'CONTACTED', 'INTERESTED', 'MEETING_SCHEDULED', 'CLIENT', 'REJECTED'];
+    let initialFilter = urlParams.filter || storedTab || 'NEW';
+    if (urlParams.id && !urlParams.filter && !storedTab) {
         initialFilter = 'ALL';
     }
+    if (!validFilters.includes(initialFilter)) initialFilter = 'NEW';
+
+    let initialSub = urlParams.sub || storedSub || 'ALL';
+    const validSubs = ['ALL', 'MOBILE', 'LANDLINE', 'UNKNOWN'];
+    if (!validSubs.includes(initialSub)) initialSub = 'ALL';
+
+    currentMainFilter = initialFilter;
+    currentSubfilter = initialSub;
+    localStorage.setItem('erp_leads_active_tab', initialFilter);
+    localStorage.setItem('erp_leads_active_subfilter', initialSub);
+
+    // Sync subfilter pills in DOM
+    const pills = container.querySelectorAll('.subfilter-pill');
+    pills.forEach(p => {
+        if (p.dataset.subfilter === initialSub) {
+            p.classList.add('active');
+        } else {
+            p.classList.remove('active');
+        }
+    });
+
+    // Sync URL with current filters
+    updateLeadsUrlParams({ filter: initialFilter, sub: initialSub, id: urlParams.id }, true);
 
     const initialBtn = Array.from(buttons).find(b => b.dataset.filter === initialFilter) || buttons[0];
 
-    // Initial fetch
-    await loadLeads(initialBtn.dataset.filter, true);
+    // Clean up any previous listener and initiate real-time sync
+    cleanupLeadsRealtime();
+    await loadLeads(initialFilter, true);
 
     // Sync UI
     buttons.forEach(b => b.classList.remove('btn-primary', 'active-filter', 'active'));
-    initialBtn.classList.add('btn-primary', 'active-filter');
+    if (initialBtn) initialBtn.classList.add('btn-primary', 'active-filter');
 
     // Auto-open if ID in URL
-    if (hash.startsWith('#leads?id=')) {
-        const id = hash.split('id=')[1];
-        const lead = window.allLeadsCache.find(l => l.id === id);
-        if (lead) openLeadDetail(lead);
+    if (urlParams.id) {
+        const lead = (window.allLeadsCache || []).find(l => l.id === urlParams.id) || (masterLeadsCache || []).find(l => l.id === urlParams.id);
+        if (lead) openLeadDetail(lead, false);
     }
 
     // Load Master Auto-SMS Switch Status from backend
@@ -442,19 +610,24 @@ export async function initLeads() {
 }
 
 // Subfilter & Master Toggle State
-let currentSubfilter = 'ALL';
-let currentMainFilter = 'ALL';
+window.setLeadsSubfilter = (subfilter, syncUrl = true) => {
+    const validSubs = ['ALL', 'MOBILE', 'LANDLINE', 'UNKNOWN'];
+    currentSubfilter = validSubs.includes(subfilter) ? subfilter : 'ALL';
+    localStorage.setItem('erp_leads_active_subfilter', currentSubfilter);
 
-window.setLeadsSubfilter = (subfilter) => {
-    currentSubfilter = subfilter;
     const pills = document.querySelectorAll('.subfilter-pill');
     pills.forEach(p => {
-        if (p.dataset.subfilter === subfilter) {
+        if (p.dataset.subfilter === currentSubfilter) {
             p.classList.add('active');
         } else {
             p.classList.remove('active');
         }
     });
+
+    if (syncUrl) {
+        updateLeadsUrlParams({ sub: currentSubfilter });
+    }
+
     applyCurrentSubfilter();
 };
 
@@ -462,12 +635,16 @@ function applyCurrentSubfilter() {
     if (!window.allLeadsCache) return;
     let list = [...window.allLeadsCache];
 
-    if (currentSubfilter === 'MOBILE') {
-        list = list.filter(l => l.phone_type === 'mobile' && l.sms_eligible !== false);
-    } else if (currentSubfilter === 'LANDLINE') {
-        list = list.filter(l => l.phone_type === 'landline' || l.sms_eligible === false);
-    } else if (currentSubfilter === 'UNKNOWN') {
-        list = list.filter(l => (!l.phone_type || l.phone_type === 'unknown') && Boolean(l.phone || l.phone_number));
+    const hasSubfilterSupport = (currentMainFilter === 'APPROVED' || currentMainFilter === 'AUDITED' || currentMainFilter === 'ALL');
+
+    if (hasSubfilterSupport) {
+        if (currentSubfilter === 'MOBILE') {
+            list = list.filter(l => l.phone_type === 'mobile' && l.sms_eligible !== false);
+        } else if (currentSubfilter === 'LANDLINE') {
+            list = list.filter(l => l.phone_type === 'landline' || l.sms_eligible === false);
+        } else if (currentSubfilter === 'UNKNOWN') {
+            list = list.filter(l => (!l.phone_type || l.phone_type === 'unknown') && Boolean(l.phone || l.phone_number));
+        }
     }
 
     window.currentFilteredLeads = list;
@@ -714,7 +891,7 @@ function renderLeads(leads) {
             const carrierLabel = (data.carrier_name || data.phone_carrier || 'Ligne Fixe').replace(/'/g, "\\'");
 
             rowsHtml += `
-                <div class="lead-row-clean" onclick="openLeadDetail('${data.id}')">
+                <div class="lead-row-clean" data-lead-id="${data.id}" onclick="openLeadDetail('${data.id}')">
                     <!-- Col 1: Entreprise & Profil -->
                     <div class="lead-col-info">
                         <div style="display:flex; align-items:center; gap:8px; min-width:0;">
@@ -723,6 +900,7 @@ function renderLeads(leads) {
                         </div>
                         <div style="display:flex; align-items:center; gap:6px; margin-top:3px; flex-wrap:wrap;">
                             ${regionBadge}
+                            ${formatLanguageBadge(data)}
                             ${catBadge}
                             ${phoneBadge}
                         </div>
@@ -822,7 +1000,7 @@ function renderLeads(leads) {
         const carrierLabel = (data.carrier_name || data.phone_carrier || 'Ligne Fixe').replace(/'/g, "\\'");
 
         html += `
-            <div class="lead-card-clean" onclick="openLeadDetail('${data.id}')">
+            <div class="lead-card-clean" data-lead-id="${data.id}" onclick="openLeadDetail('${data.id}')">
                 <!-- Card Header -->
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:8px;">
                     <div style="min-width:0; flex:1;">
@@ -832,6 +1010,7 @@ function renderLeads(leads) {
                         </div>
                         <div style="display:flex; align-items:center; gap:6px; margin-top:4px; flex-wrap:wrap;">
                             ${regionBadge}
+                            ${formatLanguageBadge(data)}
                             ${catBadge}
                             ${phoneBadge}
                         </div>
@@ -959,23 +1138,92 @@ function updateFilterCounts(leads) {
     }
 }
 
+let leadsSnapshotUnsubscribe = null;
+
+export function cleanupLeadsRealtime() {
+    if (typeof leadsSnapshotUnsubscribe === 'function') {
+        leadsSnapshotUnsubscribe();
+        leadsSnapshotUnsubscribe = null;
+        console.log("[Leads Module] Real-time Firestore listener successfully detached.");
+    }
+}
+window.cleanupLeadsRealtime = cleanupLeadsRealtime;
+
+function filterAndRenderActiveLeads(statusFilter) {
+    if (!masterLeadsCache) return;
+
+    window.allLeadsCache = [];
+    if (statusFilter === 'ALL') {
+        window.allLeadsCache = [...masterLeadsCache];
+    } else if (statusFilter === 'AUDITED') {
+        window.allLeadsCache = masterLeadsCache.filter(l => Boolean(l.lastAudit || l.audit_date || l.confidence_score !== undefined || l.leadCategory));
+    } else {
+        window.allLeadsCache = masterLeadsCache.filter(l => (l.status || 'NEW').toUpperCase() === statusFilter);
+    }
+
+    currentMainFilter = statusFilter;
+    const subfiltersBar = document.getElementById('leads-subfilters-bar');
+    if (subfiltersBar) {
+        if (statusFilter === 'APPROVED' || statusFilter === 'AUDITED' || statusFilter === 'ALL') {
+            subfiltersBar.style.display = 'flex';
+            updateSubfilterCounts(window.allLeadsCache);
+        } else {
+            subfiltersBar.style.display = 'none';
+        }
+    }
+
+    applyCurrentSubfilter();
+}
+
 async function loadLeads(statusFilter = 'ALL', forceRefresh = false) {
     const listContainer = document.getElementById('leads-list-container');
     if (!listContainer) return;
 
+    currentMainFilter = statusFilter;
+
     const searchInput = document.getElementById('lead-search-input');
     if (searchInput) searchInput.value = '';
 
-    try {
-        if (!masterLeadsCache || forceRefresh) {
-            listContainer.innerHTML = `<div class="text-center text-muted mt-4">${t('leads_fetching')}</div>`;
-            const q = query(collection(db, "leads"));
-            const querySnapshot = await getDocs(q);
+    // If real-time listener is already running and cache exists, instant in-memory tab switch
+    if (masterLeadsCache && masterLeadsCache.length > 0 && !forceRefresh && leadsSnapshotUnsubscribe) {
+        filterAndRenderActiveLeads(statusFilter);
+        return;
+    }
 
-            masterLeadsCache = [];
-            querySnapshot.forEach(docSnap => {
-                masterLeadsCache.push({ ...docSnap.data(), id: docSnap.id });
-            });
+    cleanupLeadsRealtime();
+    listContainer.innerHTML = `<div class="text-center text-muted mt-4">${t('leads_fetching')}</div>`;
+
+    try {
+        const q = query(collection(db, "leads"));
+        leadsSnapshotUnsubscribe = onSnapshot(q, (querySnapshot) => {
+            const modifiedLeadIds = [];
+            const isInitial = !masterLeadsCache || masterLeadsCache.length === 0;
+
+            if (isInitial) {
+                masterLeadsCache = [];
+                querySnapshot.forEach(docSnap => {
+                    masterLeadsCache.push({ ...docSnap.data(), id: docSnap.id });
+                });
+            } else {
+                // Reactive incremental sync
+                querySnapshot.docChanges().forEach(change => {
+                    const leadData = { ...change.doc.data(), id: change.doc.id };
+                    const idx = masterLeadsCache.findIndex(l => l.id === change.doc.id);
+
+                    if (change.type === 'added') {
+                        if (idx === -1) masterLeadsCache.push(leadData);
+                        else masterLeadsCache[idx] = leadData;
+                        modifiedLeadIds.push(change.doc.id);
+                    } else if (change.type === 'modified') {
+                        if (idx !== -1) masterLeadsCache[idx] = leadData;
+                        else masterLeadsCache.push(leadData);
+                        modifiedLeadIds.push(change.doc.id);
+                    } else if (change.type === 'removed') {
+                        if (idx !== -1) masterLeadsCache.splice(idx, 1);
+                    }
+                });
+            }
+
             window.masterLeadsCache = masterLeadsCache;
 
             // Client-side Sort (Newest First)
@@ -984,44 +1232,52 @@ async function loadLeads(statusFilter = 'ALL', forceRefresh = false) {
                 const dateB = b.created_at ? new Date(b.created_at) : new Date(0);
                 return dateB - dateA;
             });
-        }
 
-        // Update Counter Badges on every filter button
-        updateFilterCounts(masterLeadsCache);
+            // Update Counter Badges on every filter button in real-time
+            updateFilterCounts(masterLeadsCache);
 
-        // Filter for current view
-        window.allLeadsCache = [];
-        if (statusFilter === 'ALL') {
-            window.allLeadsCache = [...masterLeadsCache];
-        } else if (statusFilter === 'AUDITED') {
-            window.allLeadsCache = masterLeadsCache.filter(l => Boolean(l.lastAudit || l.audit_date || l.confidence_score !== undefined || l.leadCategory));
-        } else {
-            window.allLeadsCache = masterLeadsCache.filter(l => (l.status || 'NEW').toUpperCase() === statusFilter);
-        }
+            // Filter & Render
+            filterAndRenderActiveLeads(currentMainFilter);
 
-        currentMainFilter = statusFilter;
-        const subfiltersBar = document.getElementById('leads-subfilters-bar');
-        if (subfiltersBar) {
-            // Show subfilters for APPROVED, AUDITED, or ALL views
-            if (statusFilter === 'APPROVED' || statusFilter === 'AUDITED' || statusFilter === 'ALL') {
-                subfiltersBar.style.display = 'flex';
-                updateSubfilterCounts(window.allLeadsCache);
-            } else {
-                subfiltersBar.style.display = 'none';
+            // Auto-open lead detail if ID was in URL on initial load
+            if (isInitial) {
+                const initialParams = getLeadsUrlParams();
+                if (initialParams.id) {
+                    const leadToOpen = masterLeadsCache.find(l => l.id === initialParams.id);
+                    const overlay = document.getElementById('lead-detail-overlay');
+                    const isAlreadyOpen = overlay && overlay.querySelector(`[data-lead-detail-id="${initialParams.id}"]`);
+                    if (leadToOpen && !isAlreadyOpen) {
+                        openLeadDetail(leadToOpen, false);
+                    }
+                }
             }
-        }
 
-        applyCurrentSubfilter();
-
+            // Visual feedback: glow effect on modified rows
+            if (!isInitial && modifiedLeadIds.length > 0) {
+                requestAnimationFrame(() => {
+                    modifiedLeadIds.forEach(id => {
+                        const row = document.querySelector(`[data-lead-id="${id}"]`);
+                        if (row) {
+                            row.classList.remove('lead-row-updated-glow');
+                            void row.offsetWidth; // trigger reflow
+                            row.classList.add('lead-row-updated-glow');
+                        }
+                    });
+                });
+            }
+        }, (err) => {
+            console.error('[Leads Module] Firestore real-time error:', err);
+            listContainer.innerHTML = `<div class="text-danger" style="text-align:center; padding:2rem;">${t('leads_error_loading')}</div>`;
+        });
     } catch (e) {
-        console.error('Error fetching leads:', e);
+        console.error('Error attaching leads real-time listener:', e);
         listContainer.innerHTML = `<div class="text-danger" style="text-align:center; padding:2rem;">${t('leads_error_loading')}</div>`;
     }
 }
 
 // --- DETAIL VIEW LOGIC ---
 
-window.openLeadDetail = async (data) => {
+window.openLeadDetail = async (data, updateUrl = true) => {
     let lead;
     if (typeof data === 'object' && data !== null) {
         lead = data;
@@ -1060,11 +1316,9 @@ window.openLeadDetail = async (data) => {
     // Verify we intend to start the timer (in case user navigated away fast)
     startLoadTimer();
 
-    // Push State to allow Back Button support
-    // We use pushState so it doesn't trigger hashchange immediately
-    // But if user clicks BACK, it goes to #leads, triggering the close logic.
-    if (!window.location.hash.includes('?id=')) {
-        history.pushState({ leadId: lead.id }, '', `#leads?id=${lead.id}`);
+    // Sync URL with lead ID while preserving current filter & subfilter
+    if (updateUrl) {
+        updateLeadsUrlParams({ id: lead.id }, false);
     }
 
     const siteUrl = lead.website && lead.website.startsWith('http') ? lead.website : '';
@@ -1106,9 +1360,10 @@ window.openLeadDetail = async (data) => {
     const enriched = lead.enriched_data || {};
     const hasEnrichment = Object.keys(enriched).length > 0;
     const savedSidebarWidth = localStorage.getItem('erp_lead_detail_sidebar_width') || '520px';
+    const leadLang = lead.preferredLanguage || (window.detectLeadLanguage ? window.detectLeadLanguage(lead) : 'en');
 
     overlay.innerHTML = `
-        <div class="detail-overlay" style="flex-direction: row; padding:0; height: 100%; max-height: 100vh; overflow: hidden;">
+        <div class="detail-overlay" data-lead-detail-id="${lead.id}" style="flex-direction: row; padding:0; height: 100%; max-height: 100vh; overflow: hidden;">
             
             <!-- 1. FULL HEIGHT SIDEBAR (Left) -->
             <div class="detail-sidebar" id="lead-sidebar" style="width: ${savedSidebarWidth}; min-width: 380px; max-width: 900px; background: var(--bg-card); border-right: 1px solid var(--border); position: relative; height: 100%; max-height: 100vh; overflow: hidden; display: flex; flex-direction: column; z-index: 20;">
@@ -1205,6 +1460,21 @@ window.openLeadDetail = async (data) => {
                         <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
                             <span class="material-icons text-muted" style="font-size:1rem;">email</span>
                             <input type="text" id="edit-email" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.85rem;" value="${escapeHtml(lead.email || '')}" placeholder="${t('leads_public_email')}">
+                        </div>
+                    </div>
+
+                    <!-- PREFERRED LANGUAGE SELECTOR & INDICATOR -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+                        <div style="display:flex; align-items:center; gap:8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);">
+                            <span class="material-icons text-muted" style="font-size:1rem;">translate</span>
+                            <select id="edit-preferred-language" class="form-input" style="border:none; background:transparent; padding:4px; font-size: 0.85rem; color:var(--text-main); cursor:pointer; width:100%;" onchange="window.handleLeadLanguageChange(this.value, '${lead.id}')">
+                                <option value="fr" ${leadLang === 'fr' ? 'selected' : ''}>🇫🇷 Français</option>
+                                <option value="en" ${leadLang === 'en' ? 'selected' : ''}>🇺🇸 English</option>
+                            </select>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:6px; background: rgba(223,165,58,0.06); border: 1px solid rgba(223,165,58,0.2); padding: 4px 10px; border-radius: 6px; font-size:0.75rem; color:#E2E8F0;">
+                            <span class="material-icons text-gold" style="font-size:14px;">sms</span>
+                            <span id="lead-language-status-text" style="font-weight:600;">SMS : ${leadLang === 'fr' ? '🇫🇷 Français' : '🇺🇸 English'}</span>
                         </div>
                     </div>
 
@@ -1460,9 +1730,12 @@ window.openLeadDetail = async (data) => {
                     <!-- Sequence Timeline Container -->
                     <div id="lead-sequence-timeline-container" style="margin-bottom:12px;"></div>
 
+                    <!-- Autonomous Long-Term Follow-up Container (100% Autonome) -->
+                    <div id="lead-autonomous-followup-container" style="margin-bottom:12px;"></div>
+
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-                        <button type="button" class="btn btn-sm btn-outline-gold" style="font-size:0.75rem; font-weight:700; display:flex; align-items:center; justify-content:center; gap:5px;" onclick="window.triggerLeadSequenceFromUI('${lead.id}', '${escapeHtml(lead.business_name || '')}', '${escapeHtml(lead.business_name || '')}', '${escapeHtml(lead.phone || '')}', '${escapeHtml(lead.leadCategory || lead.category || '')}')">
-                            <span class="material-icons" style="font-size:14px;">play_arrow</span> ${lead.sequenceStatus === 'ACTIVE' ? 'Relancer Séquence' : 'Déclencher SMS'}
+                        <button type="button" class="btn btn-sm btn-outline-gold" style="font-size:0.75rem; font-weight:700; display:flex; align-items:center; justify-content:center; gap:5px;" onclick="window.openTriggerSequenceModal('${lead.id}')">
+                            <span class="material-icons" style="font-size:14px;">${lead.sequenceStatus === 'ACTIVE' ? 'tune' : 'rocket_launch'}</span> ${lead.sequenceStatus === 'ACTIVE' ? 'Gérer / Relancer Séquence' : 'Lancer Séquence (Réel / Test)'}
                         </button>
                         <button type="button" class="btn btn-sm btn-secondary" style="font-size:0.75rem; font-weight:600; display:flex; align-items:center; justify-content:center; gap:5px;" onclick="window.openSequencesConfigModal('instances')">
                             <span class="material-icons" style="font-size:14px;">view_list</span> Toutes les Séquences
@@ -1547,7 +1820,7 @@ window.openLeadDetail = async (data) => {
                         <div style="display: flex; align-items: center; gap: 14px; overflow: hidden; min-width: 0; flex: 1;">
                                 <div class="text-h truncate" style="font-size: 1.18rem; font-weight: 700; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-main);" title="${escapeHtml(lead.business_name)}">${escapeHtml(lead.business_name)}</div>
                                 
-                                <div style="display: flex; gap: 10px; align-items: center; flex-shrink: 0;">
+                                <div style="display: flex; gap: 8px; align-items: center; flex-shrink: 0;">
                                 <select id="edit-lead-status" class="badge status-${lead.status ? lead.status.toLowerCase() : 'new'}" style="font-size: 0.75rem; padding: 4px 22px 4px 10px; font-weight: 600; border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; background: #14171D; color: var(--text-main); cursor: pointer;" onchange="this.className='badge status-'+this.value.toLowerCase();">
                                     <option value="NEW" ${lead.status === 'NEW' ? 'selected' : ''}>NOUVEAU</option>
                                     <option value="AUDITED" ${lead.status === 'AUDITED' ? 'selected' : ''}>AUDITÉ IA</option>
@@ -1558,6 +1831,14 @@ window.openLeadDetail = async (data) => {
                                     <option value="CLIENT" ${lead.status === 'CLIENT' ? 'selected' : ''}>CLIENT</option>
                                     <option value="REJECTED" ${lead.status === 'REJECTED' ? 'selected' : ''}>ARCHIVÉ</option>
                                 </select>
+                                
+                                <div style="display:flex; align-items:center; gap:5px; background:#14171D; border:1px solid rgba(255,255,255,0.15); border-radius:12px; padding:2px 8px;" title="Langue de contact & des SMS du lead">
+                                    <span class="material-icons text-muted" style="font-size:13px;">translate</span>
+                                    <select id="header-preferred-language" style="border:none; background:transparent; color:var(--text-main); font-size:0.75rem; font-weight:600; cursor:pointer; outline:none; padding:2px 0;" onchange="window.handleLeadLanguageChange(this.value, '${lead.id}')">
+                                        <option value="fr" ${leadLang === 'fr' ? 'selected' : ''}>🇫🇷 FR</option>
+                                        <option value="en" ${leadLang === 'en' ? 'selected' : ''}>🇺🇸 EN</option>
+                                    </select>
+                                </div>
                                 ${lead.google_page_rank ? `<span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid var(--border); font-size: 0.72rem; padding: 3px 8px; border-radius: 6px;">Page ${lead.google_page_rank}</span>` : ''}
                                 <a href="${googleSearchUrl}" target="_blank" class="text-xs text-gold hover-underline" style="display: flex; align-items: center; gap: 5px; font-weight: 500;">
                                     ${SVG_ICONS.external} ${t('leads_verify_rank')}
@@ -1565,7 +1846,7 @@ window.openLeadDetail = async (data) => {
                                 </div>
                         </div>
                         
-                        <button class="btn icon-btn" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: var(--text-muted); width: 36px; height: 36px; min-width: 36px; min-height: 36px; padding: 0; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; margin-left: auto; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);" onmouseenter="this.style.background='rgba(239, 68, 68, 0.15)'; this.style.borderColor='rgba(239, 68, 68, 0.35)'; this.style.color='#f87171';" onmouseleave="this.style.background='rgba(255, 255, 255, 0.05)'; this.style.borderColor='rgba(255, 255, 255, 0.1)'; this.style.color='var(--text-muted)';" onclick="window.location.hash='#leads'" title="Fermer le volet">
+                        <button class="btn icon-btn" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: var(--text-muted); width: 36px; height: 36px; min-width: 36px; min-height: 36px; padding: 0; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; margin-left: auto; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);" onmouseenter="this.style.background='rgba(239, 68, 68, 0.15)'; this.style.borderColor='rgba(239, 68, 68, 0.35)'; this.style.color='#f87171';" onmouseleave="this.style.background='rgba(255, 255, 255, 0.05)'; this.style.borderColor='rgba(255, 255, 255, 0.1)'; this.style.color='var(--text-muted)';" onclick="window.closeLeadDetailOverlay()" title="Fermer le volet">
                             <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                         </button>
                     </div>
@@ -1667,6 +1948,11 @@ window.openLeadDetail = async (data) => {
     // Load Proactive SMS Sequence Timeline (Section 4)
     if (window.loadLeadSequenceTimeline) {
         window.loadLeadSequenceTimeline(lead.id, lead);
+    }
+
+    // Load Autonomous Long-Term Follow-up (100% Autonome)
+    if (window.loadLeadAutonomousFollowup) {
+        window.loadLeadAutonomousFollowup(lead.id, lead);
     }
 };
 
@@ -1776,7 +2062,16 @@ window.loadLeadSequenceTimeline = async function(leadId, leadData) {
         
         let badgeClass = 'preview';
         let badgeText = 'Prévisionnel';
-        if (hasActive) {
+        if (data.status === 'STOPPED_REPLIED') {
+            badgeClass = 'simulated';
+            badgeText = '✋ Suspendu (Répondu)';
+        } else if (data.status === 'STOPPED_MEETING') {
+            badgeClass = 'done';
+            badgeText = '📅 RDV Fixé';
+        } else if (data.status === 'STOPPED_MANUAL') {
+            badgeClass = 'preview';
+            badgeText = '⏹️ Arrêté';
+        } else if (hasActive) {
             badgeClass = dryRun ? 'simulated' : 'active';
             badgeText = dryRun ? 'Simulation' : 'Actif';
         }
@@ -1791,9 +2086,9 @@ window.loadLeadSequenceTimeline = async function(leadId, leadData) {
         let stepsHtml = '';
         data.steps.forEach((step, idx) => {
             const stepNum = step.stepNumber || (idx + 1);
-            const isDone = step.status === 'COMPLETED';
+            const isDone = step.status === 'COMPLETED' || step.status === 'SENT';
             const isSimulated = step.status === 'SIMULATED';
-            const isScheduled = step.status === 'SCHEDULED';
+            const isScheduled = step.status === 'SCHEDULED' || step.status === 'CANCELLED';
             const isCurrent = (hasActive && data.currentStep === stepNum);
             
             let dotClass = 'preview';
@@ -1812,10 +2107,20 @@ window.loadLeadSequenceTimeline = async function(leadId, leadData) {
                 timeColor = '#38BDF8';
                 statusBadge = '<span style="font-size:0.65rem; color:#38BDF8; font-weight:700;">SIMULÉ</span>';
             } else if (isScheduled) {
-                dotClass = 'scheduled';
-                dotContent = '⏳';
-                timeColor = 'var(--gold)';
-                statusBadge = '<span style="font-size:0.65rem; color:var(--gold); font-weight:700;">PROGRAMMÉ</span>';
+                const isHalted = data.status === 'STOPPED_REPLIED' || data.status === 'STOPPED_MEETING' || data.status === 'STOPPED_MANUAL' || step.status === 'CANCELLED';
+                if (isHalted) {
+                    dotClass = 'preview';
+                    dotContent = '⏸️';
+                    timeColor = '#94A3B8';
+                    statusBadge = data.status === 'STOPPED_MEETING'
+                        ? '<span style="font-size:0.65rem; color:#A78BFA; font-weight:700;">RDV FIXÉ</span>'
+                        : '<span style="font-size:0.65rem; color:#94A3B8; font-weight:700;">SUSPENDU</span>';
+                } else {
+                    dotClass = 'scheduled';
+                    dotContent = '⏳';
+                    timeColor = 'var(--gold)';
+                    statusBadge = '<span style="font-size:0.65rem; color:var(--gold); font-weight:700;">PROGRAMMÉ</span>';
+                }
             }
 
             const sendDate = step.sentAt ? new Date(step.sentAt) : (step.scheduledFor ? new Date(step.scheduledFor) : null);
@@ -1865,6 +2170,7 @@ window.loadLeadSequenceTimeline = async function(leadId, leadData) {
                     <div style="display:flex; align-items:center; gap:6px;">
                         <span class="material-icons text-gold" style="font-size:15px;">schedule</span>
                         <span style="font-weight:700; color:#F8FAFC; font-size:0.78rem;">Calendrier d'envoi SMS (4 Étapes)</span>
+                        <span class="badge" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); font-size:0.65rem; padding:1px 6px; border-radius:4px; font-weight:700; color:${data.isFrancophone ? '#60A5FA' : '#FBBF24'};">${data.isFrancophone ? '🇫🇷 FR' : '🇺🇸 EN'}</span>
                     </div>
                     <span class="seq-timeline-badge ${badgeClass}">${badgeText}</span>
                 </div>
@@ -1893,6 +2199,337 @@ window.loadLeadSequenceTimeline = async function(leadId, leadData) {
             </div>
         `;
     }
+};
+
+// --- AUTONOMOUS LONG-TERM FOLLOW-UP (100% AUTONOME) ---
+
+window.loadLeadAutonomousFollowup = async function(leadId, leadData) {
+    const container = document.getElementById('lead-autonomous-followup-container');
+    if (!container) return;
+
+    container.innerHTML = `
+        <div style="background: rgba(18, 21, 28, 0.7); border: 1px solid rgba(223, 165, 58, 0.2); border-radius: 10px; padding: 12px; margin-top: 10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; align-items:center; gap:6px;">
+                    <span class="material-icons text-gold" style="font-size:16px;">smart_toy</span>
+                    <span style="font-weight:700; color:#F8FAFC; font-size:0.78rem;">Suivi Long Terme IA (100% Autonome)</span>
+                </div>
+                <span class="text-xs text-muted" style="font-size:0.68rem;">Chargement...</span>
+            </div>
+        </div>
+    `;
+
+    try {
+        const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+        const resp = await fetch(`${API_BASE}/api/followups/lead/${leadId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await resp.json();
+        const followups = (data && data.success && Array.isArray(data.followups)) ? data.followups : [];
+
+        const activeFollowup = followups.find(f => f.status === 'SCHEDULED');
+        const executedFollowups = followups.filter(f => f.status === 'EXECUTED');
+
+        const phone = leadData?.phone || leadData?.phone_number || '';
+        const name = leadData?.name || leadData?.business_name || '';
+
+        if (activeFollowup) {
+            const dueDate = new Date(activeFollowup.dueDate);
+            const dateStr = dueDate.toLocaleString('fr-CA', {
+                timeZone: activeFollowup.timezone || 'America/Moncton',
+                weekday: 'short',
+                day: 'numeric',
+                month: 'short',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+
+            container.innerHTML = `
+                <div style="background: linear-gradient(135deg, rgba(223, 165, 58, 0.08) 0%, rgba(16, 185, 129, 0.06) 100%); border: 1px solid rgba(223, 165, 58, 0.35); border-radius: 10px; padding: 12px; margin-top: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <span class="material-icons" style="font-size:16px; color:var(--gold);">smart_toy</span>
+                            <span style="font-weight:700; color:#F8FAFC; font-size:0.78rem;">Suivi Long Terme IA</span>
+                        </div>
+                        <span style="background: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 12px; font-size: 0.65rem; font-weight: 700; padding: 2px 8px; text-transform: uppercase;">
+                            100% Autonome
+                        </span>
+                    </div>
+
+                    <div style="background: rgba(0,0,0,0.25); border-radius: 8px; padding: 10px; border: 1px solid rgba(255,255,255,0.06); margin-bottom: 10px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 5px;">
+                            <span style="font-size: 0.72rem; color: #94A3B8;">Échéance prévue :</span>
+                            <span style="font-size: 0.74rem; font-weight: 700; color: var(--gold); display:flex; align-items:center; gap:4px;">
+                                <span class="material-icons" style="font-size:13px;">event</span> ${dateStr}
+                            </span>
+                        </div>
+                        <div style="font-size: 0.7rem; color: #CBD5E1; margin-bottom: 4px;">
+                            <strong style="color:#94A3B8;">Motif :</strong> ${escapeHtml(activeFollowup.reason || 'Report demandé par le prospect')}
+                        </div>
+                        ${activeFollowup.contextNote ? `
+                            <div style="font-size: 0.68rem; color: #94A3B8; font-style: italic; background: rgba(255,255,255,0.02); padding: 5px 8px; border-radius: 5px; border-left: 2px solid var(--gold);">
+                                💡 Notes : ${escapeHtml(activeFollowup.contextNote)}
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <div style="display:flex; gap:6px;">
+                        <button type="button" class="btn btn-sm btn-outline-gold" style="flex:1; font-size:0.72rem; height:30px; display:flex; align-items:center; justify-content:center; gap:4px;" onclick="window.executeAutonomousFollowupNow('${activeFollowup.id}', '${leadId}')">
+                            <span class="material-icons" style="font-size:13px;">bolt</span> Tester l'envoi direct
+                        </button>
+                        <button type="button" class="btn btn-sm" style="font-size:0.72rem; height:30px; border-color:rgba(239,68,68,0.4); color:#FCA5A5; background:rgba(239,68,68,0.06); padding:0 10px; display:flex; align-items:center; justify-content:center; gap:4px;" onclick="window.cancelAutonomousFollowup('${activeFollowup.id}', '${leadId}')" title="Annuler ce suivi">
+                            <span class="material-icons" style="font-size:13px;">close</span> Annuler
+                        </button>
+                    </div>
+                </div>
+            `;
+        } else {
+            // No active follow-up
+            container.innerHTML = `
+                <div style="background: rgba(18, 21, 28, 0.6); border: 1px dashed rgba(223, 165, 58, 0.25); border-radius: 10px; padding: 10px 12px; margin-top: 10px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <span class="material-icons text-gold" style="font-size:15px;">smart_toy</span>
+                            <span style="font-weight:600; color:#E2E8F0; font-size:0.74rem;">Suivi Long Terme IA :</span>
+                        </div>
+                        <span style="font-size:0.7rem; color:#94A3B8;">Aucun suivi planifié</span>
+                    </div>
+                    ${executedFollowups.length > 0 ? `
+                        <div style="margin-top:6px; font-size:0.68rem; color:#34D399; display:flex; align-items:center; gap:4px;">
+                            <span class="material-icons" style="font-size:12px;">check_circle</span> Dernier suivi exécuté avec succès (${executedFollowups.length} envoyé${executedFollowups.length > 1 ? 's' : ''})
+                        </div>
+                    ` : ''}
+                    <div style="margin-top:8px;">
+                        <button type="button" class="btn btn-sm btn-outline-gold btn-block" style="font-size:0.72rem; height:28px; width:100%; display:flex; align-items:center; justify-content:center; gap:4px;" onclick="window.openScheduleFollowupModal('${leadId}', '${escapeHtml(phone)}', '${escapeHtml(name)}')">
+                            <span class="material-icons" style="font-size:13px;">add_alarm</span> + Programmer un suivi IA autonome
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+    } catch (err) {
+        console.error("Error loading autonomous followup:", err);
+        container.innerHTML = '';
+    }
+};
+
+window.openScheduleFollowupModal = function(leadId, phone, name) {
+    const existing = document.getElementById('modal-schedule-followup');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'modal-schedule-followup';
+    modal.style.cssText = `
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+        display: flex; align-items: center; justify-content: center; z-index: 99999; padding: 20px;
+    `;
+
+    modal.innerHTML = `
+        <div style="background: #14171F; border: 1px solid rgba(223, 165, 58, 0.35); border-radius: 14px; width: 100%; max-width: 480px; box-shadow: 0 20px 50px rgba(0,0,0,0.8); overflow: hidden; animation: fadeInScale 0.2s ease-out;">
+            <div style="padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center; background: rgba(223, 165, 58, 0.05);">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span class="material-icons text-gold" style="font-size:20px;">smart_toy</span>
+                    <span style="font-weight:700; color:#F8FAFC; font-size:0.95rem;">Programmer un Suivi IA 100% Autonome</span>
+                </div>
+                <button type="button" class="btn icon-btn" style="color:#94A3B8; background:none; border:none; cursor:pointer;" onclick="document.getElementById('modal-schedule-followup').remove()">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+
+            <div style="padding: 20px; display:flex; flex-direction:column; gap:14px;">
+                <div>
+                    <label style="display:block; font-size:0.75rem; color:#94A3B8; margin-bottom:6px; font-weight:600;">Destinataire :</label>
+                    <div style="background:rgba(255,255,255,0.04); padding:8px 12px; border-radius:8px; font-size:0.8rem; color:#F8FAFC; border:1px solid rgba(255,255,255,0.06);">
+                        ${escapeHtml(name || 'Prospect')} (${escapeHtml(phone || 'Numéro non défini')})
+                    </div>
+                </div>
+
+                <div>
+                    <label style="display:block; font-size:0.75rem; color:#94A3B8; margin-bottom:6px; font-weight:600;">Délai rapide ou Date précise :</label>
+                    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:6px; margin-bottom:8px;">
+                        <button type="button" class="btn btn-sm btn-secondary fu-preset-btn" onclick="selectFollowupPreset(7, this)" style="font-size:0.72rem; padding:6px 4px;">7 jours</button>
+                        <button type="button" class="btn btn-sm btn-secondary fu-preset-btn active" onclick="selectFollowupPreset(14, this)" style="font-size:0.72rem; padding:6px 4px; border-color:var(--gold); color:var(--gold);">14 jours (2 sem.)</button>
+                        <button type="button" class="btn btn-sm btn-secondary fu-preset-btn" onclick="selectFollowupPreset(30, this)" style="font-size:0.72rem; padding:6px 4px;">1 mois</button>
+                        <button type="button" class="btn btn-sm btn-secondary fu-preset-btn" onclick="selectFollowupPreset(60, this)" style="font-size:0.72rem; padding:6px 4px;">2 mois</button>
+                        <button type="button" class="btn btn-sm btn-secondary fu-preset-btn" onclick="selectFollowupPreset(90, this)" style="font-size:0.72rem; padding:6px 4px;">3 mois</button>
+                        <button type="button" class="btn btn-sm btn-secondary fu-preset-btn" onclick="selectFollowupPreset('custom', this)" style="font-size:0.72rem; padding:6px 4px;">Date libre</button>
+                    </div>
+                    <input type="date" id="fu-custom-date" class="form-input" style="display:none; width:100%; box-sizing:border-box; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.15); color:#F8FAFC; border-radius:8px; padding:8px; font-size:0.8rem;">
+                    <input type="hidden" id="fu-selected-delay" value="14">
+                </div>
+
+                <div>
+                    <label style="display:block; font-size:0.75rem; color:#94A3B8; margin-bottom:6px; font-weight:600;">Motif du suivi :</label>
+                    <input type="text" id="fu-reason-input" class="form-input" placeholder="ex: Prospect en vacances jusqu'à mi-novembre" value="Relance convenue avec le prospect" style="width:100%; box-sizing:border-box; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.15); color:#F8FAFC; border-radius:8px; padding:8px 10px; font-size:0.8rem;">
+                </div>
+
+                <div>
+                    <label style="display:block; font-size:0.75rem; color:#94A3B8; margin-bottom:6px; font-weight:600;">Notes contextuelles pour l'IA (optionnel) :</label>
+                    <textarea id="fu-context-input" class="form-input" rows="2" placeholder="ex: Était intéressé par l'agent IA, comparer avec son prestataire actuel." style="width:100%; box-sizing:border-box; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.15); color:#F8FAFC; border-radius:8px; padding:8px 10px; font-size:0.8rem; resize:none;"></textarea>
+                </div>
+
+                <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 10px; font-size: 0.72rem; color: #6EE7B7; display:flex; gap:6px;">
+                    <span class="material-icons" style="font-size:16px; flex-shrink:0;">info</span>
+                    <span><strong>Exécution 100% Autonome :</strong> Le jour de l'échéance, l'IA composera un SMS ultra-personnalisé en tenant compte de l'historique et l'enverra directement au prospect dans son fuseau horaire légal.</span>
+                </div>
+            </div>
+
+            <div style="padding: 14px 20px; background: rgba(0,0,0,0.25); border-top: 1px solid rgba(255,255,255,0.06); display: flex; justify-content: flex-end; gap: 8px;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('modal-schedule-followup').remove()">Annuler</button>
+                <button type="button" class="btn btn-primary btn-sm" onclick="window.submitScheduleFollowup('${leadId}', '${escapeHtml(phone)}')">
+                    <span class="material-icons" style="font-size:14px; margin-right:4px;">check</span> Confirmer le suivi autonome
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    window.selectFollowupPreset = function(days, btn) {
+        document.querySelectorAll('.fu-preset-btn').forEach(b => {
+            b.style.borderColor = '';
+            b.style.color = '';
+        });
+        btn.style.borderColor = 'var(--gold)';
+        btn.style.color = 'var(--gold)';
+
+        const customInput = document.getElementById('fu-custom-date');
+        const delayHidden = document.getElementById('fu-selected-delay');
+
+        if (days === 'custom') {
+            customInput.style.display = 'block';
+            delayHidden.value = 'custom';
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            customInput.min = tomorrow.toISOString().split('T')[0];
+        } else {
+            customInput.style.display = 'none';
+            delayHidden.value = days;
+        }
+    };
+};
+
+window.submitScheduleFollowup = async function(leadId, phone) {
+    const delayVal = document.getElementById('fu-selected-delay')?.value || '14';
+    const customDate = document.getElementById('fu-custom-date')?.value || '';
+    const reason = document.getElementById('fu-reason-input')?.value?.trim() || 'Suivi convenu';
+    const contextNote = document.getElementById('fu-context-input')?.value?.trim() || '';
+
+    let payload = {
+        leadId,
+        phoneNumber: phone,
+        reason,
+        contextNote,
+        createdBy: 'crm_manual'
+    };
+
+    if (delayVal === 'custom') {
+        if (!customDate) {
+            if (window.showToast) window.showToast('Veuillez sélectionner une date.', 'warning');
+            return;
+        }
+        payload.targetDate = customDate;
+    } else {
+        payload.delayDays = parseInt(delayVal, 10);
+    }
+
+    try {
+        const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+        const res = await fetch(`${API_BASE}/api/followups/schedule`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        if (data.success) {
+            document.getElementById('modal-schedule-followup')?.remove();
+            if (window.showToast) window.showToast(`✦ Suivi IA programmé pour le ${data.scheduledForDisplay} !`, 'success');
+            if (window.loadLeadAutonomousFollowup) {
+                window.loadLeadAutonomousFollowup(leadId);
+            }
+        } else {
+            if (window.showToast) window.showToast(`Erreur : ${data.error || 'Échec de planification'}`, 'danger');
+        }
+    } catch (e) {
+        console.error('Error submitting followup:', e);
+        if (window.showToast) window.showToast(`Erreur réseau : ${e.message}`, 'danger');
+    }
+};
+
+window.cancelAutonomousFollowup = async function(followupId, leadId) {
+    if (!window.showConfirmModal) {
+        return;
+    }
+
+    window.showConfirmModal({
+        title: 'Annuler le suivi IA',
+        message: 'Êtes-vous certain de vouloir annuler ce suivi automatique ? L\'IA n\'enverra aucun message au prospect.',
+        confirmText: 'Oui, annuler',
+        cancelText: 'Retour',
+        onConfirm: async () => {
+            try {
+                const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+                const res = await fetch(`${API_BASE}/api/followups/${followupId}/cancel`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ reason: 'Annulé depuis le CRM' })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    if (window.showToast) window.showToast('Suivi IA annulé avec succès.', 'info');
+                    if (window.loadLeadAutonomousFollowup) {
+                        window.loadLeadAutonomousFollowup(leadId);
+                    }
+                }
+            } catch (e) {
+                if (window.showToast) window.showToast(`Erreur: ${e.message}`, 'danger');
+            }
+        }
+    });
+};
+
+window.executeAutonomousFollowupNow = async function(followupId, leadId) {
+    if (!window.showConfirmModal) {
+        return;
+    }
+
+    window.showConfirmModal({
+        title: '⚡ Exécuter le suivi IA maintenant (Mode Réel)',
+        message: 'L\'IA va immédiatement générer un SMS contextuel et l\'envoyer en direct sur le mobile du prospect via Twilio/Telnyx. Confirmer l\'envoi ?',
+        confirmText: 'Oui, envoyer maintenant',
+        cancelText: 'Annuler',
+        onConfirm: async () => {
+            if (window.showToast) window.showToast('Génération et envoi du SMS par l\'IA...', 'info');
+            try {
+                const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+                const res = await fetch(`${API_BASE}/api/followups/${followupId}/execute-now`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                const data = await res.json();
+                if (data.success) {
+                    if (window.showToast) window.showToast(`✓ SMS IA envoyé : "${data.sentMessage}"`, 'success');
+                    if (window.loadLeadAutonomousFollowup) {
+                        window.loadLeadAutonomousFollowup(leadId);
+                    }
+                } else {
+                    if (window.showToast) window.showToast(`Échec: ${data.error || 'Erreur d\'envoi'}`, 'danger');
+                }
+            } catch (e) {
+                if (window.showToast) window.showToast(`Erreur: ${e.message}`, 'danger');
+            }
+        }
+    });
 };
 
 // --- TIMER LOGIC ---
@@ -2780,10 +3417,8 @@ window.updateLeadStatus = async (id, newStatus, category = null) => {
 
         window.showToast ? window.showToast(`Statut mis à jour : ${newStatus}`, "success") : null;
 
-        // Close overlay via URL reset if open
-        if (window.location.hash.includes('?id=')) {
-            window.location.hash = '#leads';
-        }
+        // Close overlay if open
+        window.closeLeadDetailOverlay();
 
         // Refresh list
         const activeBtn = document.querySelector('button[data-filter].btn-primary');
@@ -2840,7 +3475,7 @@ window.assignLead = async () => {
         });
 
         document.getElementById('audit-modal-host').innerHTML = ''; // Close modal
-        window.location.hash = '#leads'; // Close detail detail via URL reset
+        window.closeLeadDetailOverlay();
 
         // Refresh list
         const activeBtn = document.querySelector('button[data-filter].btn-primary');
@@ -3107,25 +3742,43 @@ window.sendLeadEmail = async (toEmail) => {
 
 // --- LEAD LANGUAGE DETECTION (DEFAULT ENGLISH, FRENCH FOR QUEBEC / FRANCOPHONE) ---
 export function detectLeadLanguage(lead = {}) {
-    if (lead.preferredLanguage) {
-        return String(lead.preferredLanguage).toLowerCase().startsWith('fr') ? 'fr' : 'en';
+    const explicitLang = lead.preferredLanguage || lead.language || lead.lang;
+    if (explicitLang) {
+        return String(explicitLang).toLowerCase().startsWith('fr') ? 'fr' : 'en';
     }
+
+    const bizName = String(lead.business_name || lead.company || lead.name || '').trim();
+    const cleanBiz = bizName.toLowerCase();
+
+    // 1. Explicit French business naming patterns
+    const frPatterns = /\b(clinique|rénovation|renovation|plomberie|toiture|menuiserie|électricien|electricite|avocat|notaire|comptable|esthétique|esthetique|coiffure|boutique|chiropratique|santé|sante|dentaire|ébénisterie|paysagiste)\b/i;
+    if (frPatterns.test(cleanBiz)) {
+        return 'fr';
+    }
+
+    // 2. Clear English naming patterns or English possessive (e.g. Sasha's colors, Bob's Barbershop)
+    const enPatterns = /\b(colors|colour|barbershop|bakery|cleaning|landscaping|roofing|plumbing|auto repair|beauty|lounge|studio|tattoo|fitness|wellness|spa|designs|consulting|nails|lashes|hair|barber)\b/i;
+    const hasEnglishPossessive = /^[a-zA-Z0-9]+'s\s+[a-zA-Z]/i.test(bizName);
+    if ((hasEnglishPossessive || enPatterns.test(cleanBiz)) && !frPatterns.test(cleanBiz)) {
+        return 'en';
+    }
+
     const prov = String(lead.province || lead.state || '').trim().toUpperCase();
     const city = String(lead.city || '').trim().toLowerCase();
     const address = String(lead.address || lead.formattedAddress || '').toUpperCase();
     const postal = String(lead.postal_code || lead.postalCode || '').trim().toUpperCase();
     const cleanPhone = String(lead.phone || '').replace(/[^\d]/g, '');
 
-    // 1. Quebec Province
+    // 3. Quebec Province
     if (prov === 'QC' || prov === 'QUEBEC' || prov === 'QUÉBEC' ||
         address.includes(' QC ') || address.includes(', QC') || address.includes('QUEBEC') || address.includes('QUÉBEC')) {
         return 'fr';
     }
-    // 2. Quebec FSA Postal Code (G, H, J)
+    // 4. Quebec FSA Postal Code (G, H, J)
     if (/^[GHJ]\d[A-Z]/.test(postal)) {
         return 'fr';
     }
-    // 3. Quebec NPAs Area Codes
+    // 5. Quebec NPAs Area Codes
     if (cleanPhone.length >= 10) {
         const areaCode = cleanPhone.length === 11 && cleanPhone.startsWith('1')
             ? cleanPhone.slice(1, 4)
@@ -3135,7 +3788,7 @@ export function detectLeadLanguage(lead = {}) {
             return 'fr';
         }
     }
-    // 4. Quebec Municipalities
+    // 6. Quebec Municipalities
     const qcCities = [
         'montréal', 'montreal', 'québec', 'quebec', 'laval', 'gatineau', 'longueuil', 'sherbrooke',
         'lévis', 'levis', 'saguenay', 'trois-rivières', 'trois-rivieres', 'terrebonne', 'saint-jean-sur-richelieu',
@@ -3146,13 +3799,7 @@ export function detectLeadLanguage(lead = {}) {
     if (qcCities.some(c => city.includes(c))) {
         return 'fr';
     }
-    // 5. French business naming patterns
-    const bizName = String(lead.business_name || lead.company || lead.name || '').toLowerCase();
-    const frPatterns = /\b(clinique|rénovation|renovation|plomberie|toiture|menuiserie|électricien|electricite|avocat|notaire|comptable|esthétique|esthetique|coiffure|boutique|chiropratique|santé|sante|dentaire|ébénisterie|paysagiste)\b/i;
-    if (frPatterns.test(bizName)) {
-        return 'fr';
-    }
-    // 6. DEFAULT: English for all other Canada provinces and all US states!
+    // 7. DEFAULT: English for all other Canada provinces and all US states!
     return 'en';
 }
 window.detectLeadLanguage = detectLeadLanguage;
@@ -3774,9 +4421,10 @@ window.saveLeadDetails = async (leadId) => {
         const dm_email = getVal('edit-dm-email');
         const dm_phone = getVal('edit-dm-phone');
 
-        // NEW: Capture Assigned Agent and Status
+        // NEW: Capture Assigned Agent, Status and Preferred Language
         const assigned_agent_id = getVal('edit-assigned-agent');
         const status = getVal('edit-lead-status');
+        const preferredLanguage = getVal('edit-preferred-language') || getVal('header-preferred-language') || 'fr';
 
         if (!business_name) {
             showToast("Business Name is required.", "error");
@@ -3795,6 +4443,7 @@ window.saveLeadDetails = async (leadId) => {
             dm_name,
             dm_email,
             dm_phone,
+            preferredLanguage,
             assigned_agent_id, // Add to payload
             status: status || 'NEW', // Add status to payload
             pain_signals: Array.from(document.querySelectorAll('#sidebar-pain-selector .pain-chip.selected')).map(el => el.dataset.value),
@@ -3802,6 +4451,19 @@ window.saveLeadDetails = async (leadId) => {
         };
 
         await updateDoc(doc(db, "leads", leadId), updateData);
+
+        // Sync language with backend sequence instance if active
+        try {
+            const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+            await fetch(`${API_BASE}/api/leads/${leadId}/language`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ language: preferredLanguage })
+            });
+        } catch (_) {}
 
         // Update the header title immediately for UX
         const headerTitle = document.querySelector('.detail-header .text-h');
@@ -3821,6 +4483,58 @@ window.saveLeadDetails = async (leadId) => {
     } catch (error) {
         console.error("Error saving lead:", error);
         showToast("Error updating lead: " + error.message, "error");
+    }
+};
+
+window.handleLeadLanguageChange = async (newLang, leadId) => {
+    try {
+        const sel1 = document.getElementById('header-preferred-language');
+        const sel2 = document.getElementById('edit-preferred-language');
+        const statusText = document.getElementById('lead-language-status-text');
+        if (sel1) sel1.value = newLang;
+        if (sel2) sel2.value = newLang;
+        if (statusText) statusText.innerHTML = `SMS : ${newLang === 'fr' ? '🇫🇷 Français' : '🇺🇸 English'}`;
+
+        // 1. Update Firestore lead doc
+        await updateDoc(doc(db, "leads", leadId), {
+            preferredLanguage: newLang,
+            updated_at: new Date().toISOString()
+        });
+
+        // 2. Sync universal cache
+        syncLeadInAllCaches(leadId, { preferredLanguage: newLang });
+
+        // 3. Notify backend to update sequence_instance language if active
+        try {
+            const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+            await fetch(`${API_BASE}/api/leads/${leadId}/language`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ language: newLang })
+            });
+        } catch (e) {
+            console.warn("Backend language sync notification skipped:", e);
+        }
+
+        // 4. Reload SMS Timeline preview in real time!
+        const leadObj = (window.allLeadsCache || []).find(l => l.id === leadId) || { id: leadId, preferredLanguage: newLang };
+        leadObj.preferredLanguage = newLang;
+        if (window.loadLeadSequenceTimeline) {
+            await window.loadLeadSequenceTimeline(leadId, leadObj);
+        }
+
+        // 5. Refresh Pipeline view in background to update language badge
+        if (window.currentFilteredLeads) {
+            renderLeads(window.currentFilteredLeads);
+        }
+
+        showToast(newLang === 'fr' ? "Langue définie : 🇫🇷 Français (SMS recalculés)" : "Langue définie : 🇺🇸 English (SMS recalculés)", "success");
+    } catch (err) {
+        console.error("Error changing lead language:", err);
+        showToast("Erreur lors de la mise à jour de la langue : " + err.message, "error");
     }
 };
 
