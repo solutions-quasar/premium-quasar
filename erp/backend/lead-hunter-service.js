@@ -4,6 +4,7 @@ const smsSequenceService = require('./sms-sequence-service');
 const twilioService = require('./twilio-service');
 const aiActivityService = require('./ai-activity-service');
 const { detectDirectoryPlatform } = require('./directory-detector');
+const emailAlertService = require('./email-alert-service');
 
 const REGIONS_DATA = {
     // === CANADA (Provinces) ===
@@ -175,6 +176,9 @@ const DEFAULT_HUNTER_CONFIG = {
     autoAuditAndSequence: true, // Seamlessly triggers cognitive audit and SMS sequence
     adminAlertPhone: '+15062337006',
     adminAlertsEnabled: true,
+    adminAlertEmail: 'benjamin@solutionsquasar.ca',
+    adminEmailAlertsEnabled: true,
+    notifyOnHunterBatch: true,
     lastRunAt: null,
     lastRunSummary: null,
     totalLeadsHunted: 0,
@@ -566,6 +570,15 @@ class LeadHunterService {
                         phone: finalPhone
                     });
 
+                    const leadTimezone = smsSequenceService.resolveTimezone({
+                        phone: finalPhone,
+                        city: cityComp || city,
+                        state: stateComp,
+                        postal_code: postalCode,
+                        address: place.formattedAddress,
+                        country: resolvedCountry
+                    });
+
                     const leadData = {
                         business_name: name,
                         category: industry,
@@ -576,6 +589,8 @@ class LeadHunterService {
                         postal_code: postalCode,
                         zip_code: postalCode,
                         country: resolvedCountry,
+                        timezone: leadTimezone,
+                        businessTimezone: leadTimezone,
                         phone: finalPhone,
                         phone_number: finalPhone,
                         email: finalEmail,
@@ -673,7 +688,7 @@ class LeadHunterService {
             await db.collection('settings').doc('hunter_autopilot_config').set(this.config, { merge: true });
 
             // Admin SMS Notification
-            if (leadsAdded > 0 && this.config.adminAlertsEnabled && this.config.adminAlertPhone) {
+            if (leadsAdded > 0 && this.config.adminAlertsEnabled && this.config.adminAlertPhone && this.config.notifyOnHunterBatch !== false) {
                 try {
                     const noWebCount = addedLeadsList.filter(l => !l.website).length;
                     const alertMsg = `🎯 QUASAR AUTO-PILOT : ${leadsAdded} nouveaux prospects qualifiés chassés à ${city} (${industry}) ! ${noWebCount} sans site web. Séquences SMS initiées.`;
@@ -690,6 +705,34 @@ class LeadHunterService {
                     });
                 } catch (smsErr) {
                     console.warn('[LeadHunterService] Failed to send admin SMS alert:', smsErr.message);
+                }
+            }
+
+            // Admin Email Notification
+            if (leadsAdded > 0 && this.config.adminEmailAlertsEnabled !== false && this.config.adminAlertEmail && this.config.notifyOnHunterBatch !== false) {
+                try {
+                    const noWebCount = addedLeadsList.filter(l => !l.website).length;
+                    const subject = `🎯 Rapport Lead Hunter : ${leadsAdded} nouveau(x) prospect(s) (${city})`;
+                    const title = `Auto-Pilot Lead Hunter : ${leadsAdded} prospects qualifiés chassés`;
+                    await emailAlertService.sendAdminAlertEmail({
+                        to: this.config.adminAlertEmail,
+                        subject,
+                        title,
+                        badgeText: 'Lead Hunter Cycle',
+                        badgeColor: '#38BDF8',
+                        details: [
+                            { label: 'Ville / Région', value: city },
+                            { label: 'Secteur d\'activité', value: industry },
+                            { label: 'Prospects trouvés', value: `${leadsAdded} leads` },
+                            { label: 'Sans site web', value: `${noWebCount} (Priorité Haute)` },
+                            { label: 'Séquences SMS', value: 'Initiées automatiquement' }
+                        ],
+                        snippet: `Cycle de chasse complété avec succès sur Google Maps pour "${queryTerm}".`,
+                        ctaUrl: 'https://quasar-erp-b26d5.web.app/#prospection',
+                        ctaText: 'Voir les Leads dans l\'ERP'
+                    });
+                } catch (emailErr) {
+                    console.warn('[LeadHunterService] Failed to send admin Email alert:', emailErr.message);
                 }
             }
 

@@ -7,7 +7,7 @@
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Premium Quasar ERP</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
-    <link rel="stylesheet" href="css/style.css?v=55">
+    <link rel="stylesheet" href="css/style.css?v=68">
     <link rel="stylesheet" href="css/login.css">
 
     <!-- Material Icons -->
@@ -205,10 +205,13 @@
 
         <!-- Sidebar (Drawer) -->
         <aside class="drawer" id="drawer">
-            <div class="drawer-header" style="display:flex;">
+            <div class="drawer-header" style="display:flex; justify-content:space-between; align-items:center;">
                 <div class="logo-area">
                     <img src="logo.png" alt="Quasar" style="width:auto; height:40px; border-radius:0;">
                 </div>
+                <button id="close-drawer" class="drawer-close-btn" style="background:none; border:none; color:var(--text-muted); cursor:pointer; padding:6px; display:flex; align-items:center; justify-content:center;" aria-label="Fermer le menu">
+                    <span class="material-icons" style="font-size:24px;">close</span>
+                </button>
             </div>
             <nav class="drawer-nav">
                 <a href="#dashboard" class="nav-item"><span class="material-icons">dashboard</span> <span
@@ -224,7 +227,7 @@
                     <div class="nav-group-items">
                         <a href="#prospection" class="nav-item text-gold">
                             <span class="material-icons" style="margin-right:8px; font-size:18px;">auto_awesome</span>
-                            <span>Prospection IA</span>
+                            <span>Réglages IA</span>
                         </a>
                         <a href="#leads" class="nav-item">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px;"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -317,9 +320,10 @@
                 <span class="material-icons">people</span>
                 <span data-i18n="nav_crm">Clients</span>
             </a>
-            <div class="fab-container">
-                <button id="main-fab" class="fab"><span class="material-icons">add</span></button>
-            </div>
+            <button id="menu-btn" class="nav-link mobile-burger-btn" type="button" aria-label="Ouvrir le menu">
+                <span class="material-icons">menu</span>
+                <span>Menu</span>
+            </button>
             <a href="#calendar" class="nav-link" data-target="view-calendar">
                 <span class="material-icons">event</span>
                 <span>Cal</span>
@@ -329,17 +333,6 @@
                 <span data-i18n="nav_sales">Invoice / Quote</span>
             </a>
         </nav>
-
-        <!-- Global FAB Menu (Hidden by default) -->
-        <div class="fab-options" id="fab-options">
-            <button class="fab-option" data-action="new-lead"><span class="material-icons">person_add</span> New
-                Lead</button>
-            <button class="fab-option" data-action="new-event"><span class="material-icons">event_note</span> New
-                Event</button>
-            <button class="fab-option" data-action="new-invoice"><span class="material-icons">receipt_long</span> New
-                Invoice</button>
-        </div>
-        <div class="overlay" id="fab-overlay"></div>
 
         <!-- Toast Notification Container -->
         <div id="toast-container"></div>
@@ -354,7 +347,7 @@
 
     <!-- Scripts -->
     <!-- Load Firebase via Module to ensure scoped access -->
-    <script type="module" src="js/app.js?v=56"></script>
+    <script type="module" src="js/app.js?v=68"></script>
 
 </body>
 

@@ -289,7 +289,7 @@ app.post('/api/forgot-password', async (req, res) => {
 
 // Public Contact Form Endpoint
 app.post('/api/contact', async (req, res) => {
-    const { name, company, contact_method, interest, message, lang, _gotcha } = req.body;
+    const { name, email, phone, company, contact_method, interest, message, sms_consent, lang, _gotcha } = req.body;
 
     // 1. Strict Client Token Check (Secret Header)
     const clientToken = req.headers['x-quasar-client'];
@@ -314,7 +314,8 @@ app.post('/api/contact', async (req, res) => {
     }
 
     // Basic validation
-    if (!name || !contact_method) {
+    const contactValue = phone || email || contact_method;
+    if (!name || !contactValue) {
         return res.status(400).json({ success: false, error: "Name and Contact Method are required." });
     }
 
@@ -327,9 +328,10 @@ app.post('/api/contact', async (req, res) => {
     <div style="font-family: sans-serif; padding: 20px; color: #333;">
         <h2 style="color: #dfa53a;">New Strategy Call Request</h2>
         <p><strong>Name:</strong> ${name}</p>
+        <p><strong>Email:</strong> ${email || 'N/A'}</p>
+        <p><strong>Phone:</strong> ${phone || contact_method || 'N/A'}</p>
         <p><strong>Company:</strong> ${company || 'N/A'}</p>
-        <p><strong>Contact:</strong> ${contact_method}</p>
-        <p><strong>Interest:</strong> ${interest || 'N/A'}</p>
+        <p><strong>SMS Opt-In Consent:</strong> ${sms_consent ? '✅ YES (10DLC Consented)' : '❌ NO'}</p>
         <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin-top: 10px;">
             <strong>Message:</strong><br>
             ${(message || '').replace(/\n/g, '<br>')}
@@ -1835,7 +1837,7 @@ app.get('/api/vapi/callback', (req, res) => {
 app.post('/api/vapi/callback', async (req, res) => {
     try {
         const payload = req.body;
-        const { projectId } = req.query; // MUST be present
+        const projectId = req.query.projectId || req.body?.projectId || 'master_admin';
 
         // --- 0. BULLETPROOF SECURITY: Vapi Secret Check ---
         const vapiSecret = req.headers['x-vapi-secret'];
@@ -1844,22 +1846,28 @@ app.post('/api/vapi/callback', async (req, res) => {
             return res.status(401).json({ error: "Unauthorized. Invalid handshake." });
         }
 
-        // SECURITY: Strict Isolation Check
-        if (!projectId) {
-            console.warn("BLOCKED: Vapi Callback missing projectId");
-            return res.status(400).json({ error: "Missing projectId in webhook URL." });
-        }
-
         console.log(`[Vapi Webhook] Project: ${projectId} - Event: ${payload.message?.type || 'unknown'}`);
 
         // --- 1. PRE-CALL SECURITY CHECK (Assistant Request) ---
         // Vapi sends 'assistant-request' before starting the call.
-        // We can use this to block unauthorized numbers immediately.
         if (payload.message?.type === 'assistant-request') {
             const callerNumber = payload.message?.call?.customer?.number || payload.call?.customer?.number || payload.customer?.number || payload.call?.customerNumber;
             const auth = await voiceAuth.verifyCaller(callerNumber, projectId);
 
             if (!auth.authorized) {
+                // If caller is not an internal team member, check if there is an active public concierge agent
+                const publicAgentsSnap = await db.collection('ai_agents')
+                    .where('projectId', '==', projectId)
+                    .where('active', '==', true)
+                    .limit(1)
+                    .get();
+
+                if (!publicAgentsSnap.empty && publicAgentsSnap.docs[0].data().vapiAssistantId) {
+                    const pubId = publicAgentsSnap.docs[0].data().vapiAssistantId;
+                    console.log(`[Vapi Security] Public caller ${callerNumber} routed to public agent: ${pubId}`);
+                    return res.json({ assistantId: pubId });
+                }
+
                 console.warn(`[Vapi Security] Blocking incoming call from ${callerNumber}: ${auth.reason}`);
                 // Return a "Hanging Up" assistant configuration
                 return res.json({
@@ -1951,15 +1959,18 @@ app.post('/api/vapi/callback', async (req, res) => {
                 }
 
                 // --- STRICT SECURITY CHECK ---
-                // 1. Double check phone number authorization for every tool call
-                const authStatus = await voiceAuth.verifyCaller(callerNumber, projectId);
-                if (!authStatus.authorized) {
-                    console.error(`[Security] Tool call blocked mid-conversation: ${fnName} - Reason: ${authStatus.reason}`);
-                    results.push({
-                        toolCallId: call.id,
-                        result: JSON.stringify({ error: "Access Denied. Your identity could not be verified." })
-                    });
-                    continue;
+                // Public tools (calendar booking, free slots, call notes) do not require internal team voice auth
+                const publicTools = ['get_available_slots', 'book_appointment', 'send_call_note_sms'];
+                if (!publicTools.includes(fnName)) {
+                    const authStatus = await voiceAuth.verifyCaller(callerNumber, projectId);
+                    if (!authStatus.authorized) {
+                        console.error(`[Security] Tool call blocked mid-conversation: ${fnName} - Reason: ${authStatus.reason}`);
+                        results.push({
+                            toolCallId: call.id,
+                            result: JSON.stringify({ error: "Access Denied. Your identity could not be verified." })
+                        });
+                        continue;
+                    }
                 }
 
                 console.log(`[Vapi] Tool Call: ${fnName}`, args);
@@ -2013,6 +2024,68 @@ app.post('/api/vapi/callback', async (req, res) => {
             return res.json({
                 results: results
             });
+        }
+
+        // --- 3. END OF CALL REPORT & AUTOMATIC SMS SUMMARY ---
+        if (payload.message?.type === 'end-of-call-report') {
+            const summary = payload.message.summary || payload.message.analysis?.summary || '';
+            const callerNumber = payload.message?.call?.customer?.number || payload.call?.customer?.number || payload.customer?.number || 'Numéro masqué';
+            const endedReason = payload.message?.endedReason || payload.message?.call?.endedReason || '';
+
+            console.log(`[Vapi End-of-Call] Caller: ${callerNumber}, Reason: ${endedReason}`);
+
+            if (summary || endedReason === 'customer-ended-call' || endedReason === 'assistant-ended-call') {
+                try {
+                    const smsSequenceService = require('./sms-sequence-service');
+                    const seqSettings = await smsSequenceService.getSequenceSettings();
+                    if (seqSettings.adminAlertsEnabled === false || seqSettings.notifyOnVapiCall === false) {
+                        console.log('[Vapi End-of-Call] Admin SMS alerts disabled or notifyOnVapiCall is off. Skipping SMS.');
+                        return res.json({ success: true, processed: 'end-of-call-report' });
+                    }
+
+                    if (seqSettings.adminAlertsEnabled !== false && seqSettings.notifyOnVapiCall !== false) {
+                        const twilioService = require('./twilio-service');
+                        const targetPhone = seqSettings.adminAlertPhone || process.env.ADMIN_PHONE || '+15062337006';
+                        const cleanSummary = summary ? summary.slice(0, 450) : 'Appel vocal terminé.';
+                        const smsBody = `📞 [Quasar Voice]\nAppel avec ${callerNumber}\nRésumé : ${cleanSummary}`;
+
+                        await twilioService.sendSms({
+                            to: targetPhone,
+                            message: smsBody,
+                            allowLandline: true
+                        });
+                        console.log(`[Vapi End-of-Call] Notification SMS sent to ${targetPhone}`);
+                    }
+
+                    // Dispatch Email alert if enabled
+                    if (seqSettings.adminEmailAlertsEnabled !== false && seqSettings.adminAlertEmail && seqSettings.notifyOnVapiCall !== false) {
+                        try {
+                            const emailAlertService = require('./email-alert-service');
+                            const cleanSummary = summary ? summary.slice(0, 450) : 'Appel vocal terminé.';
+                            await emailAlertService.sendAdminAlertEmail({
+                                to: seqSettings.adminAlertEmail,
+                                subject: `📞 Résumé d'Appel Vocal : ${callerNumber}`,
+                                title: `Appel Vocal Terminé avec ${callerNumber}`,
+                                badgeText: 'Assistant Vapi',
+                                badgeColor: '#38BDF8',
+                                details: [
+                                    { label: 'Numéro Appelant', value: callerNumber },
+                                    { label: 'Motif de fin', value: endedReason || 'Appel complété' },
+                                    { label: 'Date & Heure', value: new Date().toLocaleString('fr-CA', { timeZone: 'America/Moncton' }) }
+                                ],
+                                snippet: cleanSummary,
+                                ctaUrl: 'https://quasar-erp-b26d5.web.app/#coldcall',
+                                ctaText: 'Consulter dans le Journal Vocal'
+                            });
+                        } catch (emailErr) {
+                            console.error('[Vapi End-of-Call] Failed to send notification Email:', emailErr.message);
+                        }
+                    }
+                } catch (vapiErr) {
+                    console.error('[Vapi End-of-Call] Notification error:', vapiErr.message);
+                }
+            }
+            return res.json({ success: true, processed: 'end-of-call-report' });
         }
 
         res.json({ success: true }); // Acknowledge other events
@@ -2900,16 +2973,19 @@ app.get('/api/sms/config', verifyToken, async (req, res) => {
     }
 });
 
-// Update SMS AI Config (Prompt & Documentation)
+// Update SMS AI Config (Prompt & Documentation & Typing Simulation)
 app.post('/api/sms/config', verifyToken, async (req, res) => {
     try {
-        const { systemPrompt, outboundPrompt, knowledgeDocumentation, model, temperature } = req.body;
+        const { systemPrompt, outboundPrompt, knowledgeDocumentation, model, temperature, typingSimulationEnabled, minTypingDelaySeconds, maxTypingDelaySeconds } = req.body;
         const saved = await twilioService.saveSmsAiConfig({
             systemPrompt,
             outboundPrompt,
             knowledgeDocumentation,
             model,
-            temperature
+            temperature,
+            typingSimulationEnabled,
+            minTypingDelaySeconds,
+            maxTypingDelaySeconds
         });
         res.json({ success: true, config: saved, message: "Configuration SMS IA sauvegardée avec succès !" });
     } catch (e) {
@@ -3570,15 +3646,43 @@ app.post('/api/sequences/reset', verifyToken, async (req, res) => {
     }
 });
 
-// 4. Trigger Sequence on a Lead
+// 3d. Delete Custom Sequence
+app.delete('/api/sequences/:id', verifyToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const isDefault = smsSequenceService.DEFAULT_SEQUENCES.some(s => s.id === id);
+        if (isDefault) {
+            return res.status(403).json({ success: false, error: "Impossible de supprimer une séquence native du système." });
+        }
+        await db.collection('sms_sequences').doc(id).delete();
+        res.json({ success: true, message: "Séquence supprimée avec succès." });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 4. Trigger Sequence on a Lead (Supports Force Live & Bypass Pause for individual testing)
 app.post('/api/sequences/trigger', verifyToken, async (req, res) => {
     try {
-        const { leadId, sequenceId, dryRun } = req.body;
+        const { leadId, sequenceId, dryRun, bypassPause, forceLive } = req.body;
         const result = await smsSequenceService.triggerLeadSequence({
             leadId,
             sequenceId,
-            dryRunOverride: dryRun
+            dryRunOverride: forceLive ? false : dryRun,
+            bypassPause: Boolean(bypassPause || forceLive),
+            forceLive: Boolean(forceLive)
         });
+        res.json(result);
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 4b. Stop Sequence on a Lead
+app.post('/api/sequences/stop', verifyToken, async (req, res) => {
+    try {
+        const { leadId, instanceId } = req.body;
+        const result = await smsSequenceService.stopLeadSequence({ leadId, instanceId });
         res.json(result);
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
@@ -3611,6 +3715,59 @@ app.get('/api/sequences/leads/:leadId/timeline', verifyToken, async (req, res) =
     }
 });
 
+// 5c. Update Lead Preferred Language & Sync Sequence Instance Language
+app.post('/api/leads/:leadId/language', verifyToken, async (req, res) => {
+    try {
+        const { leadId } = req.params;
+        const { language } = req.body || {};
+        const lang = String(language || 'fr').toLowerCase().startsWith('en') ? 'en' : 'fr';
+        const isFr = (lang === 'fr');
+
+        let leadRef = db.collection('crm_leads').doc(leadId);
+        let leadSnap = await leadRef.get();
+        if (!leadSnap.exists) {
+            leadRef = db.collection('leads').doc(leadId);
+            leadSnap = await leadRef.get();
+        }
+
+        if (leadSnap.exists) {
+            await leadRef.update({
+                preferredLanguage: lang,
+                updatedAt: new Date().toISOString()
+            });
+
+            const leadData = leadSnap.data();
+            if (leadData.sequenceInstanceId) {
+                const instRef = db.collection('sequence_instances').doc(leadData.sequenceInstanceId);
+                const instSnap = await instRef.get();
+                if (instSnap.exists) {
+                    await instRef.update({
+                        isFrancophone: isFr,
+                        updatedAt: new Date().toISOString()
+                    });
+                }
+            } else {
+                const qSnap = await db.collection('sequence_instances')
+                    .where('leadId', '==', leadId)
+                    .limit(5)
+                    .get();
+                if (!qSnap.empty) {
+                    for (const docSnap of qSnap.docs) {
+                        await docSnap.ref.update({
+                            isFrancophone: isFr,
+                            updatedAt: new Date().toISOString()
+                        });
+                    }
+                }
+            }
+        }
+
+        res.json({ success: true, language: lang, isFrancophone: isFr });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // 6. Test Admin Alert SMS
 app.post('/api/sequences/test-admin-alert', verifyToken, async (req, res) => {
     try {
@@ -3623,6 +3780,41 @@ app.post('/api/sequences/test-admin-alert', verifyToken, async (req, res) => {
             text: 'Ceci est un test de notification SMS direct vers votre mobile.'
         });
         res.json({ success: true, message: "Alerte test envoyée au +1 506 233-7006 !" });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 6b. Test Admin Alert Email
+app.post('/api/sequences/test-admin-email', verifyToken, async (req, res) => {
+    try {
+        const { targetEmail } = req.body || {};
+        const settings = await smsSequenceService.getSequenceSettings();
+        const email = targetEmail || settings.adminAlertEmail || 'benjamin@solutionsquasar.ca';
+        const emailAlertService = require('./email-alert-service');
+
+        const result = await emailAlertService.sendAdminAlertEmail({
+            to: email,
+            subject: '✦ [TEST] Alerte Courriel Quasar ERP',
+            title: 'Test de Configuration du Canal Courriel',
+            badgeText: 'Test de Réception',
+            badgeColor: '#10B981',
+            details: [
+                { label: 'Canal', value: 'Courriel Direct (Resend API)' },
+                { label: 'Destinataire', value: email },
+                { label: 'Statut', value: 'Opérationnel ✓' },
+                { label: 'Heure locale', value: new Date().toLocaleString('fr-CA', { timeZone: 'America/Moncton' }) }
+            ],
+            snippet: 'Votre adresse courriel est correctement configurée pour recevoir les notifications d\'événements critiques du cockpit IA Quasar.',
+            ctaUrl: 'https://quasar-erp-b26d5.web.app/#prospection',
+            ctaText: 'Accéder aux Réglages IA'
+        });
+
+        if (result.success) {
+            res.json({ success: true, message: `Courriel test envoyé avec succès à ${email} !` });
+        } else {
+            res.status(500).json({ success: false, error: result.error || "Échec d'envoi du courriel" });
+        }
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
@@ -3653,23 +3845,7 @@ app.post('/api/sequences/test-step', verifyToken, async (req, res) => {
     }
 });
 
-// 8. Reset Sequence to Default
-app.post('/api/sequences/reset', verifyToken, async (req, res) => {
-    try {
-        const { sequenceId } = req.body;
-        const defaultSeq = smsSequenceService.DEFAULT_SEQUENCES?.find(s => s.id === sequenceId);
-        if (!defaultSeq) {
-            return res.status(404).json({ success: false, error: "Séquence par défaut introuvable pour cet ID." });
-        }
-        await db.collection('sms_sequences').doc(sequenceId).set({
-            ...defaultSeq,
-            updatedAt: new Date().toISOString()
-        });
-        res.json({ success: true, sequence: defaultSeq });
-    } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
-    }
-});
+
 
 // --- LEAD AUDIT & TRIANGULATION IA SERVICE & ENDPOINTS ---
 const leadAuditService = require('./lead-audit-service');
@@ -3971,6 +4147,75 @@ app.post('/api/leads/:id/enrich-decision-maker', verifyToken, async (req, res) =
     }
 });
 
+// --- AUTONOMOUS LONG-TERM FOLLOW-UP ENGINE ENDPOINTS ---
+const followupService = require('./followup-service');
+
+// 1. List All Follow-ups (with optional status filter)
+app.get('/api/followups', verifyToken, async (req, res) => {
+    try {
+        const list = await followupService.listFollowups({
+            status: req.query.status,
+            limit: parseInt(req.query.limit, 10) || 50
+        });
+        res.json({ success: true, followups: list });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 2. Get Follow-ups for a Specific Lead
+app.get('/api/followups/lead/:leadId', verifyToken, async (req, res) => {
+    try {
+        const list = await followupService.getFollowupsForLead(req.params.leadId);
+        res.json({ success: true, followups: list });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 3. Manually or Programmatically Schedule a Follow-up
+app.post('/api/followups/schedule', verifyToken, async (req, res) => {
+    try {
+        const result = await followupService.scheduleFollowup({
+            ...req.body,
+            createdBy: req.body?.createdBy || 'crm_user'
+        });
+        res.json(result);
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 4. Cancel a Follow-up
+app.post('/api/followups/:id/cancel', verifyToken, async (req, res) => {
+    try {
+        const result = await followupService.cancelFollowup(req.params.id, req.body?.reason);
+        res.json(result);
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 5. Force Execute a Follow-up Now (Test Run)
+app.post('/api/followups/:id/execute-now', verifyToken, async (req, res) => {
+    try {
+        const result = await followupService.executeFollowup(req.params.id);
+        res.json(result);
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 6. Process Due Follow-ups (Trigger on Demand)
+app.post('/api/followups/process-due', verifyToken, async (req, res) => {
+    try {
+        await followupService.processDueFollowups();
+        res.json({ success: true, message: "Due follow-ups processed successfully." });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 if (require.main === module) {
     app.listen(PORT, () => {
         console.log(`Server running on http://localhost:${PORT}`);
@@ -3981,10 +4226,11 @@ if (require.main === module) {
             });
         }, 30000);
 
-        // Initialize Audit, Hunter & Calendar background services
+        // Initialize Audit, Hunter, Calendar & Autonomous Follow-up background services
         leadAuditService.init().catch(err => console.error("[LeadAuditService Init Error]", err.message));
         leadHunterService.init().catch(err => console.error("[LeadHunterService Init Error]", err.message));
         calendarReminderService.init();
+        followupService.init();
     });
 }
 

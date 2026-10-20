@@ -2,6 +2,7 @@ const { db, admin } = require('./firebase-admin');
 const twilioService = require('./twilio-service');
 const aiActivityService = require('./ai-activity-service');
 const phoneValidatorService = require('./phone-validator-service');
+const emailAlertService = require('./email-alert-service');
 
 // Default sequence settings
 const DEFAULT_SETTINGS = {
@@ -9,6 +10,12 @@ const DEFAULT_SETTINGS = {
     autoSendEnabled: true, // Master Switch for auto SMS sequences
     adminAlertPhone: '+15062337006',
     adminAlertsEnabled: true,
+    adminAlertEmail: 'benjamin@solutionsquasar.ca',
+    adminEmailAlertsEnabled: true,
+    notifyOnReply: true,
+    notifyOnBooking: true,
+    notifyOnHunterBatch: true,
+    notifyOnVapiCall: true,
     batchSize: 25,
     checkIntervalMinutes: 5
 };
@@ -452,24 +459,200 @@ const NPA_ATLANTIC = new Set([
     '506', '902', '782', '709'
 ]);
 
+const NPA_EASTERN = new Set([
+    // Quebec
+    '418', '581', '367', '514', '438', '450', '579', '819', '873',
+    // Ontario
+    '416', '647', '437', '905', '289', '365', '519', '226', '548', '613', '343', '705', '249', '807',
+    // US Eastern (NY, PA, NJ, MA, CT, RI, ME, NH, VT, MD, DE, DC, VA, WV, NC, SC, GA, FL, OH, MI, etc.)
+    '201', '202', '203', '207', '212', '215', '216', '220', '229', '231', '234', '239', '240', '248', '252',
+    '260', '267', '269', '272', '276', '301', '302', '304', '305', '313', '315', '321', '330', '332', '336',
+    '339', '347', '351', '352', '380', '386', '401', '404', '407', '410', '412', '413', '419', '434', '440',
+    '443', '463', '470', '475', '478', '484', '508', '513', '516', '517', '518', '540', '551', '561', '567',
+    '570', '571', '585', '586', '603', '606', '607', '609', '610', '614', '616', '617', '631', '640', '646',
+    '667', '678', '680', '681', '689', '703', '704', '706', '716', '717', '718', '724', '727', '732', '734',
+    '740', '743', '754', '757', '762', '770', '772', '774', '781', '786', '802', '803', '804', '810', '814',
+    '826', '828', '838', '843', '845', '848', '850', '854', '856', '857', '859', '860', '862', '863', '864',
+    '878', '904', '908', '910', '912', '914', '917', '919', '929', '934', '937', '941', '947', '954', '959',
+    '973', '978', '980', '984', '989'
+]);
+
+// Major Canadian Municipalities Timezone Dictionary
+const CANADIAN_CITIES_TIMEZONE_MAP = {
+    // Quebec -> America/Toronto
+    'montreal': 'America/Toronto', 'montréal': 'America/Toronto',
+    'quebec': 'America/Toronto', 'québec': 'America/Toronto',
+    'laval': 'America/Toronto', 'gatineau': 'America/Toronto',
+    'longueuil': 'America/Toronto', 'sherbrooke': 'America/Toronto',
+    'saguenay': 'America/Toronto', 'levis': 'America/Toronto', 'lévis': 'America/Toronto',
+    'trois-rivieres': 'America/Toronto', 'trois-rivières': 'America/Toronto',
+    'terrebonne': 'America/Toronto', 'saint-jean-sur-richelieu': 'America/Toronto',
+    'brossard': 'America/Toronto', 'repentigny': 'America/Toronto',
+    'saint-jerome': 'America/Toronto', 'saint-jérôme': 'America/Toronto',
+    'drummondville': 'America/Toronto', 'granby': 'America/Toronto',
+    'mirabel': 'America/Toronto', 'saint-hyacinthe': 'America/Toronto',
+    'blainville': 'America/Toronto', 'chateauguay': 'America/Toronto', 'châteauguay': 'America/Toronto',
+    'shawinigan': 'America/Toronto', 'rimouski': 'America/Toronto',
+    'victoriaville': 'America/Toronto', 'saint-georges': 'America/Toronto',
+    'val-d-or': 'America/Toronto', "val-d'or": 'America/Toronto',
+    'rouyn-noranda': 'America/Toronto', 'deschambault': 'America/Toronto',
+    'portneuf': 'America/Toronto', 'saint-sauveur': 'America/Toronto',
+    'vaudreuil-dorion': 'America/Toronto', 'sorel-tracy': 'America/Toronto',
+    'saint-eustache': 'America/Toronto', 'mascouche': 'America/Toronto',
+    'joliette': 'America/Toronto', 'alma': 'America/Toronto',
+    'baie-comeau': 'America/Toronto', 'sept-iles': 'America/Toronto', 'sept-îles': 'America/Toronto',
+    'magog': 'America/Toronto', 'mont-tremblant': 'America/Toronto',
+
+    // New Brunswick -> America/Moncton
+    'moncton': 'America/Moncton', 'dieppe': 'America/Moncton',
+    'saint john': 'America/Moncton', 'fredericton': 'America/Moncton',
+    'miramichi': 'America/Moncton', 'edmundston': 'America/Moncton',
+    'bathurst': 'America/Moncton', 'riverview': 'America/Moncton',
+    'shediac': 'America/Moncton', 'shédiac': 'America/Moncton',
+    'caraquet': 'America/Moncton', 'campbellton': 'America/Moncton',
+
+    // Nova Scotia & PEI -> America/Halifax
+    'halifax': 'America/Halifax', 'dartmouth': 'America/Halifax',
+    'sydney': 'America/Halifax', 'truro': 'America/Halifax',
+    'new glasgow': 'America/Halifax', 'yarmouth': 'America/Halifax',
+    'charlottetown': 'America/Halifax', 'summerside': 'America/Halifax',
+
+    // Newfoundland -> America/St_Johns
+    'st. john\'s': 'America/St_Johns', 'st johns': 'America/St_Johns',
+    'mount pearl': 'America/St_Johns', 'corner brook': 'America/St_Johns',
+
+    // Ontario -> America/Toronto
+    'toronto': 'America/Toronto', 'ottawa': 'America/Toronto',
+    'mississauga': 'America/Toronto', 'brampton': 'America/Toronto',
+    'hamilton': 'America/Toronto', 'london': 'America/Toronto',
+    'markham': 'America/Toronto', 'vaughan': 'America/Toronto',
+    'kitchener': 'America/Toronto', 'windsor': 'America/Toronto',
+    'burlington': 'America/Toronto', 'sudbury': 'America/Toronto',
+    'barrie': 'America/Toronto', 'oshawa': 'America/Toronto',
+    'kingston': 'America/Toronto', 'guelph': 'America/Toronto',
+    'waterloo': 'America/Toronto', 'thunder bay': 'America/Toronto',
+    'oakville': 'America/Toronto', 'richmond hill': 'America/Toronto',
+
+    // Manitoba -> America/Winnipeg
+    'winnipeg': 'America/Winnipeg', 'brandon': 'America/Winnipeg',
+
+    // Saskatchewan -> America/Regina
+    'saskatoon': 'America/Regina', 'regina': 'America/Regina',
+    'prince albert': 'America/Regina', 'moose jaw': 'America/Regina',
+
+    // Alberta -> America/Edmonton
+    'calgary': 'America/Edmonton', 'edmonton': 'America/Edmonton',
+    'red deer': 'America/Edmonton', 'lethbridge': 'America/Edmonton',
+    'fort mcmurray': 'America/Edmonton', 'medicine hat': 'America/Edmonton',
+    'grande prairie': 'America/Edmonton', 'banff': 'America/Edmonton',
+
+    // British Columbia -> America/Vancouver
+    'vancouver': 'America/Vancouver', 'surrey': 'America/Vancouver',
+    'burnaby': 'America/Vancouver', 'richmond': 'America/Vancouver',
+    'victoria': 'America/Vancouver', 'kelowna': 'America/Vancouver',
+    'abbotsford': 'America/Vancouver', 'nanaimo': 'America/Vancouver',
+    'kamloops': 'America/Vancouver', 'whistler': 'America/Vancouver'
+};
+
+function normalizeCityStr(str) {
+    if (!str) return '';
+    return String(str)
+        .toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/['’.-]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 /**
- * Resolves recipient timezone using Multi-Signal Analysis (100% Bulletproof):
- * 1. Canadian Postal Code FSA (1st letter)
- * 2. USA 5-digit ZIP code prefix
- * 3. State / Province Comprehensive Lookup (50 US States + 13 CA Provinces/Territories)
- * 4. Phone NPA Area Code (Complete North American NPA mapping)
- * 5. Conservative Failsafe Default (Pacific Time for USA to prevent early morning wake-ups)
+ * Resolves recipient timezone with STRICT PRIORITY TO BUSINESS PHYSICAL LOCATION:
+ * 
+ * 1. Explicit timezone already verified (lead.timezone / lead.businessTimezone)
+ * 2. Canadian Postal Code FSA (1st letter) or USA 5-digit ZIP prefix
+ * 3. City & Civic Address Mapping (Quebec, Atlantic, Ontario, Prairies, West)
+ * 4. State / Province Comprehensive Lookup (50 US States + 13 CA Provinces/Territories)
+ * 5. Phone NPA Area Code (SECONDARY FALLBACK ONLY - if no business physical address exists)
+ * 6. Conservative Failsafe Default (Pacific Time for USA / Toronto for Canada)
  */
-function resolveTimezone({ phone, postalCode, address, province, country }) {
-    const rawZip = String(postalCode || '').trim().toUpperCase();
-    const rawAddr = String(address || '').toUpperCase();
-    const rawProv = String(province || '').trim().toUpperCase();
+function resolveTimezoneDetails(input = {}) {
+    if (typeof input === 'string') {
+        input = { phone: input };
+    }
+    const {
+        phone,
+        postalCode,
+        postal_code,
+        zip,
+        zip_code,
+        address,
+        formattedAddress,
+        street_address,
+        city,
+        state,
+        province,
+        country,
+        timezone,
+        businessTimezone
+    } = input;
+
+    const rawTz = String(timezone || businessTimezone || '').trim();
+    const rawZip = String(postalCode || postal_code || zip || zip_code || '').trim().toUpperCase();
+    const rawCity = String(city || '').trim();
+    const rawProv = String(province || state || '').trim().toUpperCase();
+    const rawAddr = String(address || formattedAddress || street_address || '').trim().toUpperCase();
     const rawCountry = String(country || '').trim().toUpperCase();
     const cleanPhone = String(phone || '').replace(/[^\d]/g, '');
 
-    // 1. Canadian Postal Code (A1A 1A1 format)
-    if (/^[A-Z]\d[A-Z]/.test(rawZip)) {
-        const firstChar = rawZip[0];
+    // Phone NPA calculation (for secondary fallback and divergence detection)
+    let phoneTz = null;
+    let npa = '';
+    if (cleanPhone.startsWith('1') && cleanPhone.length === 11) {
+        npa = cleanPhone.slice(1, 4);
+    } else if (cleanPhone.length === 10) {
+        npa = cleanPhone.slice(0, 3);
+    }
+    if (npa) {
+        if (NPA_ATLANTIC.has(npa)) {
+            phoneTz = ['709'].includes(npa) ? 'America/St_Johns' : (['902', '782'].includes(npa) ? 'America/Halifax' : 'America/Moncton');
+        } else if (NPA_EASTERN.has(npa)) {
+            phoneTz = 'America/Toronto';
+        } else if (NPA_PACIFIC.has(npa)) {
+            phoneTz = ['604', '778', '250', '236', '672'].includes(npa) ? 'America/Vancouver' : 'America/Los_Angeles';
+        } else if (NPA_MOUNTAIN.has(npa)) {
+            if (['403', '780', '587', '825'].includes(npa)) phoneTz = 'America/Edmonton';
+            else if (['480', '520', '602', '623', '928'].includes(npa)) phoneTz = 'America/Phoenix';
+            else phoneTz = 'America/Denver';
+        } else if (NPA_CENTRAL.has(npa)) {
+            if (['204', '431'].includes(npa)) phoneTz = 'America/Winnipeg';
+            else if (['306', '639'].includes(npa)) phoneTz = 'America/Regina';
+            else phoneTz = 'America/Chicago';
+        }
+    }
+
+    // P1. Explicit valid IANA Timezone stored on lead
+    if (rawTz && (rawTz.includes('/') || ['UTC', 'EST', 'EDT', 'CST', 'CDT', 'MST', 'MDT', 'PST', 'PDT', 'AST', 'ADT'].includes(rawTz))) {
+        let validTz = rawTz;
+        if (validTz === 'EDT' || validTz === 'EST') validTz = 'America/Toronto';
+        if (validTz === 'ADT' || validTz === 'AST') validTz = 'America/Moncton';
+        if (validTz === 'CDT' || validTz === 'CST') validTz = 'America/Chicago';
+        if (validTz === 'MDT' || validTz === 'MST') validTz = 'America/Denver';
+        if (validTz === 'PDT' || validTz === 'PST') validTz = 'America/Los_Angeles';
+        return {
+            timezone: validTz,
+            source: 'explicit',
+            isFallbackPhone: false,
+            city: rawCity || null,
+            state: rawProv || null,
+            postalCode: rawZip || null,
+            phoneTimezone: phoneTz,
+            divergence: Boolean(phoneTz && phoneTz !== validTz)
+        };
+    }
+
+    // P2. Canadian Postal Code FSA (1st letter) or US 5-digit ZIP
+    const caZipMatch = rawZip.match(/^[A-Z]\d[A-Z]/i) || rawAddr.match(/\b([A-Z]\d[A-Z])(?:\s*\d[A-Z]\d)?\b/i);
+    if (caZipMatch) {
+        const firstChar = (caZipMatch[1] ? caZipMatch[1][0] : caZipMatch[0][0]).toUpperCase();
         const fsaMap = {
             'A': 'America/St_Johns', // NL
             'B': 'America/Halifax',  // NS
@@ -490,71 +673,154 @@ function resolveTimezone({ phone, postalCode, address, province, country }) {
             'X': 'America/Yellowknife',
             'Y': 'America/Whitehorse'
         };
-        if (fsaMap[firstChar]) return fsaMap[firstChar];
+        if (fsaMap[firstChar]) {
+            const tz = fsaMap[firstChar];
+            return {
+                timezone: tz,
+                source: 'postal_code',
+                isFallbackPhone: false,
+                city: rawCity || null,
+                state: rawProv || null,
+                postalCode: rawZip || caZipMatch[0],
+                phoneTimezone: phoneTz,
+                divergence: Boolean(phoneTz && phoneTz !== tz)
+            };
+        }
     }
 
-    // 2. USA 5-digit ZIP Code prefix (000-999)
     const usZipMatch = (rawZip.match(/\b\d{5}\b/) || rawAddr.match(/\b\d{5}\b/));
     if (usZipMatch) {
         const zipPrefix = parseInt(usZipMatch[0].slice(0, 3), 10);
-        // Eastern Time (000-499)
-        if (zipPrefix >= 0 && zipPrefix <= 499) return 'America/New_York';
-        // Central Time (500-799)
-        if (zipPrefix >= 500 && zipPrefix <= 799) return 'America/Chicago';
-        // Mountain Time (800-899)
-        if (zipPrefix >= 800 && zipPrefix <= 899) {
-            if (zipPrefix >= 850 && zipPrefix <= 865) return 'America/Phoenix';
-            return 'America/Denver';
+        let tz = null;
+        if (zipPrefix >= 0 && zipPrefix <= 499) tz = 'America/New_York';
+        else if (zipPrefix >= 500 && zipPrefix <= 799) tz = 'America/Chicago';
+        else if (zipPrefix >= 800 && zipPrefix <= 899) tz = (zipPrefix >= 850 && zipPrefix <= 865) ? 'America/Phoenix' : 'America/Denver';
+        else if (zipPrefix >= 900 && zipPrefix <= 969) tz = 'America/Los_Angeles';
+        else if (zipPrefix >= 967 && zipPrefix <= 968) tz = 'America/Honolulu';
+        else if (zipPrefix >= 995 && zipPrefix <= 999) tz = 'America/Anchorage';
+
+        if (tz) {
+            return {
+                timezone: tz,
+                source: 'postal_code',
+                isFallbackPhone: false,
+                city: rawCity || null,
+                state: rawProv || null,
+                postalCode: usZipMatch[0],
+                phoneTimezone: phoneTz,
+                divergence: Boolean(phoneTz && phoneTz !== tz)
+            };
         }
-        // Pacific Time (900-969)
-        if (zipPrefix >= 900 && zipPrefix <= 969) return 'America/Los_Angeles';
-        // Hawaii (967-968)
-        if (zipPrefix >= 967 && zipPrefix <= 968) return 'America/Honolulu';
-        // Alaska (995-999)
-        if (zipPrefix >= 995 && zipPrefix <= 999) return 'America/Anchorage';
     }
 
-    // 3. State / Province Comprehensive Lookup
-    if (rawProv) {
-        if (STATE_PROVINCE_TIMEZONE_MAP[rawProv]) {
-            return STATE_PROVINCE_TIMEZONE_MAP[rawProv];
-        }
-        for (const [st, tz] of Object.entries(STATE_PROVINCE_TIMEZONE_MAP)) {
-            const re = new RegExp(`\\b${st}\\b`, 'i');
-            if (re.test(rawProv) || re.test(rawAddr)) {
-                return tz;
+    // P3. City & Civic Address Mapping (Physical Business Location)
+    if (rawCity) {
+        const normCity = normalizeCityStr(rawCity);
+        for (const [cName, cTz] of Object.entries(CANADIAN_CITIES_TIMEZONE_MAP)) {
+            if (normCity === normalizeCityStr(cName)) {
+                return {
+                    timezone: cTz,
+                    source: 'city',
+                    isFallbackPhone: false,
+                    city: rawCity,
+                    state: rawProv || null,
+                    postalCode: rawZip || null,
+                    phoneTimezone: phoneTz,
+                    divergence: Boolean(phoneTz && phoneTz !== cTz)
+                };
             }
         }
     }
 
-    // 4. Area Code (NPA 3 digits) Full North American Lookup
-    let npa = '';
-    if (cleanPhone.startsWith('1') && cleanPhone.length === 11) {
-        npa = cleanPhone.slice(1, 4);
-    } else if (cleanPhone.length === 10) {
-        npa = cleanPhone.slice(0, 3);
-    }
-
-    if (npa) {
-        if (NPA_ATLANTIC.has(npa)) return 'America/Moncton';
-        if (NPA_PACIFIC.has(npa)) return 'America/Los_Angeles';
-        if (NPA_MOUNTAIN.has(npa)) {
-            if (['480', '520', '602', '623', '928'].includes(npa)) return 'America/Phoenix';
-            return 'America/Denver';
+    if (rawAddr) {
+        const normAddr = normalizeCityStr(rawAddr);
+        for (const [cName, cTz] of Object.entries(CANADIAN_CITIES_TIMEZONE_MAP)) {
+            const re = new RegExp(`\\b${normalizeCityStr(cName)}\\b`, 'i');
+            if (re.test(normAddr)) {
+                return {
+                    timezone: cTz,
+                    source: 'address_city',
+                    isFallbackPhone: false,
+                    city: cName,
+                    state: rawProv || null,
+                    postalCode: rawZip || null,
+                    phoneTimezone: phoneTz,
+                    divergence: Boolean(phoneTz && phoneTz !== cTz)
+                };
+            }
         }
-        if (NPA_CENTRAL.has(npa)) return 'America/Chicago';
     }
 
-    // 5. BULLETPROOF FAILSAFE DEFAULT:
-    // If country is explicitly Canada or province is clearly Canadian, default to Eastern/Toronto.
-    // Otherwise for USA / Unknown: Default to Pacific (America/Los_Angeles).
-    // WHY? Sending at 10:15 AM Pacific = 1:15 PM Eastern (Safe & Legal everywhere in US!).
-    // Never send at 9:00 AM Eastern because it could wake up someone at 6:00 AM Pacific!
-    if (rawCountry === 'CA' || rawCountry === 'CANADA' || rawCountry === 'CAN' || rawProv.includes('QUEBEC') || rawProv.includes('ONTARIO')) {
-        return 'America/Toronto';
+    // P4. State / Province Comprehensive Lookup
+    if (rawProv) {
+        if (STATE_PROVINCE_TIMEZONE_MAP[rawProv]) {
+            const tz = STATE_PROVINCE_TIMEZONE_MAP[rawProv];
+            return {
+                timezone: tz,
+                source: 'province',
+                isFallbackPhone: false,
+                city: rawCity || null,
+                state: rawProv,
+                postalCode: rawZip || null,
+                phoneTimezone: phoneTz,
+                divergence: Boolean(phoneTz && phoneTz !== tz)
+            };
+        }
+        for (const [st, tz] of Object.entries(STATE_PROVINCE_TIMEZONE_MAP)) {
+            const re = new RegExp(`\\b${st}\\b`, 'i');
+            if (re.test(rawProv) || re.test(rawAddr)) {
+                return {
+                    timezone: tz,
+                    source: 'province',
+                    isFallbackPhone: false,
+                    city: rawCity || null,
+                    state: st,
+                    postalCode: rawZip || null,
+                    phoneTimezone: phoneTz,
+                    divergence: Boolean(phoneTz && phoneTz !== tz)
+                };
+            }
+        }
     }
 
-    return 'America/Los_Angeles';
+    // P5. Area Code (NPA 3 digits) FALLBACK ONLY - if no business physical address was provided
+    if (phoneTz) {
+        return {
+            timezone: phoneTz,
+            source: 'phone_fallback',
+            isFallbackPhone: true,
+            city: null,
+            state: null,
+            postalCode: null,
+            phoneTimezone: phoneTz,
+            divergence: false
+        };
+    }
+
+    // P6. BULLETPROOF FAILSAFE DEFAULT:
+    // Canada -> America/Toronto
+    // USA / Unknown -> America/Los_Angeles (Pacific Time)
+    const isCanada = rawCountry === 'CA' || rawCountry === 'CANADA' || rawCountry === 'CAN' || rawProv.includes('QUEBEC') || rawProv.includes('ONTARIO');
+    const defaultTz = isCanada ? 'America/Toronto' : 'America/Los_Angeles';
+
+    return {
+        timezone: defaultTz,
+        source: 'failsafe',
+        isFallbackPhone: false,
+        city: null,
+        state: null,
+        postalCode: null,
+        phoneTimezone: phoneTz,
+        divergence: false
+    };
+}
+
+/**
+ * Backward-compatible resolver returning string timezone identifier
+ */
+function resolveTimezone(input, returnDetails = false) {
+    const details = resolveTimezoneDetails(input);
+    return returnDetails ? details : details.timezone;
 }
 
 const CANADIAN_AREA_CODES = new Set([
@@ -685,12 +951,19 @@ async function getSequenceSettings() {
  * Saves Sequence Settings
  */
 async function saveSequenceSettings(settings) {
+    const current = await getSequenceSettings();
     const toSave = {
-        dryRun: settings.dryRun !== undefined ? Boolean(settings.dryRun) : true,
-        autoSendEnabled: settings.autoSendEnabled !== undefined ? Boolean(settings.autoSendEnabled) : true,
-        adminAlertPhone: settings.adminAlertPhone || DEFAULT_SETTINGS.adminAlertPhone,
-        adminAlertsEnabled: settings.adminAlertsEnabled !== false,
-        batchSize: parseInt(settings.batchSize, 10) || 25,
+        dryRun: settings.dryRun !== undefined ? Boolean(settings.dryRun) : current.dryRun,
+        autoSendEnabled: settings.autoSendEnabled !== undefined ? Boolean(settings.autoSendEnabled) : current.autoSendEnabled,
+        adminAlertPhone: settings.adminAlertPhone || current.adminAlertPhone || DEFAULT_SETTINGS.adminAlertPhone,
+        adminAlertsEnabled: settings.adminAlertsEnabled !== undefined ? Boolean(settings.adminAlertsEnabled) : current.adminAlertsEnabled,
+        adminAlertEmail: settings.adminAlertEmail !== undefined ? String(settings.adminAlertEmail).trim() : (current.adminAlertEmail || DEFAULT_SETTINGS.adminAlertEmail),
+        adminEmailAlertsEnabled: settings.adminEmailAlertsEnabled !== undefined ? Boolean(settings.adminEmailAlertsEnabled) : (current.adminEmailAlertsEnabled !== undefined ? current.adminEmailAlertsEnabled : true),
+        notifyOnReply: settings.notifyOnReply !== undefined ? Boolean(settings.notifyOnReply) : current.notifyOnReply !== false,
+        notifyOnBooking: settings.notifyOnBooking !== undefined ? Boolean(settings.notifyOnBooking) : current.notifyOnBooking !== false,
+        notifyOnHunterBatch: settings.notifyOnHunterBatch !== undefined ? Boolean(settings.notifyOnHunterBatch) : current.notifyOnHunterBatch !== false,
+        notifyOnVapiCall: settings.notifyOnVapiCall !== undefined ? Boolean(settings.notifyOnVapiCall) : current.notifyOnVapiCall !== false,
+        batchSize: parseInt(settings.batchSize, 10) || current.batchSize || 25,
         updatedAt: new Date().toISOString()
     };
     await db.collection('settings').doc('sms_sequence_config').set(toSave, { merge: true });
@@ -702,9 +975,26 @@ async function saveSequenceSettings(settings) {
  * RULE: English by default, UNLESS in Quebec (QC) or clearly Francophone.
  */
 function isLeadFrancophone(lead = {}) {
-    // 1. Explicit preference on lead document
-    if (lead.preferredLanguage) {
-        return String(lead.preferredLanguage).toLowerCase().startsWith('fr');
+    // 1. Explicit preference on lead document takes top priority
+    const explicitLang = lead.preferredLanguage || lead.language || lead.lang;
+    if (explicitLang) {
+        return String(explicitLang).toLowerCase().startsWith('fr');
+    }
+
+    const bizName = String(lead.business_name || lead.company || lead.name || '').trim();
+    const cleanBiz = bizName.toLowerCase();
+
+    // 2. Explicit French business naming patterns
+    const frPatterns = /\b(clinique|rénovation|renovation|plomberie|toiture|menuiserie|électricien|electricite|avocat|notaire|comptable|esthétique|esthetique|coiffure|boutique|chiropratique|santé|sante|dentaire|ébénisterie|paysagiste)\b/i;
+    if (frPatterns.test(cleanBiz)) {
+        return true;
+    }
+
+    // 3. Clear English naming patterns or English possessive (e.g. Sasha's colors, Bob's Barbershop)
+    const enPatterns = /\b(colors|colour|barbershop|bakery|cleaning|landscaping|roofing|plumbing|auto repair|beauty|lounge|studio|tattoo|fitness|wellness|spa|designs|consulting|nails|lashes|hair|barber)\b/i;
+    const hasEnglishPossessive = /^[a-zA-Z0-9]+'s\s+[a-zA-Z]/i.test(bizName);
+    if ((hasEnglishPossessive || enPatterns.test(cleanBiz)) && !frPatterns.test(cleanBiz)) {
+        return false;
     }
 
     const prov = String(lead.province || lead.state || '').trim().toUpperCase();
@@ -713,18 +1003,18 @@ function isLeadFrancophone(lead = {}) {
     const postal = String(lead.postal_code || lead.postalCode || '').trim().toUpperCase();
     const cleanPhone = String(lead.phone || '').replace(/[^\d]/g, '');
 
-    // 2. Quebec province check
+    // 4. Quebec province check
     if (prov === 'QC' || prov === 'QUEBEC' || prov === 'QUÉBEC' || 
         address.includes(' QC ') || address.includes(', QC') || address.includes('QUEBEC') || address.includes('QUÉBEC')) {
         return true;
     }
 
-    // 3. Quebec Canadian Postal Code FSA (G, H, J)
+    // 5. Quebec Canadian Postal Code FSA (G, H, J)
     if (/^[GHJ]\d[A-Z]/.test(postal)) {
         return true;
     }
 
-    // 4. Quebec Phone Area Codes (NPA)
+    // 6. Quebec Phone Area Codes (NPA)
     if (cleanPhone.length >= 10) {
         const areaCode = cleanPhone.length === 11 && cleanPhone.startsWith('1')
             ? cleanPhone.slice(1, 4)
@@ -735,7 +1025,7 @@ function isLeadFrancophone(lead = {}) {
         }
     }
 
-    // 5. Well-known Quebec cities
+    // 7. Well-known Quebec cities
     const qcCities = [
         'montréal', 'montreal', 'québec', 'quebec', 'laval', 'gatineau', 'longueuil', 'sherbrooke',
         'lévis', 'levis', 'saguenay', 'trois-rivières', 'trois-rivieres', 'terrebonne', 'saint-jean-sur-richelieu',
@@ -747,14 +1037,7 @@ function isLeadFrancophone(lead = {}) {
         return true;
     }
 
-    // 6. Explicit French business naming patterns
-    const bizName = String(lead.business_name || lead.company || lead.name || '').toLowerCase();
-    const frPatterns = /\b(clinique|rénovation|renovation|plomberie|toiture|menuiserie|électricien|electricite|avocat|notaire|comptable|esthétique|esthetique|coiffure|boutique|chiropratique|santé|sante|dentaire|ébénisterie|paysagiste)\b/i;
-    if (frPatterns.test(bizName)) {
-        return true;
-    }
-
-    // 7. DEFAULT: English for all other Canada provinces and all US states!
+    // 8. DEFAULT: English for all other Canada provinces and all US states!
     return false;
 }
 
@@ -957,7 +1240,7 @@ function interpolateTemplate(template, lead = {}, isFr = true) {
 /**
  * Binds and triggers a Sequence for a Lead
  */
-async function triggerLeadSequence({ leadId, sequenceId, dryRunOverride }) {
+async function triggerLeadSequence({ leadId, sequenceId, dryRunOverride, bypassPause = false, forceLive = false }) {
     if (!leadId) throw new Error("leadId is required");
 
     let leadRef = db.collection('crm_leads').doc(leadId);
@@ -972,13 +1255,19 @@ async function triggerLeadSequence({ leadId, sequenceId, dryRunOverride }) {
 
     // 0. Master Switch Check: Are automated SMS sequences globally enabled?
     const globalSettings = await getSequenceSettings();
-    if (globalSettings.autoSendEnabled === false) {
+    const canBypassPause = Boolean(bypassPause || forceLive);
+
+    if (globalSettings.autoSendEnabled === false && !canBypassPause) {
         console.log(`[Sequences] ⏸️ Lead ${leadId} (${lead.business_name || lead.name}): Envois automatiques en pause (Master Switch). Séquence non déclenchée.`);
         return {
             skipped: true,
             paused: true,
             reason: 'Envois automatiques de SMS désactivés par le Master Switch dans le CRM.'
         };
+    }
+
+    if (canBypassPause && globalSettings.autoSendEnabled === false) {
+        console.log(`[Sequences] ⚡ Bypass Pause activé pour Lead ${leadId} (${lead.business_name || lead.name}) : Test direct autorisé en situation réelle.`);
     }
 
     // 1. Franchise Exclusion Rule
@@ -1002,7 +1291,7 @@ async function triggerLeadSequence({ leadId, sequenceId, dryRunOverride }) {
     // 2.1 CASL / LCAP Compliance Protection (Canadian Destinations)
     const { isCanadianDestination } = require('./telnyx-service');
     const isCanadian = isCanadianDestination(lead.phone, lead);
-    if (isCanadian && !dryRunOverride) {
+    if (isCanadian && !dryRunOverride && !canBypassPause) {
         if (lead.casl?.status === 'INELIGIBLE') {
             console.log(`[Sequences] 🛑 BLOCKED (CASL INELIGIBLE): Lead ${leadId} (${lead.business_name || lead.name}): Sollicitation interdite sur le site.`);
             return {
@@ -1068,32 +1357,34 @@ async function triggerLeadSequence({ leadId, sequenceId, dryRunOverride }) {
 
         // 1. Exact match on category AND targetCountry
         if (leadCountry !== 'ALL') {
-            targetSeq = sequences.find(s => s.targetCategory === leadCat && s.targetCountry === leadCountry);
+            targetSeq = sequences.find(s => s.active !== false && s.targetCategory === leadCat && s.targetCountry === leadCountry);
         }
         // 2. Fallback to category with ALL or undefined targetCountry
         if (!targetSeq) {
-            targetSeq = sequences.find(s => s.targetCategory === leadCat && (!s.targetCountry || s.targetCountry === 'ALL'));
+            targetSeq = sequences.find(s => s.active !== false && s.targetCategory === leadCat && (!s.targetCountry || s.targetCountry === 'ALL'));
         }
         // 3. Fallback to any sequence matching country
         if (!targetSeq && leadCountry !== 'ALL') {
-            targetSeq = sequences.find(s => s.targetCountry === leadCountry);
+            targetSeq = sequences.find(s => s.active !== false && s.targetCountry === leadCountry);
         }
         // 4. Fallback to category or first sequence
         if (!targetSeq) {
-            targetSeq = sequences.find(s => s.targetCategory === leadCat) || sequences[0];
+            targetSeq = sequences.find(s => s.active !== false && s.targetCategory === leadCat) || sequences.find(s => s.active !== false) || sequences[0];
         }
     }
 
     const settings = await getSequenceSettings();
-    const isDryRun = dryRunOverride !== undefined ? Boolean(dryRunOverride) : settings.dryRun;
+    const isDryRun = forceLive ? false : (dryRunOverride !== undefined ? Boolean(dryRunOverride) : settings.dryRun);
 
-    // Resolve Timezone
+    // Resolve Timezone with Business Address Priority
     const timezone = resolveTimezone({
-        phone: lead.phone,
-        postalCode: lead.postal_code || lead.postalCode,
-        address: lead.address || lead.formattedAddress,
+        phone: lead.phone || lead.phone_number,
+        city: lead.city,
+        postalCode: lead.postal_code || lead.postalCode || lead.zip || lead.zip_code,
+        address: lead.address || lead.formattedAddress || lead.street_address,
         province: lead.province || lead.state,
-        country: lead.country
+        country: lead.country,
+        timezone: lead.timezone || lead.businessTimezone
     });
 
     // Schedule all steps
@@ -1126,6 +1417,8 @@ async function triggerLeadSequence({ leadId, sequenceId, dryRunOverride }) {
         timezone,
         isFrancophone,
         dryRun: isDryRun,
+        bypassPause: Boolean(bypassPause || forceLive),
+        isManualLiveTest: Boolean(forceLive || (bypassPause && !isDryRun)),
         status: 'ACTIVE', // ACTIVE, STOPPED_REPLIED, STOPPED_OPT_OUT, COMPLETED
         currentStep: 1,
         totalSteps: scheduledSteps.length,
@@ -1145,27 +1438,28 @@ async function triggerLeadSequence({ leadId, sequenceId, dryRunOverride }) {
         sequenceStatus: 'ACTIVE',
         sequenceCategory: targetSeq.targetCategory,
         timezone,
+        isManualLiveTest: Boolean(forceLive || (bypassPause && !isDryRun)),
         nextStepDue: firstStepScheduledFor,
         nextStepNumber: 1,
         totalSequenceSteps: scheduledSteps.length,
         updatedAt: now.toISOString()
     });
 
-    console.log(`[Sequences] Triggered "${targetSeq.name}" on Lead ${leadId} (${lead.phone}) | Dry-Run: ${isDryRun} | TZ: ${timezone}`);
+    console.log(`[Sequences] Triggered "${targetSeq.name}" on Lead ${leadId} (${lead.phone}) | Dry-Run: ${isDryRun} | BypassPause: ${instanceData.bypassPause} | TZ: ${timezone}`);
 
     aiActivityService.log({
         category: 'sms',
         type: 'seq_assigned',
-        level: 'info',
-        title: `Séquence activée : ${targetSeq.name}`,
-        detail: `Lead: "${lead.business_name || lead.name}" (${lead.phone}) • ${scheduledSteps.length} étapes planifiées • Mode : ${isDryRun ? 'Simulation Dry-Run' : 'Production Twilio'} • Fuseau : ${timezone}`,
+        level: isDryRun ? 'info' : 'warning',
+        title: `Séquence ${isDryRun ? 'simulée' : 'RÉELLE'} activée : ${targetSeq.name}`,
+        detail: `Lead: "${lead.business_name || lead.name}" (${lead.phone}) • ${scheduledSteps.length} étapes planifiées • Mode : ${isDryRun ? 'Simulation Dry-Run' : '🚀 PRODUCTION LIVE (SMS Réel)'} • Bypass Pause : ${instanceData.bypassPause ? 'OUI' : 'NON'} • Fuseau : ${timezone}`,
         leadName: lead.business_name || lead.name,
         phone: lead.phone
     });
 
-    // If step 1 is scheduled within next 15 minutes, execute immediately
+    // If step 1 is scheduled within next 15 minutes OR if manual live test / bypassPause, execute immediately!
     const firstStep = scheduledSteps[0];
-    if (firstStep && firstStep.delayHours <= 0.25) {
+    if (firstStep && (firstStep.delayHours <= 0.25 || bypassPause || forceLive)) {
         await executeInstanceStep(instanceId, 1);
     }
 
@@ -1237,8 +1531,15 @@ async function executeInstanceStep(instanceId, stepNumber) {
     const step = inst.steps[stepIndex];
     if (!step) return;
 
-    // Detect language: Default English, French ONLY if in Quebec (QC) or obviously Francophone
-    const isFr = (inst.isFrancophone !== undefined) ? inst.isFrancophone : isLeadFrancophone(lead);
+    // Detect language: Lead preferredLanguage takes strict priority, followed by instance isFrancophone, followed by heuristic
+    const isFr = (lead.preferredLanguage !== undefined)
+        ? isLeadFrancophone(lead)
+        : ((inst.isFrancophone !== undefined) ? inst.isFrancophone : isLeadFrancophone(lead));
+
+    if (inst.isFrancophone !== isFr) {
+        await instRef.update({ isFrancophone: isFr }).catch(() => {});
+    }
+
     const chosenTemplate = (isFr || !step.template_en) ? step.template : step.template_en;
     const messageBody = interpolateTemplate(chosenTemplate, lead, isFr);
 
@@ -1388,10 +1689,7 @@ async function executeInstanceStep(instanceId, stepNumber) {
 async function processDueSequenceSteps() {
     try {
         const settings = await getSequenceSettings();
-        if (settings.autoSendEnabled === false) {
-            // Master Switch is paused: do not send any automated SMS steps
-            return;
-        }
+        const isGlobalPaused = settings.autoSendEnabled === false;
 
         const now = new Date();
         const snap = await db.collection('sequence_instances')
@@ -1400,10 +1698,14 @@ async function processDueSequenceSteps() {
 
         if (snap.empty) return;
 
-        console.log(`[Sequences Engine] Checking ${snap.size} active sequence instances...`);
-
         for (const doc of snap.docs) {
             const inst = doc.data();
+
+            // If global pause is ON, ONLY process instances flagged with bypassPause (individual live tests on a specific lead)
+            if (isGlobalPaused && !inst.bypassPause) {
+                continue;
+            }
+
             const currStep = inst.steps[inst.currentStep - 1];
 
             if (currStep && currStep.status === 'SCHEDULED' || currStep?.status === 'PENDING') {
@@ -1431,52 +1733,306 @@ async function processDueSequenceSteps() {
     }
 }
 
+// In-memory debounce cache to prevent alert flooding during active conversations
+const adminAlertDebounceCache = new Map();
+const ADMIN_ALERT_DEBOUNCE_MS = 15 * 60 * 1000; // 15 minutes window
+
 /**
  * Sends an instant Admin SMS notification on lead reply or booking
  */
 async function notifyAdminOnProspectAction({ leadId, phoneNumber, clientName, companyName, actionType = 'reply', text = '' }) {
     try {
         const settings = await getSequenceSettings();
-        if (!settings.adminAlertsEnabled || !settings.adminAlertPhone) return;
+
+        // Individual notification event checks
+        if (actionType === 'booking' && settings.notifyOnBooking === false) {
+            console.log("[Admin Alert] Skipping notification for booking (notifyOnBooking is disabled)");
+            return;
+        }
+        if (actionType === 'reply' && settings.notifyOnReply === false) {
+            console.log("[Admin Alert] Skipping notification for reply (notifyOnReply is disabled)");
+            return;
+        }
+
+        // DEBOUNCE PROTECTION: Prevent alert storms on active conversations
+        if (actionType === 'reply' && phoneNumber) {
+            const lastAlertTime = adminAlertDebounceCache.get(phoneNumber) || 0;
+            const nowMs = Date.now();
+            if (nowMs - lastAlertTime < ADMIN_ALERT_DEBOUNCE_MS) {
+                console.log(`[Admin Alert Debounce] Redundant reply alert skipped for ${phoneNumber} (${Math.round((nowMs - lastAlertTime) / 1000)}s since previous alert). Conversation is already active.`);
+                return;
+            }
+            adminAlertDebounceCache.set(phoneNumber, nowMs);
+        }
 
         const displayName = clientName || companyName || phoneNumber;
         const snippet = text ? text.replace(/\n/g, ' ').slice(0, 75) : '';
 
-        const alertMessage = actionType === 'booking'
-            ? `📅 QUASAR RDV RÉSERVÉ ! ${displayName} a confirmé un appel découverte. Ouvrez l'ERP : https://quasar-erp-b26d5.web.app/#calendar`
-            : `🚨 QUASAR ALERT : ${displayName} vient de répondre par SMS ! Message : "${snippet}". L'IA est en pause (Reprise Humaine). Répondre : https://quasar-erp-b26d5.web.app/#sms`;
+        // 1. Dispatch SMS alert if enabled
+        if (settings.adminAlertsEnabled && settings.adminAlertPhone) {
+            try {
+                const alertMessage = actionType === 'booking'
+                    ? `📅 QUASAR RDV RÉSERVÉ ! ${displayName} a confirmé un appel découverte. Ouvrez l'ERP : https://quasar-erp-b26d5.web.app/#calendar`
+                    : `🚨 QUASAR ALERT : ${displayName} vient de répondre par SMS ! Message : "${snippet}". L'IA est en pause (Reprise Humaine). Répondre : https://quasar-erp-b26d5.web.app/#sms`;
 
-        console.log(`[Admin Alert] Dispatching notification SMS to admin phone: ${settings.adminAlertPhone}`);
-        await twilioService.sendSms({
-            to: settings.adminAlertPhone,
-            message: alertMessage
-        });
+                console.log(`[Admin Alert] Dispatching notification SMS to admin phone: ${settings.adminAlertPhone}`);
+                await twilioService.sendSms({
+                    to: settings.adminAlertPhone,
+                    message: alertMessage
+                });
+            } catch (smsErr) {
+                console.warn("[Admin Alert] Failed to dispatch admin SMS alert:", smsErr.message);
+            }
+        }
+
+        // 2. Dispatch Email alert if enabled
+        if (settings.adminEmailAlertsEnabled !== false && settings.adminAlertEmail) {
+            try {
+                const isBooking = actionType === 'booking';
+                const subject = isBooking
+                    ? `📅 Nouveau Rendez-vous Réservé : ${displayName}`
+                    : `🚨 Réponse SMS Reçue : ${displayName}`;
+                const title = isBooking
+                    ? `Nouveau Rendez-vous Confirmé avec ${displayName}`
+                    : `Réponse entrante par SMS de ${displayName}`;
+                const badgeText = isBooking ? 'Rendez-vous Confirmé' : 'Reprise Humaine Requise';
+                const badgeColor = isBooking ? '#10B981' : '#EF4444';
+
+                await emailAlertService.sendAdminAlertEmail({
+                    to: settings.adminAlertEmail,
+                    subject,
+                    title,
+                    badgeText,
+                    badgeColor,
+                    details: [
+                        { label: 'Prospect / Client', value: displayName },
+                        { label: 'Téléphone', value: phoneNumber || 'N/A' },
+                        { label: 'Action IA', value: isBooking ? 'Google Calendar Synchronisé' : 'IA en pause (Prise en charge manuelle)' },
+                        { label: 'Date & Heure', value: new Date().toLocaleString('fr-CA', { timeZone: 'America/Moncton' }) }
+                    ],
+                    snippet: text || (isBooking ? 'Appel découverte réservé via le bot commercial.' : ''),
+                    ctaUrl: isBooking ? 'https://quasar-erp-b26d5.web.app/#calendar' : 'https://quasar-erp-b26d5.web.app/#sms',
+                    ctaText: isBooking ? 'Voir dans le Calendrier' : 'Répondre au SMS dans l\'ERP'
+                });
+            } catch (emailErr) {
+                console.warn("[Admin Alert] Failed to dispatch admin Email alert:", emailErr.message);
+            }
+        }
     } catch (err) {
-        console.warn("[Admin Alert] Failed to dispatch admin SMS alert:", err.message);
+        console.warn("[Admin Alert] General alert handler error:", err.message);
     }
 }
 
 /**
- * Halts active sequence when a lead replies
+ * Halts active sequence and updates CRM Lead status when a lead replies or books an appointment
  */
-async function cancelSequenceOnReply(phoneNumber) {
+async function cancelSequenceOnReply(target, reason = 'STOPPED_REPLIED') {
     try {
-        const formatted = twilioService.normalizePhone(phoneNumber);
-        const instancesSnap = await db.collection('sequence_instances')
-            .where('phone', 'in', [formatted, phoneNumber])
-            .where('status', '==', 'ACTIVE')
-            .get();
+        let phone = null;
+        let leadId = null;
+        let newLeadStatus = null;
 
-        instancesSnap.forEach(async d => {
-            console.log(`[Sequences] Prospect ${formatted} replied. Auto-stopping instance ${d.id}`);
-            await d.ref.update({
-                status: 'STOPPED_REPLIED',
-                stoppedAt: new Date().toISOString()
+        if (typeof target === 'object' && target !== null) {
+            phone = target.phone || target.phoneNumber;
+            leadId = target.leadId || target.id;
+            if (target.reason) reason = target.reason;
+            newLeadStatus = target.status || target.newStatus;
+        } else if (typeof target === 'string') {
+            if (target.startsWith('+') || /^\d{10,15}$/.test(target.replace(/\D/g, ''))) {
+                phone = target;
+            } else {
+                leadId = target;
+            }
+        }
+
+        const now = new Date().toISOString();
+        const formattedPhone = phone ? twilioService.normalizePhone(phone) : null;
+
+        // Determine reason and pipeline lead status
+        if (reason === 'Appointment Booked' || reason === 'MEETING_SCHEDULED' || reason === 'STOPPED_MEETING') {
+            reason = 'STOPPED_MEETING';
+            newLeadStatus = 'MEETING_SCHEDULED';
+        } else if (!newLeadStatus) {
+            newLeadStatus = 'INTERESTED';
+        }
+
+        // 1. Locate and halt matching sequence_instances
+        const instanceDocs = [];
+        if (formattedPhone) {
+            const snap = await db.collection('sequence_instances')
+                .where('phone', 'in', [formattedPhone, phone])
+                .get();
+            snap.forEach(d => {
+                const data = d.data();
+                if (data.status === 'ACTIVE' || (data.status === 'STOPPED_REPLIED' && reason === 'STOPPED_MEETING')) {
+                    instanceDocs.push(d);
+                }
             });
-        });
+        }
+        if (leadId) {
+            const snapLead = await db.collection('sequence_instances')
+                .where('leadId', '==', leadId)
+                .get();
+            snapLead.forEach(d => {
+                if (!instanceDocs.some(i => i.id === d.id)) {
+                    instanceDocs.push(d);
+                }
+            });
+        }
+
+        for (const instDoc of instanceDocs) {
+            const instData = instDoc.data();
+            console.log(`[Sequences] Auto-stopping instance ${instDoc.id} (Reason: ${reason})`);
+            const updatedSteps = (instData.steps || []).map(st => {
+                if (st.status === 'SCHEDULED' || st.status === 'PENDING') {
+                    return { ...st, status: 'CANCELLED', cancelledAt: now };
+                }
+                return st;
+            });
+            await instDoc.ref.update({
+                status: reason,
+                stoppedAt: now,
+                updatedAt: now,
+                steps: updatedSteps
+            });
+            if (!leadId && instData.leadId) {
+                leadId = instData.leadId;
+            }
+        }
+
+        // 2. Helper to protect advanced CRM lead statuses from downgrading
+        const applyLeadStatusUpdate = (currentData) => {
+            const updatePayload = {
+                nextStepDue: null,
+                nextStepNumber: null,
+                updatedAt: now,
+                updated_at: now
+            };
+
+            const curStatus = (currentData?.status || '').toUpperCase();
+            const curSeqStatus = currentData?.sequenceStatus || '';
+            const isAlreadyMeetingOrClient = curStatus === 'MEETING_SCHEDULED' || curStatus === 'CLIENT' || curSeqStatus === 'STOPPED_MEETING';
+
+            if (isAlreadyMeetingOrClient && reason !== 'STOPPED_MEETING') {
+                // NEVER downgrade an advanced pipeline status (Meeting booked or Client) on a follow-up reply!
+                updatePayload.lastSmsInteraction = now;
+                return updatePayload;
+            }
+
+            updatePayload.sequenceStatus = reason;
+            if (newLeadStatus) {
+                updatePayload.status = newLeadStatus;
+                updatePayload.stage = newLeadStatus;
+            }
+
+            if (reason === 'STOPPED_REPLIED') {
+                updatePayload.smsStatus = 'Replied';
+                updatePayload.lastSmsInteraction = now;
+            } else if (reason === 'STOPPED_MEETING') {
+                updatePayload.smsStatus = 'Appointment Booked';
+            }
+
+            return updatePayload;
+        };
+
+        // 3. Update Lead in leads or crm_leads
+        if (leadId) {
+            const lRef = db.collection('leads').doc(leadId);
+            const lSnap = await lRef.get();
+            if (lSnap.exists) {
+                const patch = applyLeadStatusUpdate(lSnap.data());
+                await lRef.update(patch);
+                console.log(`[Sequences] Updated lead ${leadId} status to ${patch.status || lSnap.data()?.status} and sequenceStatus to ${patch.sequenceStatus || lSnap.data()?.sequenceStatus}`);
+            } else {
+                const crmRef = db.collection('crm_leads').doc(leadId);
+                const crmSnap = await crmRef.get();
+                if (crmSnap.exists) {
+                    const patch = applyLeadStatusUpdate(crmSnap.data());
+                    await crmRef.update(patch);
+                    console.log(`[Sequences] Updated crm_lead ${leadId} status to ${patch.status || crmSnap.data()?.status} and sequenceStatus to ${patch.sequenceStatus || crmSnap.data()?.sequenceStatus}`);
+                }
+            }
+        } else if (formattedPhone) {
+            let huntSnap = await db.collection('leads')
+                .where('phone', 'in', [formattedPhone, phone, phone.replace('+1', '')])
+                .limit(5)
+                .get();
+            if (huntSnap.empty) {
+                huntSnap = await db.collection('leads')
+                    .where('phone_number', 'in', [formattedPhone, phone, phone.replace('+1', '')])
+                    .limit(5)
+                    .get();
+            }
+            for (const d of huntSnap.docs) {
+                const patch = applyLeadStatusUpdate(d.data());
+                await d.ref.update(patch);
+                console.log(`[Sequences] Updated lead ${d.id} by phone ${formattedPhone} to status ${patch.status || d.data()?.status}`);
+            }
+
+            const crmSnap = await db.collection('crm_leads')
+                .where('phone', 'in', [formattedPhone, phone, phone.replace('+1', '')])
+                .limit(5)
+                .get();
+            for (const d of crmSnap.docs) {
+                const patch = applyLeadStatusUpdate(d.data());
+                await d.ref.update(patch);
+                console.log(`[Sequences] Updated crm_lead ${d.id} by phone ${formattedPhone} to status ${patch.status || d.data()?.status}`);
+            }
+        }
     } catch (err) {
         console.error("[Sequences] Error cancelling sequence on reply:", err.message);
     }
+}
+
+/**
+ * Manually stops an active sequence for a lead
+ */
+async function stopLeadSequence({ leadId, instanceId }) {
+    if (!leadId && !instanceId) throw new Error("leadId or instanceId is required");
+
+    let instances = [];
+    if (instanceId) {
+        const instRef = db.collection('sequence_instances').doc(instanceId);
+        const instSnap = await instRef.get();
+        if (instSnap.exists) instances.push({ id: instSnap.id, ref: instRef, ...instSnap.data() });
+    } else {
+        const snap = await db.collection('sequence_instances')
+            .where('leadId', '==', leadId)
+            .where('status', '==', 'ACTIVE')
+            .get();
+        snap.forEach(d => instances.push({ id: d.id, ref: d.ref, ...d.data() }));
+    }
+
+    const now = new Date().toISOString();
+    for (const inst of instances) {
+        await inst.ref.update({
+            status: 'STOPPED_MANUAL',
+            stoppedAt: now,
+            updatedAt: now
+        });
+    }
+
+    if (leadId) {
+        let leadRef = db.collection('crm_leads').doc(leadId);
+        let leadSnap = await leadRef.get();
+        if (!leadSnap.exists) leadRef = db.collection('leads').doc(leadId);
+        await leadRef.set({
+            sequenceStatus: 'STOPPED_MANUAL',
+            nextStepDue: null,
+            updatedAt: now
+        }, { merge: true });
+    }
+
+    aiActivityService.log({
+        category: 'sms',
+        type: 'seq_stopped_manual',
+        level: 'info',
+        title: `Séquence interrompue manuellement`,
+        detail: `Séquence stoppée pour le Lead ID ${leadId || instanceId}.`,
+        leadId
+    });
+
+    return { success: true, stoppedCount: instances.length };
 }
 
 /**
@@ -1519,11 +2075,13 @@ async function getLeadSequenceTimeline(leadId) {
     const globalSettings = await getSequenceSettings();
     const isFr = isLeadFrancophone(lead);
     const timezone = resolveTimezone({
-        phone: lead.phone,
-        postalCode: lead.postal_code || lead.postalCode,
-        address: lead.address || lead.formattedAddress,
+        phone: lead.phone || lead.phone_number,
+        city: lead.city,
+        postalCode: lead.postal_code || lead.postalCode || lead.zip || lead.zip_code,
+        address: lead.address || lead.formattedAddress || lead.street_address,
         province: lead.province || lead.state,
-        country: lead.country
+        country: lead.country,
+        timezone: lead.timezone || lead.businessTimezone
     });
 
     // Check if there is an active sequence_instance
@@ -1564,6 +2122,7 @@ async function getLeadSequenceTimeline(leadId) {
             const purpose = STEP_PURPOSES[idx] || { label: `Étape ${st.stepNumber}`, color: 'var(--gold)' };
             const rawTemplate = (isFr || !st.template_en) ? st.template : st.template_en;
             const interpolated = interpolateTemplate(rawTemplate, lead, isFr);
+            const isAlreadySent = (st.status === 'SENT' || st.status === 'COMPLETED');
             return {
                 stepNumber: st.stepNumber || (idx + 1),
                 delayHours: st.delayHours,
@@ -1572,14 +2131,14 @@ async function getLeadSequenceTimeline(leadId) {
                 scheduledFor: st.scheduledFor,
                 status: st.status || 'SCHEDULED',
                 sentAt: st.sentAt || null,
-                executedBody: st.executedBody || interpolated,
+                executedBody: isAlreadySent ? (st.executedBody || interpolated) : interpolated,
                 template: interpolated
             };
         });
 
         return {
             success: true,
-            hasActiveInstance: true,
+            hasActiveInstance: activeInstance.status === 'ACTIVE',
             instanceId: activeInstance.instanceId,
             sequenceId: activeInstance.sequenceId,
             sequenceName: activeInstance.sequenceName,
@@ -1647,6 +2206,8 @@ module.exports = {
     DEFAULT_SEQUENCES,
     DEFAULT_SETTINGS,
     resolveTimezone,
+    resolveTimezoneDetails,
+    CANADIAN_CITIES_TIMEZONE_MAP,
     isWithinLegalWindow,
     getNextLegalSendTime,
     getSequenceSettings,
@@ -1656,6 +2217,7 @@ module.exports = {
     syncDefaultSequences,
     triggerLeadSequence,
     triggerSequenceForLead,
+    stopLeadSequence,
     executeInstanceStep,
     processDueSequenceSteps,
     notifyAdminOnProspectAction,

@@ -19,6 +19,19 @@ const googleAuth = require('./google-auth');
 const ADMIN_PHONE = '+15062337006';
 const DEFAULT_MEET_LINK = 'https://meet.google.com/qsr-auto-meet';
 
+function getHumanTzName(tz, isEn = false) {
+    if (!tz) return isEn ? 'Atlantic Time' : "heure de l'Atlantique";
+    if (tz.includes('Moncton') || tz.includes('Halifax')) return isEn ? 'Atlantic Time' : "heure de l'Atlantique";
+    if (tz.includes('Toronto') || tz.includes('Montreal')) return isEn ? 'Eastern Time (QC/ON)' : "heure du Québec";
+    if (tz.includes('New_York')) return isEn ? 'Eastern Time' : "heure de l'Est";
+    if (tz.includes('Chicago') || tz.includes('Winnipeg')) return isEn ? 'Central Time' : "heure du Centre";
+    if (tz.includes('Denver') || tz.includes('Edmonton')) return isEn ? 'Mountain Time' : "heure des Rocheuses";
+    if (tz.includes('Phoenix')) return isEn ? 'Arizona Time' : "heure de l'Arizona";
+    if (tz.includes('Los_Angeles') || tz.includes('Vancouver')) return isEn ? 'Pacific Time' : "heure du Pacifique";
+    if (tz.includes('St_Johns')) return isEn ? 'Newfoundland Time' : "heure de Terre-Neuve";
+    return tz;
+}
+
 class CalendarReminderService {
     constructor() {
         this.workerInterval = null;
@@ -65,16 +78,45 @@ class CalendarReminderService {
             throw new Error('Invalid appointmentTime format');
         }
 
+        const nowMs = Date.now();
+        const minNoticeMs = 2 * 60 * 60 * 1000; // Minimum 2 hours advance notice required
+
+        if (apptDate.getTime() <= nowMs) {
+            throw new Error(`CRITICAL: Appointment cannot be booked in the past (${apptDate.toISOString()}). Current time is ${new Date(nowMs).toISOString()}. Please select a future date and time.`);
+        }
+
+        if (apptDate.getTime() < nowMs + minNoticeMs) {
+            throw new Error(`CRITICAL: Minimum advance notice of 2 hours is required. Requested time (${apptDate.toISOString()}) is too soon. Please choose a slot at least 2 hours from now.`);
+        }
+
         // Calculate reminder trigger times
         const j24Time = new Date(apptDate.getTime() - 24 * 60 * 60 * 1000).toISOString();
         const h1Time = new Date(apptDate.getTime() - 60 * 60 * 1000).toISOString();
         const h0Time = new Date(apptDate.getTime()).toISOString();
+
+        // Safety: Do not arm reminders if their trigger window has already elapsed
+        const isJ24Applicable = new Date(j24Time).getTime() > nowMs;
+        const isH1Applicable = new Date(h1Time).getTime() > nowMs;
+
+        const prospectTimezone = appointmentData.prospectTimezone || smsSequenceService.resolveTimezone({
+            phone: prospectPhone,
+            city: appointmentData.city || appointmentData.businessCity,
+            state: appointmentData.state || appointmentData.province || appointmentData.businessState,
+            postalCode: appointmentData.postalCode || appointmentData.postal_code,
+            address: appointmentData.address || appointmentData.formattedAddress || appointmentData.businessLocation,
+            country: appointmentData.country,
+            timezone: appointmentData.timezone || appointmentData.businessTimezone
+        });
+
+        const businessLocation = appointmentData.businessLocation || appointmentData.businessLocationStr || null;
 
         const appointment = {
             leadId: leadId || null,
             prospectName: prospectName || 'Client',
             prospectPhone: prospectPhone || '',
             prospectEmail: prospectEmail || '',
+            businessLocation: businessLocation || null,
+            prospectTimezone: prospectTimezone || 'America/Moncton',
             appointmentTime: apptDate.toISOString(),
             meetLink,
             notes: notes || '',
@@ -88,14 +130,16 @@ class CalendarReminderService {
                     scheduledTime: j24Time,
                     sent: false,
                     sentAt: null,
-                    status: 'pending'
+                    status: isJ24Applicable ? 'pending' : 'skipped',
+                    note: isJ24Applicable ? undefined : 'Skipped: booked within 24h of meeting'
                 },
                 h1: {
                     type: 'H-1h',
                     scheduledTime: h1Time,
                     sent: false,
                     sentAt: null,
-                    status: 'pending'
+                    status: isH1Applicable ? 'pending' : 'skipped',
+                    note: isH1Applicable ? undefined : 'Skipped: booked within 1h of meeting'
                 },
                 h0: {
                     type: 'H-0',
@@ -128,9 +172,13 @@ class CalendarReminderService {
             console.warn('[CalendarReminderService] Could not save to events collection:', evErr.message);
         }
 
-        // 1. Google Calendar Push (sync to smartphone)
+        // 1. Google Calendar Push (sync to smartphone & create Google Meet link)
         try {
-            await this.syncToGoogleCalendar(appointmentId, appointment);
+            const syncRes = await this.syncToGoogleCalendar(appointmentId, appointment);
+            if (syncRes && syncRes.meetUrl) {
+                meetLink = syncRes.meetUrl;
+                appointment.meetLink = syncRes.meetUrl;
+            }
         } catch (gErr) {
             console.warn('[CalendarReminderService] Google Calendar sync note:', gErr.message);
         }
@@ -150,25 +198,34 @@ class CalendarReminderService {
                 timeZone: 'America/Moncton'
             });
 
+            let prospectTzNotice = '';
+            if (prospectTimezone && prospectTimezone !== 'America/Moncton') {
+                const pTime = apptDate.toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit', timeZone: prospectTimezone });
+                prospectTzNotice = ` (${pTime} ${getHumanTzName(prospectTimezone)})`;
+            }
+
             await smsSequenceService.notifyAdminOnProspectAction({
                 leadId: appointmentId,
                 phoneNumber: prospectPhone,
                 clientName: prospectName,
                 companyName: prospectEmail || prospectPhone || 'Solutions Quasar Lead',
                 actionType: 'booking',
-                text: `📅 RDV fixé le ${formattedDate} à ${formattedTime}. Meet: ${meetLink}`
+                text: `📅 RDV fixé le ${formattedDate} à ${formattedTime} (Atlantique)${prospectTzNotice}. Meet: ${meetLink}`
             });
         } catch (alertErr) {
             console.error('[CalendarReminderService] Error notifying admin on booking:', alertErr.message);
         }
 
-        // 3. Update lead status in CRM to 'Appointment Booked'
-        if (leadId) {
-            try {
-                await smsSequenceService.cancelSequenceOnReply(leadId, 'Appointment Booked');
-            } catch (leadErr) {
-                console.warn('[CalendarReminderService] Could not update lead status:', leadErr.message);
-            }
+        // 3. Update lead status in CRM to 'Appointment Booked' (MEETING_SCHEDULED)
+        try {
+            await smsSequenceService.cancelSequenceOnReply({
+                leadId,
+                phone: prospectPhone,
+                reason: 'STOPPED_MEETING',
+                status: 'MEETING_SCHEDULED'
+            });
+        } catch (leadErr) {
+            console.warn('[CalendarReminderService] Could not update lead status:', leadErr.message);
         }
 
         return {
@@ -187,12 +244,22 @@ class CalendarReminderService {
             const apptDate = new Date(appointment.appointmentTime);
             const endDate = new Date(apptDate.getTime() + 45 * 60 * 1000);
 
+            const prospectTz = appointment.prospectTimezone || 'America/Moncton';
+            const businessLoc = appointment.businessLocation || '';
+            const locExtra = businessLoc ? `\nLocalisation entreprise : ${businessLoc}` : '';
+            let tzExtra = '';
+            if (prospectTz && prospectTz !== 'America/Moncton') {
+                const pTime = apptDate.toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit', timeZone: prospectTz });
+                tzExtra = `\nHeure locale prospect (${getHumanTzName(prospectTz)}): ${pTime}`;
+            }
+
             const eventRes = await calendar.events.insert({
                 calendarId: 'primary',
                 conferenceDataVersion: 1,
                 requestBody: {
                     summary: `RDV Solutions Quasar - ${appointment.prospectName}`,
-                    description: `Rendez-vous stratégique Solutions Quasar avec ${appointment.prospectName}.\nNotes: ${appointment.notes || 'Aucune'}\nTéléphone: ${appointment.prospectPhone}\nMeet: ${appointment.meetLink}`,
+                    location: businessLoc || '',
+                    description: `Rendez-vous stratégique Solutions Quasar avec ${appointment.prospectName}.${locExtra}${tzExtra}\nNotes: ${appointment.notes || 'Aucune'}\nTéléphone: ${appointment.prospectPhone}\nMeet: ${appointment.meetLink}`,
                     start: { dateTime: apptDate.toISOString(), timeZone: 'America/Moncton' },
                     end: { dateTime: endDate.toISOString(), timeZone: 'America/Moncton' },
                     attendees: appointment.prospectEmail ? [{ email: appointment.prospectEmail }] : [],
@@ -214,9 +281,16 @@ class CalendarReminderService {
                 meetLink: meetUrl
             });
 
+            // Update in-memory appointment object so callers receive the real Google Meet link
+            appointment.meetLink = meetUrl;
+            appointment.google_calendar_synced = true;
+            appointment.google_event_id = googleEventId;
+
             console.log(`[CalendarReminderService] Synced event to Google Calendar! ID: ${googleEventId}, Meet: ${meetUrl}`);
+            return { googleEventId, meetUrl };
         } catch (e) {
             console.error('[CalendarReminderService] Google Calendar API error:', e.message);
+            return { googleEventId: null, meetUrl: appointment.meetLink };
         }
     }
 
@@ -319,6 +393,24 @@ class CalendarReminderService {
 
             await docRef.update(updatePayload);
 
+            // Sync to Google Calendar if event exists
+            if (data.google_event_id) {
+                try {
+                    const calendar = await googleAuth.getCalendar('master_admin');
+                    await calendar.events.patch({
+                        calendarId: 'primary',
+                        eventId: data.google_event_id,
+                        requestBody: {
+                            start: { dateTime: newDate.toISOString(), timeZone: 'America/Moncton' },
+                            end: { dateTime: new Date(newDate.getTime() + 45 * 60 * 1000).toISOString(), timeZone: 'America/Moncton' }
+                        }
+                    });
+                    console.log(`[CalendarReminderService] Synced reschedule for event ${data.google_event_id} on Google Calendar.`);
+                } catch (gErr) {
+                    console.warn('[CalendarReminderService] Note updating Google Calendar event on reschedule:', gErr.message);
+                }
+            }
+
             // Also update events collection
             try {
                 const evSnap = await db.collection('events').where('appointmentId', '==', appointmentId).get();
@@ -394,7 +486,7 @@ class CalendarReminderService {
     /**
      * Get upcoming available appointment slots by reading Google Calendar & Firestore events
      */
-    async getAvailableSlots(daysAhead = 5) {
+    async getAvailableSlots(daysAhead = 5, prospectTimezone = null) {
         const now = new Date();
         const maxDays = Math.min(Math.max(1, daysAhead || 5), 14);
         
@@ -404,6 +496,19 @@ class CalendarReminderService {
         const slotDurationMs = (settings.slotDurationMinutes || 45) * 60 * 1000;
         const minNoticeMs = (settings.minNoticeHours || 2) * 60 * 60 * 1000;
         const allowedDays = settings.daysOfWeek || [1, 2, 3, 4, 5];
+
+        const getHumanTzName = (tz, isEn = false) => {
+            if (!tz) return isEn ? 'Atlantic Time' : "heure de l'Atlantique";
+            if (tz.includes('Moncton') || tz.includes('Halifax')) return isEn ? 'Atlantic Time' : "heure de l'Atlantique";
+            if (tz.includes('Toronto') || tz.includes('Montreal')) return isEn ? 'Eastern Time (QC/ON)' : "heure du Québec";
+            if (tz.includes('New_York')) return isEn ? 'Eastern Time' : "heure de l'Est";
+            if (tz.includes('Chicago') || tz.includes('Winnipeg')) return isEn ? 'Central Time' : "heure du Centre";
+            if (tz.includes('Denver') || tz.includes('Edmonton')) return isEn ? 'Mountain Time' : "heure des Rocheuses";
+            if (tz.includes('Phoenix')) return isEn ? 'Arizona Time' : "heure de l'Arizona";
+            if (tz.includes('Los_Angeles') || tz.includes('Vancouver')) return isEn ? 'Pacific Time' : "heure du Pacifique";
+            if (tz.includes('St_Johns')) return isEn ? 'Newfoundland Time' : "heure de Terre-Neuve";
+            return tz;
+        };
 
         // 1. Fetch busy intervals from Google Calendar
         let busyIntervals = [];
@@ -507,11 +612,44 @@ class CalendarReminderService {
                         timeZone
                     });
 
-                    availableSlots.push({
-                        iso: slotCandidate.toISOString(),
-                        label_fr: labelFr,
-                        label_en: labelEn
-                    });
+                    if (prospectTimezone && prospectTimezone !== timeZone) {
+                        const prospectLabelFr = slotCandidate.toLocaleDateString('fr-CA', {
+                            weekday: 'long',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            timeZone: prospectTimezone
+                        });
+                        const prospectLabelEn = slotCandidate.toLocaleDateString('en-CA', {
+                            weekday: 'long',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            timeZone: prospectTimezone
+                        });
+                        const pTzFr = getHumanTzName(prospectTimezone, false);
+                        const aTzFr = getHumanTzName(timeZone, false);
+                        const pTzEn = getHumanTzName(prospectTimezone, true);
+                        const aTzEn = getHumanTzName(timeZone, true);
+
+                        availableSlots.push({
+                            iso: slotCandidate.toISOString(),
+                            label_fr: `${prospectLabelFr} (${pTzFr}) [${labelFr} ${aTzFr}]`,
+                            label_en: `${prospectLabelEn} (${pTzEn}) [${labelEn} ${aTzEn}]`,
+                            prospectTime: prospectLabelFr,
+                            prospectTimezoneName: pTzFr,
+                            agencyTime: labelFr,
+                            agencyTimezoneName: aTzFr
+                        });
+                    } else {
+                        availableSlots.push({
+                            iso: slotCandidate.toISOString(),
+                            label_fr: labelFr,
+                            label_en: labelEn
+                        });
+                    }
                 }
             }
         }
@@ -541,8 +679,9 @@ class CalendarReminderService {
             if (!phone || !appt.reminders) continue;
 
             const apptTime = new Date(appt.appointmentTime);
-            const timeString = apptTime.toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Moncton' });
-            const dateString = apptTime.toLocaleDateString('fr-CA', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'America/Moncton' });
+            const prospectTz = appt.prospectTimezone || smsSequenceService.resolveTimezone({ phone }) || 'America/Moncton';
+            const timeString = apptTime.toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit', timeZone: prospectTz });
+            const dateString = apptTime.toLocaleDateString('fr-CA', { weekday: 'long', day: 'numeric', month: 'short', timeZone: prospectTz });
 
             const reminderTypes = ['j24', 'h1', 'h0'];
             let modified = false;
@@ -550,7 +689,7 @@ class CalendarReminderService {
             // Check if any reminder is due right now for this appointment
             const hasDueReminders = reminderTypes.some(rKey => {
                 const r = appt.reminders[rKey];
-                return r && !r.sent && now >= new Date(r.scheduledTime);
+                return r && !r.sent && r.status === 'pending' && now >= new Date(r.scheduledTime);
             });
 
             // Liveness & Time Synchronization check: Verify in real-time that Google Calendar event still exists and check if time was changed
@@ -588,7 +727,15 @@ class CalendarReminderService {
 
             for (const rKey of reminderTypes) {
                 const rem = appt.reminders[rKey];
-                if (!rem || rem.sent) continue;
+                if (!rem || rem.sent || rem.status === 'skipped' || rem.status === 'cancelled' || rem.status === 'expired') continue;
+
+                // Safety: If the meeting has already occurred (past by more than 15 min), expire remaining reminders without sending
+                if (now.getTime() - apptTime.getTime() > 15 * 60 * 1000) {
+                    rem.status = 'expired';
+                    rem.note = 'Appointment time already elapsed';
+                    modified = true;
+                    continue;
+                }
 
                 const scheduled = new Date(rem.scheduledTime);
                 if (now >= scheduled) {

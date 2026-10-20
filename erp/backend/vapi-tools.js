@@ -2,6 +2,8 @@ console.log("Loading Vapi Tools & Handlers...");
 const { getApp } = require('./firebase-manager');
 const googleAuth = require('./google-auth');
 const voiceAuth = require('./voice-auth');
+const calendarReminderService = require('./calendar-reminder-service');
+const twilioService = require('./twilio-service');
 
 // --- TOOL DEFINITIONS (Schemas) ---
 const tools = [
@@ -58,6 +60,80 @@ const tools = [
                     id: { type: "string", description: "The unique ID of the memory to delete." }
                 },
                 required: ["id"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "get_available_slots",
+            description: "Consulte en temps réel les disponibilités du Google Calendar de Solutions Quasar pour un court appel découverte (15-30 min). / Checks real-time open calendar slots.",
+            parameters: {
+                type: "object",
+                properties: {
+                    daysAhead: {
+                        type: "number",
+                        description: "Nombre de jours à examiner (défaut: 5). / Days ahead to look for openings."
+                    }
+                }
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "book_appointment",
+            description: "Réserve fermement le rendez-vous dans Google Calendar avec création automatique de lien Google Meet, enregistrement dans l'ERP Quasar et alerte SMS immédiate. / Firmly books discovery meeting in Google Calendar.",
+            parameters: {
+                type: "object",
+                properties: {
+                    prospectName: {
+                        type: "string",
+                        description: "Prénom et nom du prospect. / Prospect full name."
+                    },
+                    prospectPhone: {
+                        type: "string",
+                        description: "Numéro de téléphone de rappel et de confirmation SMS du prospect. / Phone number for SMS."
+                    },
+                    prospectEmail: {
+                        type: "string",
+                        description: "Adresse courriel du prospect pour l'invitation Google Calendar. / Prospect email."
+                    },
+                    appointmentTime: {
+                        type: "string",
+                        description: "Date et heure exacte au format ISO 8601 (ex: 2026-10-22T14:00:00.000Z) choisie parmi les créneaux disponibles. / Selected ISO 8601 timestamp."
+                    },
+                    notes: {
+                        type: "string",
+                        description: "Détails ou sujet du projet (refonte de site, SEO, agent IA, CRM sur mesure). / Project notes."
+                    }
+                },
+                required: ["prospectName", "appointmentTime"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "send_call_note_sms",
+            description: "Envoie immédiatement une note ou un mémo prioritaire par SMS au directeur de Solutions Quasar (Benjamin) sur son téléphone portable (+1 506 233-7006). / Sends instant SMS alert to Quasar director.",
+            parameters: {
+                type: "object",
+                properties: {
+                    summary: {
+                        type: "string",
+                        description: "Résumé concis de la demande ou note à transmettre. / Concise summary of the call or caller request."
+                    },
+                    callerName: {
+                        type: "string",
+                        description: "Nom de la personne qui appelle. / Caller name."
+                    },
+                    callerPhone: {
+                        type: "string",
+                        description: "Numéro de rappel de la personne. / Caller callback number."
+                    }
+                },
+                required: ["summary"]
             }
         }
     }
@@ -212,6 +288,93 @@ const handlers = {
             result = { success: false, error: e.message };
         }
         await logToolExecution('delete_memory', args, result, projectId, requestId);
+        return result;
+    },
+
+    /**
+     * get_available_slots
+     * Fetches real-time free slots from Google Calendar & Quasar ERP
+     */
+    get_available_slots: async (args, projectId, requestId) => {
+        let result;
+        try {
+            const daysAhead = args.daysAhead || 5;
+            const slots = await calendarReminderService.getAvailableSlots(daysAhead);
+            const topSlots = slots.slice(0, 5);
+            result = {
+                success: true,
+                count: topSlots.length,
+                slots: topSlots,
+                message: topSlots.length > 0
+                    ? `Créneaux libres trouvés : ${topSlots.map(s => s.label_fr).join(' ; ')}`
+                    : "Aucun créneau immédiat disponible dans les prochains jours. Proposez de transmettre un mémo pour rappel."
+            };
+        } catch (e) {
+            console.error("[Vapi Handler get_available_slots Error]", e);
+            result = { success: false, error: e.message };
+        }
+        await logToolExecution('get_available_slots', args, result, projectId, requestId);
+        return result;
+    },
+
+    /**
+     * book_appointment
+     * Reserves meeting in Google Calendar, creates Meet link, alerts admin and schedules triple SMS
+     */
+    book_appointment: async (args, projectId, requestId) => {
+        let result;
+        try {
+            const { leadId, prospectName, prospectPhone, prospectEmail, appointmentTime, notes } = args;
+            const phone = prospectPhone || args.phoneNumber || '';
+            const bookRes = await calendarReminderService.scheduleAppointment({
+                leadId: leadId || null,
+                prospectName: prospectName || 'Client Quasar',
+                prospectPhone: phone,
+                prospectEmail: prospectEmail || '',
+                appointmentTime,
+                notes: notes || 'Réservé via Vapi Voice Assistant (Alex)'
+            });
+            result = {
+                success: true,
+                appointmentId: bookRes.appointmentId,
+                meetLink: bookRes.appointment?.meetLink,
+                message: `Rendez-vous réservé avec succès le ${appointmentTime}. Un rappel SMS et un lien Google Meet ont été planifiés.`
+            };
+        } catch (e) {
+            console.error("[Vapi Handler book_appointment Error]", e);
+            result = { success: false, error: e.message };
+        }
+        await logToolExecution('book_appointment', args, result, projectId, requestId);
+        return result;
+    },
+
+    /**
+     * send_call_note_sms
+     * Sends immediate SMS alert to Benjamin's admin phone (+1 506 233-7006)
+     */
+    send_call_note_sms: async (args, projectId, requestId) => {
+        let result;
+        try {
+            const { summary, callerName, callerPhone } = args;
+            const targetPhone = process.env.ADMIN_PHONE || '+15062337006';
+            const callerInfo = callerName ? `${callerName} (${callerPhone || 'Numéro masqué'})` : (callerPhone || 'Prospect inconnu');
+            const messageBody = `📞 [Quasar Voice Note]\nDe : ${callerInfo}\nNote : ${summary}`;
+
+            await twilioService.sendSms({
+                to: targetPhone,
+                message: messageBody,
+                allowLandline: true
+            });
+
+            result = {
+                success: true,
+                message: "La note SMS a été transmise immédiatement à Benjamin."
+            };
+        } catch (e) {
+            console.error("[Vapi Handler send_call_note_sms Error]", e);
+            result = { success: false, error: e.message };
+        }
+        await logToolExecution('send_call_note_sms', args, result, projectId, requestId);
         return result;
     }
 };
