@@ -783,6 +783,50 @@ class CalendarReminderService {
             }
         }
     }
+
+    /**
+     * Finds active confirmed upcoming appointment for a phone or leadId
+     */
+    async findActiveAppointment(phone, leadId = null) {
+        try {
+            const phoneVars = twilioService.getPhoneVariations ? twilioService.getPhoneVariations(phone) : [phone];
+
+            // 1. Search by phone
+            if (phoneVars && phoneVars.length > 0) {
+                const snap = await db.collection('appointments')
+                    .where('status', '==', 'confirmed')
+                    .where('prospectPhone', 'in', phoneVars)
+                    .get();
+
+                const valid = snap.docs
+                    .map(d => ({ id: d.id, ...d.data() }))
+                    .filter(a => a.appointmentTime && new Date(a.appointmentTime).getTime() >= Date.now() - 30 * 60 * 1000)
+                    .sort((a, b) => new Date(a.appointmentTime) - new Date(b.appointmentTime));
+
+                if (valid.length > 0) return valid[0];
+            }
+
+            // 2. Search by leadId
+            if (leadId) {
+                const snapLead = await db.collection('appointments')
+                    .where('status', '==', 'confirmed')
+                    .where('leadId', '==', leadId)
+                    .get();
+
+                const validLead = snapLead.docs
+                    .map(d => ({ id: d.id, ...d.data() }))
+                    .filter(a => a.appointmentTime && new Date(a.appointmentTime).getTime() >= Date.now() - 30 * 60 * 1000)
+                    .sort((a, b) => new Date(a.appointmentTime) - new Date(b.appointmentTime));
+
+                if (validLead.length > 0) return validLead[0];
+            }
+
+            return null;
+        } catch (err) {
+            console.error('[CalendarReminderService] findActiveAppointment error:', err.message);
+            return null;
+        }
+    }
 }
 
 const instance = new CalendarReminderService();

@@ -3393,7 +3393,7 @@ app.post('/api/sms/conversations/start', verifyToken, async (req, res) => {
 });
 
 // 9. Twilio Incoming SMS Webhook
-app.post('/api/webhook/twilio/sms', async (req, res) => {
+app.post(['/api/webhook/twilio/sms', '/api/twilio/sms', '/api/twilio/inbound'], async (req, res) => {
     try {
         const { From, Body, MessageSid } = req.body;
         if (!From || !Body) {
@@ -4216,6 +4216,18 @@ app.post('/api/followups/process-due', verifyToken, async (req, res) => {
     }
 });
 
+// --- STALLED CONVERSATION RECOVERY ENDPOINTS ---
+const stalledRecoveryService = require('./stalled-recovery-service');
+
+app.post('/api/stalled-recovery/process-due', verifyToken, async (req, res) => {
+    try {
+        const result = await stalledRecoveryService.processStalledConversations();
+        res.json({ success: true, ...result });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 if (require.main === module) {
     app.listen(PORT, () => {
         console.log(`Server running on http://localhost:${PORT}`);
@@ -4226,11 +4238,12 @@ if (require.main === module) {
             });
         }, 30000);
 
-        // Initialize Audit, Hunter, Calendar & Autonomous Follow-up background services
+        // Initialize Audit, Hunter, Calendar, Autonomous Follow-up & Stalled Recovery background services
         leadAuditService.init().catch(err => console.error("[LeadAuditService Init Error]", err.message));
         leadHunterService.init().catch(err => console.error("[LeadHunterService Init Error]", err.message));
         calendarReminderService.init();
         followupService.init();
+        stalledRecoveryService.init();
     });
 }
 

@@ -1858,9 +1858,11 @@ async function cancelSequenceOnReply(target, reason = 'STOPPED_REPLIED') {
 
         // 1. Locate and halt matching sequence_instances
         const instanceDocs = [];
-        if (formattedPhone) {
+        const phoneVariations = phone ? (twilioService.getPhoneVariations ? twilioService.getPhoneVariations(phone) : [formattedPhone, phone].filter(Boolean)) : [];
+
+        if (phoneVariations.length > 0) {
             const snap = await db.collection('sequence_instances')
-                .where('phone', 'in', [formattedPhone, phone])
+                .where('phone', 'in', phoneVariations)
                 .get();
             snap.forEach(d => {
                 const data = d.data();
@@ -1952,14 +1954,14 @@ async function cancelSequenceOnReply(target, reason = 'STOPPED_REPLIED') {
                     console.log(`[Sequences] Updated crm_lead ${leadId} status to ${patch.status || crmSnap.data()?.status} and sequenceStatus to ${patch.sequenceStatus || crmSnap.data()?.sequenceStatus}`);
                 }
             }
-        } else if (formattedPhone) {
+        } else if (phoneVariations.length > 0) {
             let huntSnap = await db.collection('leads')
-                .where('phone', 'in', [formattedPhone, phone, phone.replace('+1', '')])
+                .where('phone', 'in', phoneVariations)
                 .limit(5)
                 .get();
             if (huntSnap.empty) {
                 huntSnap = await db.collection('leads')
-                    .where('phone_number', 'in', [formattedPhone, phone, phone.replace('+1', '')])
+                    .where('phone_number', 'in', phoneVariations)
                     .limit(5)
                     .get();
             }
@@ -1970,7 +1972,7 @@ async function cancelSequenceOnReply(target, reason = 'STOPPED_REPLIED') {
             }
 
             const crmSnap = await db.collection('crm_leads')
-                .where('phone', 'in', [formattedPhone, phone, phone.replace('+1', '')])
+                .where('phone', 'in', phoneVariations)
                 .limit(5)
                 .get();
             for (const d of crmSnap.docs) {

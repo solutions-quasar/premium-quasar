@@ -77,6 +77,7 @@ class FollowupService {
         reason,
         contextNote,
         language,
+        nurtureRound = 0,
         createdBy = 'ai_agent'
     }) {
         if (!phoneNumber) throw new Error("phoneNumber is required to schedule a follow-up");
@@ -154,6 +155,7 @@ class FollowupService {
             language: language || (resolvedLead && !smsSequenceService.isLeadFrancophone(resolvedLead) ? 'en' : 'fr'),
             status: 'SCHEDULED', // 'SCHEDULED', 'EXECUTED', 'CANCELLED', 'SUPERSEDED', 'FAILED'
             mode: 'autonomous', // 100% autonome
+            nurtureRound: parseInt(nurtureRound, 10) || 0,
             createdBy,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
@@ -409,6 +411,43 @@ RÈGLES STRICTES :
                 nextFollowupReason: null,
                 updatedAt: nowIso
             }).catch(() => {});
+        }
+
+        // 7b. Nurturing Multi-Touch Chain: Round 1 (J+60) -> Round 2 (J+180) -> Final Archive
+        if (followup.nurtureRound === 1) {
+            console.log(`[FollowupService] Nurture Round 1 executed for ${normalizedPhone}. Automatically chaining Round 2 in 120 days (6 months total)...`);
+            try {
+                await this.scheduleFollowup({
+                    leadId: followup.leadId,
+                    phoneNumber: normalizedPhone,
+                    clientName: followup.clientName,
+                    companyName: followup.companyName,
+                    delayDays: 120, // 120 days after Round 1 = 6 months total
+                    reason: 'Ultime prise de contact semestrielle avant archivage (Nurturing 2/2)',
+                    contextNote: 'Cycle de nurturing 2/2. Si aucune réponse sous 14 jours, archivage automatique du dossier.',
+                    language: followup.language,
+                    nurtureRound: 2,
+                    createdBy: 'stalled_recovery_engine'
+                });
+            } catch (chainErr) {
+                console.error('[FollowupService] Failed to chain Nurture Round 2:', chainErr.message);
+            }
+        } else if (followup.nurtureRound === 2) {
+            const archiveDueAt = new Date(Date.now() + (14 * 24 * 3600 * 1000)).toISOString();
+            console.log(`[FollowupService] Final Nurture Round 2 executed for ${normalizedPhone}. Setting archive grace period until ${archiveDueAt}...`);
+            await convRef.set({
+                stalledState: 'COLD_NURTURE_ROUND_2_SENT',
+                round2SentAt: nowIso,
+                archiveDueAt
+            }, { merge: true });
+
+            if (followup.leadId) {
+                await db.collection('leads').doc(followup.leadId).update({
+                    stalledStatus: 'COLD_NURTURE_ROUND_2_SENT',
+                    archiveDueAt,
+                    updatedAt: nowIso
+                }).catch(() => {});
+            }
         }
 
         // 8. Log in AI Activity Stream

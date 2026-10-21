@@ -605,6 +605,20 @@ function renderConversationsList() {
                         </span>
                         
                         <div style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
+                            ${(() => {
+                                if (conv.stalledState === 'WAITING_REPLY') {
+                                    return `<span class="badge" title="En attente de réponse (Relance J+2)" style="font-size:9px; padding:2px 6px; border-radius:10px; background:rgba(251,146,60,0.15); color:#FB923C; border:1px solid rgba(251,146,60,0.3);">⏳ Relance J+2</span>`;
+                                } else if (conv.stalledState === 'BUMP_SENT') {
+                                    return `<span class="badge" title="Relance J+2 envoyée, Break-up J+5 si sans réponse" style="font-size:9px; padding:2px 6px; border-radius:10px; background:rgba(234,179,8,0.15); color:#FACC15; border:1px solid rgba(234,179,8,0.3);">⚡ Relance J+2</span>`;
+                                } else if (conv.stalledState === 'BREAKUP_SENT') {
+                                    return `<span class="badge" title="Break-up envoyé (Nurturing J+60)" style="font-size:9px; padding:2px 6px; border-radius:10px; background:rgba(168,85,247,0.15); color:#C084FC; border:1px solid rgba(168,85,247,0.3);">🚪 Break-up</span>`;
+                                } else if (conv.stalledState && conv.stalledState.startsWith('COLD_NURTURE')) {
+                                    return `<span class="badge" title="Cold Nurturing actif" style="font-size:9px; padding:2px 6px; border-radius:10px; background:rgba(16,185,129,0.15); color:#10B981; border:1px solid rgba(16,185,129,0.3);">🌱 Nurturing</span>`;
+                                } else if (conv.stalledState === 'ARCHIVED_INACTIVE') {
+                                    return `<span class="badge" title="Archivé après 6 mois sans réponse (LCAP/CASL)" style="font-size:9px; padding:2px 6px; border-radius:10px; background:rgba(100,116,139,0.15); color:#94A3B8; border:1px solid rgba(100,116,139,0.3);">📁 Archivé 6m</span>`;
+                                }
+                                return '';
+                            })()}
                             ${isAiOn
                                 ? `<span class="badge" title="IA active" style="font-size:9px; padding:2px 6px; border-radius:10px; background:rgba(33,186,69,0.15); color:#21BA45; border:1px solid rgba(33,186,69,0.3);">🤖 IA</span>`
                                 : `<span class="badge" title="Mode manuel (IA arrêtée)" style="font-size:9px; padding:2px 6px; border-radius:10px; background:rgba(242,192,55,0.15); color:#F2C037; border:1px solid rgba(242,192,55,0.3);">👤 Manuel</span>`
@@ -704,6 +718,21 @@ function renderActiveThreadFrame(conv) {
                 </button>
             </div>
         </div>
+
+        ${(() => {
+            if (conv.stalledState === 'WAITING_REPLY') {
+                return `<div style="padding:7px 20px; background:rgba(251,146,60,0.08); border-bottom:1px solid rgba(251,146,60,0.22); color:#FB923C; font-size:0.78rem; display:flex; align-items:center; gap:8px;"><span class="material-icons" style="font-size:16px;">hourglass_top</span> <span>Prospect silencieux suite à sa réponse. Relance douce (Soft Bump) programmée à 48h.</span></div>`;
+            } else if (conv.stalledState === 'BUMP_SENT') {
+                return `<div style="padding:7px 20px; background:rgba(234,179,8,0.08); border-bottom:1px solid rgba(234,179,8,0.22); color:#FACC15; font-size:0.78rem; display:flex; align-items:center; gap:8px;"><span class="material-icons" style="font-size:16px;">mark_chat_read</span> <span>Relance douce J+2 envoyée. Break-up SMS poli prévu à J+5 si aucune réponse.</span></div>`;
+            } else if (conv.stalledState === 'BREAKUP_SENT') {
+                return `<div style="padding:7px 20px; background:rgba(168,85,247,0.08); border-bottom:1px solid rgba(168,85,247,0.22); color:#C084FC; font-size:0.78rem; display:flex; align-items:center; gap:8px;"><span class="material-icons" style="font-size:16px;">door_front</span> <span>Break-up SMS envoyé. Clôture polie active, lead basculé en Cold Nurture J+60.</span></div>`;
+            } else if (conv.stalledState && conv.stalledState.startsWith('COLD_NURTURE')) {
+                return `<div style="padding:7px 20px; background:rgba(16,185,129,0.08); border-bottom:1px solid rgba(16,185,129,0.22); color:#34D399; font-size:0.78rem; display:flex; align-items:center; gap:8px;"><span class="material-icons" style="font-size:16px;">eco</span> <span>Lead en Cold Nurture semestriel (Touchpoints J+60 et 6 mois, puis archivage conforme LCAP/CASL).</span></div>`;
+            } else if (conv.stalledState === 'ARCHIVED_INACTIVE') {
+                return `<div style="padding:7px 20px; background:rgba(100,116,139,0.08); border-bottom:1px solid rgba(100,116,139,0.22); color:#94A3B8; font-size:0.78rem; display:flex; align-items:center; gap:8px;"><span class="material-icons" style="font-size:16px;">archive</span> <span>Lead archivé automatiquement après 6 mois sans contact, en conformité avec la loi canadienne LCAP/CASL.</span></div>`;
+            }
+            return '';
+        })()}
 
         <!-- Chat History Scrollable Area -->
         <div id="sms-chat-messages" style="flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:12px;">
@@ -812,23 +841,35 @@ function renderActiveThreadMessages(conv) {
     }
 
     messagesEl.innerHTML = msgs.map(m => {
-        const isUser = m.role === 'user';
-        const isAi = m.role === 'assistant' && (m.author === 'ai' || !m.author);
-        const isAgent = m.role === 'assistant' && (m.author === 'human' || m.author === 'agent');
-
+        const isAssistant = m.role === 'assistant';
         let bubbleClass = 'sms-bubble-in';
         let badgeHtml = '';
         let senderTag = 'Prospect / Client';
 
-        if (isAi) {
-            bubbleClass = 'sms-bubble-ai';
-            senderTag = '✨ IA Quasar';
-            badgeHtml = `<span style="font-size:10px; color:var(--gold); font-weight:600; display:inline-flex; align-items:center; gap:4px; margin-bottom:4px;"><span class="material-icons" style="font-size:12px;">auto_awesome</span> ${senderTag}</span>`;
-        } else if (isAgent) {
-            bubbleClass = 'sms-bubble-agent';
-            senderTag = `👤 Agent (${m.senderName || 'Humain'})`;
-            badgeHtml = `<span style="font-size:10px; color:#31CCEC; font-weight:600; display:inline-flex; align-items:center; gap:4px; margin-bottom:4px;"><span class="material-icons" style="font-size:12px;">person</span> ${senderTag}</span>`;
+        if (isAssistant) {
+            if (m.author === 'human' || m.author === 'agent') {
+                bubbleClass = 'sms-bubble-agent';
+                senderTag = `👤 Agent (${m.senderName || 'Humain'})`;
+                badgeHtml = `<span style="font-size:10px; color:#31CCEC; font-weight:600; display:inline-flex; align-items:center; gap:4px; margin-bottom:4px;"><span class="material-icons" style="font-size:12px;">person</span> ${senderTag}</span>`;
+            } else if (m.author === 'sequence') {
+                bubbleClass = 'sms-bubble-ai';
+                senderTag = `⚡ Séquence SMS${m.sequenceStep ? ` (Étape ${m.sequenceStep})` : ''}`;
+                badgeHtml = `<span style="font-size:10px; color:var(--gold); font-weight:600; display:inline-flex; align-items:center; gap:4px; margin-bottom:4px;"><span class="material-icons" style="font-size:12px;">auto_awesome</span> ${senderTag}</span>`;
+            } else if (m.author === 'ai_soft_bump' || m.author === 'ai_breakup') {
+                bubbleClass = 'sms-bubble-ai';
+                senderTag = m.author === 'ai_breakup' ? '🚪 Break-up SMS' : '⚡ Relance J+2';
+                badgeHtml = `<span style="font-size:10px; color:#FACC15; font-weight:600; display:inline-flex; align-items:center; gap:4px; margin-bottom:4px;"><span class="material-icons" style="font-size:12px;">schedule_send</span> ${senderTag}</span>`;
+            } else if (m.author === 'ai_followup') {
+                bubbleClass = 'sms-bubble-ai';
+                senderTag = '🌱 Nurturing Follow-up';
+                badgeHtml = `<span style="font-size:10px; color:#34D399; font-weight:600; display:inline-flex; align-items:center; gap:4px; margin-bottom:4px;"><span class="material-icons" style="font-size:12px;">eco</span> ${senderTag}</span>`;
+            } else {
+                bubbleClass = 'sms-bubble-ai';
+                senderTag = '✨ IA Quasar';
+                badgeHtml = `<span style="font-size:10px; color:var(--gold); font-weight:600; display:inline-flex; align-items:center; gap:4px; margin-bottom:4px;"><span class="material-icons" style="font-size:12px;">auto_awesome</span> ${senderTag}</span>`;
+            }
         } else {
+            bubbleClass = 'sms-bubble-in';
             badgeHtml = `<span style="font-size:10px; color:var(--text-muted); font-weight:600; display:inline-flex; align-items:center; gap:4px; margin-bottom:4px;"><span class="material-icons" style="font-size:12px;">sms</span> ${conv.clientName || 'Prospect'}</span>`;
         }
 

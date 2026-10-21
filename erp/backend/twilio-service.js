@@ -42,6 +42,39 @@ function normalizePhone(rawPhone) {
 }
 
 /**
+ * Generates common punctuation and format variations of a phone number
+ * to ensure bulletproof matching across Firestore collections regardless of user formatting.
+ */
+function getPhoneVariations(rawPhone) {
+    if (!rawPhone) return [];
+    const cleaned = String(rawPhone).trim();
+    const digitsOnly = cleaned.replace(/\D/g, '');
+    const tenDigits = (digitsOnly.length === 11 && digitsOnly.startsWith('1')) ? digitsOnly.slice(1) : digitsOnly.slice(-10);
+
+    if (tenDigits.length !== 10) {
+        return Array.from(new Set([rawPhone, cleaned])).filter(Boolean);
+    }
+
+    const d3 = tenDigits.slice(0, 3);
+    const m3 = tenDigits.slice(3, 6);
+    const l4 = tenDigits.slice(6);
+
+    const set = new Set([
+        `+1${tenDigits}`,
+        `1${tenDigits}`,
+        tenDigits,
+        `${d3} ${m3} ${l4}`,
+        `(${d3}) ${m3}-${l4}`,
+        `(${d3}) ${m3} ${l4}`,
+        `${d3}-${m3}-${l4}`,
+        `+1 ${d3} ${m3} ${l4}`,
+        `+1 (${d3}) ${m3}-${l4}`,
+        cleaned
+    ]);
+    return Array.from(set).filter(Boolean).slice(0, 10);
+}
+
+/**
  * Human-readable timezone labels in French / English
  */
 function getHumanTzName(tz, isEn = false) {
@@ -672,22 +705,24 @@ async function handleIncomingSms({ from, body, messageSid }) {
     if (isOptOutKeyword(text)) {
         console.log(`[Twilio Webhook] Opt-out requested by ${formattedFrom}`);
 
+        const phoneVars = getPhoneVariations(formattedFrom);
+
         // Update in crm_leads
-        const leadsSnap = await db.collection('crm_leads').where('phone', '==', formattedFrom).get();
+        const leadsSnap = await db.collection('crm_leads').where('phone', 'in', phoneVars).get();
         leadsSnap.forEach(d => d.ref.update({ smsOptOut: true, doNotContact: true }));
 
         // Update in clients
-        const clientsSnap = await db.collection('clients').where('phone', '==', formattedFrom).get();
+        const clientsSnap = await db.collection('clients').where('phone', 'in', phoneVars).get();
         clientsSnap.forEach(d => d.ref.update({ smsOptOut: true, doNotContact: true }));
 
         // Update in Lead Hunter leads collection (both 'phone' and 'phone_number')
         const huntSnap = await db.collection('leads')
-            .where('phone', 'in', [formattedFrom, from, from.replace('+1', '')])
+            .where('phone', 'in', phoneVars)
             .get();
         huntSnap.forEach(d => d.ref.update({ smsOptOut: true, doNotContact: true }));
 
         const huntSnapOld = await db.collection('leads')
-            .where('phone_number', 'in', [formattedFrom, from, from.replace('+1', '')])
+            .where('phone_number', 'in', phoneVars)
             .get();
         huntSnapOld.forEach(d => d.ref.update({ smsOptOut: true, doNotContact: true }));
 
@@ -698,15 +733,16 @@ async function handleIncomingSms({ from, body, messageSid }) {
     // 1b. Opt-in check (Resubscribe: START / RECOMMENCER / etc.)
     if (isOptInKeyword(text)) {
         console.log(`[Twilio Webhook] Opt-in / Resubscribe requested by ${formattedFrom}`);
+        const phoneVars = getPhoneVariations(formattedFrom);
 
-        const leadsSnap = await db.collection('crm_leads').where('phone', '==', formattedFrom).get();
+        const leadsSnap = await db.collection('crm_leads').where('phone', 'in', phoneVars).get();
         leadsSnap.forEach(d => d.ref.update({ smsOptOut: false, doNotContact: false }));
 
-        const clientsSnap = await db.collection('clients').where('phone', '==', formattedFrom).get();
+        const clientsSnap = await db.collection('clients').where('phone', 'in', phoneVars).get();
         clientsSnap.forEach(d => d.ref.update({ smsOptOut: false, doNotContact: false }));
 
         const huntSnap = await db.collection('leads')
-            .where('phone', 'in', [formattedFrom, from, from.replace('+1', '')])
+            .where('phone', 'in', phoneVars)
             .get();
         huntSnap.forEach(d => d.ref.update({ smsOptOut: false, doNotContact: false }));
 
@@ -749,9 +785,11 @@ async function handleIncomingSms({ from, body, messageSid }) {
     let leadRef = null;
     let leadData = null;
 
+    const leadPhoneVars = getPhoneVariations(formattedFrom);
+
     // Search in crm_leads
     const leadsSearch = await db.collection('crm_leads')
-        .where('phone', 'in', [formattedFrom, from, from.replace('+1', '')])
+        .where('phone', 'in', leadPhoneVars)
         .limit(1)
         .get();
 
@@ -767,7 +805,7 @@ async function handleIncomingSms({ from, body, messageSid }) {
     } else {
         // Search in clients
         const clientsSearch = await db.collection('clients')
-            .where('phone', 'in', [formattedFrom, from, from.replace('+1', '')])
+            .where('phone', 'in', leadPhoneVars)
             .limit(1)
             .get();
         if (!clientsSearch.empty) {
@@ -783,14 +821,14 @@ async function handleIncomingSms({ from, body, messageSid }) {
             // Search in Lead Hunter 'leads' collection
             let matchedHuntingDoc = null;
             const huntSearch1 = await db.collection('leads')
-                .where('phone_number', 'in', [formattedFrom, from, from.replace('+1', '')])
+                .where('phone_number', 'in', leadPhoneVars)
                 .limit(1)
                 .get();
             if (!huntSearch1.empty) matchedHuntingDoc = huntSearch1.docs[0];
 
             if (!matchedHuntingDoc) {
                 const huntSearch2 = await db.collection('leads')
-                    .where('phone', 'in', [formattedFrom, from, from.replace('+1', '')])
+                    .where('phone', 'in', leadPhoneVars)
                     .limit(1)
                     .get();
                 if (!huntSearch2.empty) matchedHuntingDoc = huntSearch2.docs[0];
@@ -838,6 +876,12 @@ async function handleIncomingSms({ from, body, messageSid }) {
         content: text,
         timestamp: new Date().toISOString()
     });
+
+    // Mark stalled conversation as resolved/replied if active
+    try {
+        const stalledRecoveryService = require('./stalled-recovery-service');
+        stalledRecoveryService.markConversationReplied(formattedFrom).catch(() => {});
+    } catch (_) {}
 
     // 1f. Loop Breaker: Courtesy Acknowledgment after confirmed booking or followup
     if (isCourtesyAck(text, history, sessionDoc.exists ? sessionDoc.data() : {})) {
@@ -1040,15 +1084,17 @@ ${isDifferentTz ? `ATTENTION DÉCALAGE : Le prospect est dans un fuseau horaire 
 ${knowledgeDoc}
 
 [ACCÈS DIRECT AUX OUTILS & SUIVIS / TOOLS]
-Tu as trois outils (tools) à ta disposition :
+Tu as 5 outils (tools) à ta disposition :
 1. 'get_available_slots' : vérifie les créneaux libres en temps réel dans Google Calendar pour un appel découverte (15-30 min). Tu DOIS l'utiliser pour proposer des créneaux réels avec la date précise. N'invente JAMAIS de créneaux fictifs.
-2. 'book_appointment' : OBLIGATOIRE ! Réserve fermement le rendez-vous dans Google Calendar avec Google Meet dès que le prospect accepte ou valide un horaire.
+2. 'book_appointment' : OBLIGATOIRE ! Réserve fermement un nouveau rendez-vous dans Google Calendar avec Google Meet dès que le prospect accepte ou valide un horaire.
    ⚠️ RÈGLE DE SÉCURITÉ TEMPORELLE ABSOLUE :
    - L'heure 'appointmentTime' DOIT être STRICTEMENT DANS LE FUTUR avec au minimum 2 heures de préavis par rapport à l'heure actuelle (${nowInProspect}).
    - IL EST STRICTEMENT INTERDIT de réserver dans le passé.
    - Cohérence jour de la semaine et date : Si aujourd'hui est ${nowInProspect}, assure-toi que la date calendaire correspond exactement au jour demandé (si on est mardi 20 oct et que le prospect demande jeudi, la date est le 22 oct, JAMAIS le 20 oct !).
    - N'écris JAMAIS de confirmation de rendez-vous sans exécuter 'book_appointment' avec succès !
-3. 'schedule_followup' : PROGRAMME UNE RELANCE 100% AUTONOME si le prospect dit qu'il n'est pas disponible maintenant mais plus tard (ex: "rappelez-moi dans 2 semaines", "je suis en vacances", "recontactez-moi en novembre / le mois prochain / au printemps", "pas le temps cette semaine, relancez-moi plus tard"). Appelle cet outil dès qu'un report est demandé, puis confirme chaleureusement dans ton SMS que c'est bien noté et que tu lui réécriras à ce moment-là !
+3. 'reschedule_appointment' : OBLIGATOIRE POUR REPROGRAMMER / DÉCALER ! Si le prospect demande de reporter, décaler, changer l'heure ou repousser son rendez-vous (ex: "Can I reschedule?", "Pouvez-vous reporter mon rdv ?", "Décalons à vendredi 14h"), appelle cet outil pour décaler son rendez-vous dans Google Calendar et reprogrammer les rappels SMS ! Propose des créneaux avec 'get_available_slots' si nécessaire.
+4. 'cancel_appointment' : ANNULE UN RENDEZ-VOUS si le prospect demande expressément d'annuler sa rencontre (ex: "Annulez mon appel", "Je ne pourrai pas venir").
+5. 'schedule_followup' : PROGRAMME UNE RELANCE 100% AUTONOME si le prospect dit qu'il n'est pas disponible maintenant mais plus tard sans date précise de rendez-vous (ex: "rappelez-moi dans 2 semaines", "je suis en vacances", "recontactez-moi en novembre / le mois prochain / au printemps", "pas le temps cette semaine, relancez-moi plus tard"). Appelle cet outil dès qu'un report est demandé, puis confirme chaleureusement dans ton SMS que c'est bien noté et que tu lui réécriras à ce moment-là !
 
 RÈGLES IMPORTANTES SMS :
 - Sois très concis (1 SMS court, idéalement moins de 160 caractères, max 200).
@@ -1082,6 +1128,40 @@ RÈGLES IMPORTANTES SMS :
                         prospectEmail: { type: "string", description: "Email du prospect s'il a été communiqué" }
                     },
                     required: ["appointmentTime"]
+                }
+            }
+        },
+        {
+            type: "function",
+            function: {
+                name: "reschedule_appointment",
+                description: "Reprogramme ou décale un rendez-vous existant vers une nouvelle date/heure future. Met à jour Google Calendar, l'ERP et les rappels SMS. / Reschedules an existing appointment to a new future date and time.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        newAppointmentTime: { 
+                            type: "string", 
+                            description: "Nouvelle date et heure FUTURE exacte du rendez-vous au format ISO (ex: 2026-10-23T15:00:00-04:00). Min 2h d'avance. / Exact new future appointment time in ISO format." 
+                        },
+                        reason: { 
+                            type: "string", 
+                            description: "Motif du report ou notes contextuelles / Reason for reschedule" 
+                        }
+                    },
+                    required: ["newAppointmentTime"]
+                }
+            }
+        },
+        {
+            type: "function",
+            function: {
+                name: "cancel_appointment",
+                description: "Annule fermement un rendez-vous existant à la demande du prospect et désactive les rappels SMS associés. / Cancels an existing appointment at the prospect's request.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        reason: { type: "string", description: "Raison de l'annulation (ex: 'Imprévu du prospect') / Reason for cancellation" }
+                    }
                 }
             }
         },
@@ -1173,6 +1253,10 @@ RÈGLES IMPORTANTES SMS :
                     });
                     if (bookRes.success !== false) {
                         appointmentBooked = true;
+                        try {
+                            const stalledRecoveryService = require('./stalled-recovery-service');
+                            stalledRecoveryService.markConversationBooked(formattedFrom).catch(() => {});
+                        } catch (_) {}
                     }
                     toolOutput = {
                         success: true,
@@ -1183,6 +1267,94 @@ RÈGLES IMPORTANTES SMS :
                     };
                 } catch (bErr) {
                     toolOutput = { success: false, error: bErr.message };
+                }
+            } else if (fnName === 'reschedule_appointment') {
+                try {
+                    const normalizedTime = attachTimezoneOffset(fnArgs.newAppointmentTime, prospectTimezone);
+                    const activeAppt = await calendarReminderService.findActiveAppointment(formattedFrom, leadRef?.id);
+
+                    if (activeAppt) {
+                        await calendarReminderService.rescheduleAppointment(activeAppt.id, normalizedTime, {
+                            notes: `${activeAppt.notes || ''} | Reporté par SMS: ${fnArgs.reason || 'Demande client'}`
+                        });
+                        appointmentBooked = true;
+                        try {
+                            const stalledRecoveryService = require('./stalled-recovery-service');
+                            stalledRecoveryService.markConversationBooked(formattedFrom).catch(() => {});
+                        } catch (_) {}
+                        try {
+                            await smsSequenceService.notifyAdminOnProspectAction({
+                                leadId: activeAppt.id,
+                                phoneNumber: formattedFrom,
+                                clientName: clientName || activeAppt.prospectName,
+                                companyName: companyName || activeAppt.prospectPhone,
+                                actionType: 'reschedule',
+                                text: `🔄 RDV REPROGRAMMÉ au ${new Date(normalizedTime).toLocaleString('fr-CA', { timeZone: prospectTimezone })} (${prospectTzName})`
+                            });
+                        } catch (_) {}
+                        toolOutput = {
+                            success: true,
+                            rescheduled: true,
+                            appointmentId: activeAppt.id,
+                            confirmedTime: normalizedTime,
+                            prospectTimezone: prospectTzName,
+                            meetLink: activeAppt.meetLink || 'https://meet.google.com/qsr-auto-meet',
+                            message: "Appointment successfully rescheduled in Google Calendar and ERP."
+                        };
+                    } else {
+                        // Fallback: if no existing appointment was found, book as new
+                        const bookRes = await calendarReminderService.scheduleAppointment({
+                            leadId: leadRef?.id || null,
+                            prospectName: clientName || (isEn ? 'SMS Client' : 'Client SMS'),
+                            prospectPhone: formattedFrom,
+                            prospectEmail: '',
+                            prospectTimezone: prospectTimezone,
+                            businessLocation: businessLocationStr,
+                            appointmentTime: normalizedTime,
+                            notes: `Rescheduled/Booked by SMS AI: ${fnArgs.reason || 'Demande client'}`
+                        });
+                        appointmentBooked = true;
+                        toolOutput = {
+                            success: true,
+                            bookedNew: true,
+                            confirmedTime: normalizedTime,
+                            prospectTimezone: prospectTzName,
+                            meetLink: bookRes.appointment?.meetLink || 'https://meet.google.com/qsr-auto-meet',
+                            message: "New appointment booked successfully."
+                        };
+                    }
+                } catch (rErr) {
+                    toolOutput = { success: false, error: rErr.message };
+                }
+            } else if (fnName === 'cancel_appointment') {
+                try {
+                    const activeAppt = await calendarReminderService.findActiveAppointment(formattedFrom, leadRef?.id);
+                    if (activeAppt) {
+                        await calendarReminderService.cancelAppointment(activeAppt.id, fnArgs.reason || 'cancelled_by_sms_request');
+                        try {
+                            await smsSequenceService.notifyAdminOnProspectAction({
+                                leadId: activeAppt.id,
+                                phoneNumber: formattedFrom,
+                                clientName: clientName || activeAppt.prospectName,
+                                companyName: companyName || activeAppt.prospectPhone,
+                                actionType: 'cancellation',
+                                text: `❌ RDV ANNULÉ par le prospect via SMS (Motif: ${fnArgs.reason || 'Non précisé'})`
+                            });
+                        } catch (_) {}
+                        toolOutput = {
+                            success: true,
+                            cancelled: true,
+                            appointmentId: activeAppt.id,
+                            message: "Appointment successfully cancelled and reminders cleared."
+                        };
+                    } else {
+                        toolOutput = {
+                            success: true,
+                            message: "No active appointment found to cancel."
+                        };
+                    }
+                } catch (cErr) {
+                    toolOutput = { success: false, error: cErr.message };
                 }
             } else if (fnName === 'schedule_followup') {
                 try {
@@ -1288,6 +1460,8 @@ RÈGLES IMPORTANTES SMS :
         timezoneDivergence: tzDetails.divergence || false,
         language: activeLanguage,
         aiEnabled: true,
+        stalledState: appointmentBooked ? 'RESOLVED_BOOKED' : 'WAITING_REPLY',
+        lastAssistantReplyAt: new Date().toISOString(),
         unread: false,
         updatedAt: new Date().toISOString(),
         messages: history
@@ -1416,6 +1590,7 @@ module.exports = {
     twilioClient,
     fromPhoneNumber,
     normalizePhone,
+    getPhoneVariations,
     isPhoneFrancophone,
     detectMessageLanguage,
     sendSms,
