@@ -55,6 +55,7 @@ export async function initFollowup() {
                      <button class="btn btn-sm btn-primary fu-filter" data-status="ALL" style="padding:4px 8px; font-size:0.75rem;">All</button>
                      <button class="btn btn-sm fu-filter" data-status="INTERESTED" style="padding:4px 8px; font-size:0.75rem;">Interested</button>
                      <button class="btn btn-sm fu-filter" data-status="CALLBACK" style="padding:4px 8px; font-size:0.75rem;">Callback</button>
+                     <button class="btn btn-sm fu-filter" data-status="COLD_NURTURE" style="padding:4px 8px; font-size:0.75rem;">Nurturing</button>
                      <button class="btn btn-sm fu-filter" data-status="NOT_INTERESTED" style="padding:4px 8px; font-size:0.75rem;">Not Int.</button>
                 </div>
 
@@ -104,7 +105,7 @@ async function loadFollowupLeads(statusFilter) {
 
     let targetStatuses = [];
     if (statusFilter === 'ALL') {
-        targetStatuses = ['INTERESTED', 'CALLBACK', 'NOT_INTERESTED'];
+        targetStatuses = ['INTERESTED', 'CALLBACK', 'COLD_NURTURE', 'NOT_INTERESTED'];
     } else {
         targetStatuses = [statusFilter];
     }
@@ -139,6 +140,7 @@ async function loadFollowupLeads(statusFilter) {
         let statusColor = 'text-muted';
         if (l.status === 'INTERESTED') statusColor = 'text-success';
         if (l.status === 'CALLBACK') statusColor = 'text-warning';
+        if (l.status === 'COLD_NURTURE') statusColor = 'text-info';
         if (l.status === 'NOT_INTERESTED') statusColor = 'text-danger';
 
         return `

@@ -108,7 +108,7 @@ export function updateLeadsUrlParams(newParams = {}, replace = false) {
 window.updateLeadsUrlParams = updateLeadsUrlParams;
 
 export function switchLeadsTab(filter, syncUrl = true) {
-    const validFilters = ['ALL', 'NEW', 'AUDITED', 'APPROVED', 'CONTACTED', 'INTERESTED', 'MEETING_SCHEDULED', 'CLIENT', 'REJECTED'];
+    const validFilters = ['ALL', 'NEW', 'AUDITED', 'APPROVED', 'CONTACTED', 'INTERESTED', 'COLD_NURTURE', 'MEETING_SCHEDULED', 'CLIENT', 'REJECTED'];
     const targetFilter = validFilters.includes(filter) ? filter : 'NEW';
 
     currentMainFilter = targetFilter;
@@ -206,10 +206,14 @@ function getStatusConfig(status) {
             return { label: 'Contacté', className: 'lead-status-contacted', color: '#60A5FA' };
         case 'INTERESTED':
             return { label: 'Intéressé', className: 'lead-status-interested', color: '#FB923C' };
+        case 'COLD_NURTURE':
+            return { label: 'Nurturing', className: 'lead-status-nurture', color: '#10B981' };
         case 'MEETING_SCHEDULED':
             return { label: 'RDV Fixé', className: 'lead-status-meeting', color: '#C084FC' };
         case 'CLIENT':
             return { label: 'Client', className: 'lead-status-client', color: '#22C55E' };
+        case 'ARCHIVED':
+            return { label: 'Archivé (6 mois)', className: 'lead-status-rejected', color: '#94A3B8' };
         case 'REJECTED':
             return { label: 'Archivé', className: 'lead-status-rejected', color: '#F87171' };
         default:
@@ -306,6 +310,30 @@ function formatSequenceBadge(data) {
 
     if (seqStatus === 'STOPPED_MEETING' || data.status === 'MEETING_SCHEDULED') {
         return `<span class="lead-pill-subtle" style="background:rgba(192,132,252,0.15); border-color:rgba(192,132,252,0.3); color:#C084FC;" title="Rendez-vous fixé avec le prospect">${SVG_ICONS.calendar || '📅'} RDV Fixé</span>`;
+    }
+    if (data.stalledStatus || data.stalledState) {
+        const ss = data.stalledStatus || data.stalledState;
+        if (ss === 'WAITING_REPLY') {
+            return `<span class="lead-pill-subtle" style="background:rgba(251,146,60,0.12); border-color:rgba(251,146,60,0.3); color:#FB923C;" title="Prospect ayant répondu puis silencieux. Relance douce J+2 prévue">${SVG_ICONS.bolt || '⚡'} Relance J+2</span>`;
+        }
+        if (ss === 'BUMP_SENT') {
+            return `<span class="lead-pill-subtle" style="background:rgba(234,179,8,0.12); border-color:rgba(234,179,8,0.3); color:#FACC15;" title="Relance douce envoyée. Break-up SMS prévu à J+5 si sans réponse">${SVG_ICONS.sms} Relance J+2 envoyée</span>`;
+        }
+        if (ss === 'BREAKUP_SENT') {
+            return `<span class="lead-pill-subtle" style="background:rgba(168,85,247,0.12); border-color:rgba(168,85,247,0.3); color:#C084FC;" title="Break-up SMS envoyé. Nurturing J+60 en attente">🚪 Break-up J+5</span>`;
+        }
+        if (ss === 'COLD_NURTURE_SCHEDULED') {
+            return `<span class="lead-pill-subtle" style="background:rgba(16,185,129,0.12); border-color:rgba(16,185,129,0.3); color:#34D399;" title="Cold Nurturing long terme programmé (J+60)">🌱 Nurturing (J+60)</span>`;
+        }
+        if (ss === 'COLD_NURTURE_ROUND_1_SENT') {
+            return `<span class="lead-pill-subtle" style="background:rgba(16,185,129,0.18); border-color:rgba(16,185,129,0.35); color:#10B981;" title="Nurture Round 1 envoyé. Round 2 prévu à 6 mois">🌱 Nurture R1 (J+60)</span>`;
+        }
+        if (ss === 'COLD_NURTURE_ROUND_2_SENT') {
+            return `<span class="lead-pill-subtle" style="background:rgba(16,185,129,0.22); border-color:rgba(16,185,129,0.4); color:#059669;" title="Nurture Round 2 envoyé (Semestriel). Archivage automatique dans 14j sans réponse">🌱 Nurture R2 (6 mois)</span>`;
+        }
+        if (ss === 'ARCHIVED_INACTIVE') {
+            return `<span class="lead-pill-subtle" style="background:rgba(100,116,139,0.15); border-color:rgba(100,116,139,0.3); color:#94A3B8;" title="Archivé automatiquement après 6 mois sans réponse (LCAP/CASL)">📁 Archivé (6 mois)</span>`;
+        }
     }
     if (seqStatus === 'STOPPED_REPLIED' || data.smsStatus === 'Replied' || data.status === 'INTERESTED') {
         return `<span class="lead-pill-subtle" style="background:rgba(56,189,248,0.1); border-color:rgba(56,189,248,0.3); color:#38BDF8;" title="Le prospect a répondu">${SVG_ICONS.sms} ✋ Répondu</span>`;
@@ -499,6 +527,10 @@ export async function initLeads() {
                 <span>Intéressés</span>
                 <span class="lead-filter-badge" id="count-filter-INTERESTED">0</span>
             </button>
+            <button class="btn btn-sm" data-filter="COLD_NURTURE" style="border-radius:20px; padding:5px 12px; font-size:0.8rem; display:inline-flex; align-items:center;">
+                <span>🌱 Nurturing</span>
+                <span class="lead-filter-badge" id="count-filter-COLD_NURTURE">0</span>
+            </button>
             <button class="btn btn-sm" data-filter="MEETING_SCHEDULED" style="border-radius:20px; padding:5px 12px; font-size:0.8rem; display:inline-flex; align-items:center;">
                 <span>RDV Fixé</span>
                 <span class="lead-filter-badge" id="count-filter-MEETING_SCHEDULED">0</span>
@@ -558,7 +590,7 @@ export async function initLeads() {
     const storedTab = localStorage.getItem('erp_leads_active_tab');
     const storedSub = localStorage.getItem('erp_leads_active_subfilter');
 
-    const validFilters = ['ALL', 'NEW', 'AUDITED', 'APPROVED', 'CONTACTED', 'INTERESTED', 'MEETING_SCHEDULED', 'CLIENT', 'REJECTED'];
+    const validFilters = ['ALL', 'NEW', 'AUDITED', 'APPROVED', 'CONTACTED', 'INTERESTED', 'COLD_NURTURE', 'MEETING_SCHEDULED', 'CLIENT', 'REJECTED'];
     let initialFilter = urlParams.filter || storedTab || 'NEW';
     if (urlParams.id && !urlParams.filter && !storedTab) {
         initialFilter = 'ALL';
@@ -1107,6 +1139,7 @@ function updateFilterCounts(leads) {
         APPROVED: 0,
         CONTACTED: 0,
         INTERESTED: 0,
+        COLD_NURTURE: 0,
         MEETING_SCHEDULED: 0,
         CLIENT: 0,
         REJECTED: 0
@@ -1118,9 +1151,10 @@ function updateFilterCounts(leads) {
         else if (status === 'APPROVED') counts.APPROVED++;
         else if (status === 'CONTACTED') counts.CONTACTED++;
         else if (status === 'INTERESTED') counts.INTERESTED++;
+        else if (status === 'COLD_NURTURE') counts.COLD_NURTURE++;
         else if (status === 'MEETING_SCHEDULED') counts.MEETING_SCHEDULED++;
         else if (status === 'CLIENT') counts.CLIENT++;
-        else if (status === 'REJECTED') counts.REJECTED++;
+        else if (status === 'REJECTED' || status === 'ARCHIVED') counts.REJECTED++;
 
         if (l.lastAudit || l.audit_date || l.confidence_score !== undefined || l.leadCategory) {
             counts.AUDITED++;

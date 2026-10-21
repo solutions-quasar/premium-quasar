@@ -1961,6 +1961,12 @@ button.nav-link.mobile-burger-btn .material-icons {
     border: 1px solid rgba(239, 68, 68, 0.2);
 }
 
+.lead-status-nurture {
+    background: rgba(16, 185, 129, 0.14);
+    color: #34D399;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
 .lead-pill-subtle {
     font-size: 0.72rem;
     padding: 2px 7px;
