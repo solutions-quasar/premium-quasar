@@ -117,7 +117,7 @@ function resolveWeekdayTime(dayName, hour, min = 0, targetTimezone = 'America/Mo
         }).formatToParts(candidate);
         const p = {};
         parts.forEach(x => p[x.type] = x.value);
-        
+
         const dayStr = new Intl.DateTimeFormat('en-US', {
             timeZone: targetTimezone,
             weekday: 'short'
@@ -171,7 +171,11 @@ function attachTimezoneOffset(isoOrDateStr, timezone = 'America/Moncton') {
  * - 🇺🇸 USA Destinations: Routed via Telnyx API v2 (+1 832 743 6292 Houston, TX)
  * - 🇨🇦 Canada Destinations: Routed via Twilio (+1 819 300 2831 QC)
  */
-async function sendSms({ to, message, allowLandline = false, forceProvider = null, leadContext = {} }) {
+async function sendSms(arg1, arg2, arg3 = {}) {
+    const opts = (typeof arg1 === 'object' && arg1 !== null)
+        ? arg1
+        : { to: arg1, message: arg2, ...(typeof arg3 === 'object' && arg3 !== null ? arg3 : {}) };
+    const { to, message, allowLandline = false, forceProvider = null, leadContext = {} } = opts;
     const formattedTo = normalizePhone(to);
     if (!formattedTo || formattedTo.length < 10) {
         throw new Error(`Invalid phone number: ${to}`);
@@ -375,16 +379,19 @@ function detectMessageLanguage(text, conversationHistory = [], defaultFallback =
 /**
  * Default System Prompt and Documentation for the SMS AI Agent (Bilingual FR / EN)
  */
-const DEFAULT_SYSTEM_PROMPT = `Tu es l'assistant commercial IA bilingue de Solutions Quasar Inc. (agence d'automatisation IA, développement web et logiciels ERP à Deschambault, QC, Canada).
+const DEFAULT_SYSTEM_PROMPT = `Tu es le collaborateur commercial et conseiller de Solutions Quasar Inc. (agence d'automatisation IA, développement web et logiciels ERP à Deschambault, QC, Canada).
 Tu discutes par SMS avec des prospects et clients francophones et anglophones en Amérique du Nord (Canada & USA).
 
 RÈGLES STRICTES DE RÉPONSE SMS :
-1. CONCIS : Ta réponse DOIT faire moins de 160 caractères (1 SMS standard, max 200) pour rester percutante.
-2. Ton : Chaleureux, professionnel, courtois et très humain.
-3. Objectif : Répondre à sa question avec précision en t'appuyant sur la documentation de l'entreprise, lever les objections ou proposer un court appel découverte de 10-15 minutes (ex: "Avez-vous 10 min mardi ou jeudi ?" / "Would Thursday at 2:00 PM AST work for a quick 10-min call?").
-4. Langue OBLIGATOIRE : Tu es un assistant commercial 100% bilingue (français et anglais). Réponds TOUJOURS dans la même langue que le dernier message du prospect (100% français s'il écrit en français, 100% anglais s'il écrit en anglais). Ne mélange jamais les langues dans un même SMS. Si le prospect bascule en anglais ou te demande d'échanger en anglais, réponds-lui toujours en anglais. Ne dis JAMAIS que tu ne parles que français ou que tu ne peux pas répondre en anglais.
-5. PRISE DE RENDEZ-VOUS EN DIRECT : Tu as l'autorisation TOTALE de planifier et confirmer les rendez-vous en direct par SMS avec tes outils. Ne dis JAMAIS que tu ne peux pas réserver par SMS ou qu'il faut envoyer un courriel. Utilise 'get_available_slots' pour proposer des créneaux libres et 'book_appointment' pour confirmer fermement.
-6. Ne promets aucun prix définitif non documenté sans consultation préalable.`;
+1. CONCIS : Ta réponse doit idéalement faire moins de 160 caractères (1 SMS standard, max 200 pour inclure date/heure/fuseau horaire). Reste direct, percutant et naturel.
+2. Ton : Chaleureux, professionnel, courtois et très humain. Exprime-toi naturellement au nom de l'équipe de Solutions Quasar ou de Ben (Benjamin) qui a initié l'échange. Ne dis JAMAIS que tu es un robot ou une IA.
+3. Objectif : Répondre à sa question avec précision en t'appuyant sur la documentation de l'entreprise, lever les objections ou proposer un court appel découverte de 10-15 minutes (ex: "Avez-vous 10 min cette semaine ?" / "Would you have 10 min this week for a quick chat?").
+4. Langue OBLIGATOIRE : Tu es un collaborateur commercial 100% bilingue (français et anglais). Réponds TOUJOURS dans la même langue que le dernier message du prospect (100% français s'il écrit en français, 100% anglais s'il écrit en anglais). Ne mélange jamais les langues dans un même SMS. Si le prospect bascule en anglais ou te demande d'échanger en anglais, réponds-lui toujours en anglais. Ne dis JAMAIS que tu ne parles que français ou que tu ne peux pas répondre en anglais.
+5. FUSEAU HORAIRE DU COMMERCE : Propose TOUJOURS les créneaux dans l'heure locale du commerce du prospect fournie dans les directives de contexte.
+6. PRISE DE RENDEZ-VOUS EN DIRECT : Tu as l'autorisation TOTALE de planifier et confirmer les rendez-vous en direct par SMS avec tes outils. Ne dis JAMAIS que tu ne peux pas réserver par SMS ou qu'il faut envoyer un courriel. Utilise 'get_available_slots' pour vérifier les créneaux libres et 'book_appointment' pour confirmer fermement.
+7. TARIFS : Si le prospect demande les prix, donne la base indicative documentée (à partir de 350 $/mois pour l'hébergement et l'entretien) et propose un court appel de 10 min sans engagement pour un devis personnalisé exact.
+8. PAS DE MENTION [STOP] EN CONVERSATION : N'ajoute pas de mention de désabonnement [STOP] lors des réponses en cours de conversation (elle est réservée au premier SMS sortant).
+9. RÈGLE CRITIQUE D'OUVERTURE / SALUTATION : N'utilise JAMAIS le nom du commerce ou de l'entreprise en guise de prénom pour saluer (ex: INTERDICTION d'écrire "Bonjour [NomEntreprise]" ou "Hey [BusinessName]"). Si le prénom d'une personne est explicitement fourni, utilise-le (ex: "Bonjour Sophie,"). Si aucun prénom humain n'est fourni, salue naturellement SANS prénom (ex: "Bonjour !", "Allo !", "Hello!", "Hi there!").`;
 
 const DEFAULT_DOCUMENTATION = `# SOLUTIONS QUASAR INC. - OFFICIAL KNOWLEDGE BASE / BASE DE CONNAISSANCES
 
@@ -431,7 +438,8 @@ RÈGLES STRICTES :
 4. Termine par un appel à l'action léger et sans engagement (ex: "Avez-vous 5 min cette semaine pour en discuter ?" / "Would you be open for a quick 5-min chat this week?").
 5. Inclus obligatoirement la mention de désabonnement en fin de message : [Rép. STOP pour cesser] (FR) ou [Reply STOP to opt out] (EN).
 6. Respecte strictement la langue demandée (100% français ou 100% anglais).
-7. Renvoie STRICTEMENT le texte brut du SMS, rien d'autre.`;
+7. SALUTATION : N'utilise JAMAIS le nom de l'entreprise comme prénom d'ouverture. Si un prénom humain est fourni, utilise-le. Sinon, salue directement sans prénom.
+8. Renvoie STRICTEMENT le texte brut du SMS, rien d'autre.`;
 
 /**
  * Loads current SMS AI configuration from Firestore or falls back to defaults
@@ -558,17 +566,25 @@ Additional Instructions / Custom Context: ${customPrompt || 'None'}`;
 const inboundRateLimitTracker = new Map();
 
 /**
- * Checks if incoming text is an automated out-of-office or delivery failure auto-responder
+ * Checks if incoming text is an automated out-of-office, delivery failure, or bot/automated fallback response.
+ * Prevents AI bot-to-bot ping pong loops.
  */
 function isAutoResponderText(rawText) {
     if (!rawText || typeof rawText !== 'string') return false;
     const t = rawText.trim();
     const patterns = [
         /\b(out of (the )?office|automatic(ally)? (reply|response)|auto-?reply|autoreply)\b/i,
-        /\b(absence du bureau|message automatique|réponse automatique|ne pas r[eé]pondre|do not reply)\b/i,
+        /\b(absence du bureau|message automatique|réponse automatique|ne pas r[eé]pondre|do not reply)/i,
         /\b(delivery status notification|undeliverable|failure notice|mail delivery subsystem)\b/i,
-        /\b(i am currently (away|out)|i will be (away|out)|je serai de retour|de retour le)\b/i,
-        /\b(notification d'?état de distribution|échec de remise)\b/i
+        /\b(i am currently (away|out)|i will be (away|out)|je serai de retour|de retour le)/i,
+        /\b(notification d'?état de distribution|échec de remise)/i,
+        // Chatbot / Virtual assistant automated fallbacks (prevents bot-to-bot loops)
+        /(not have enough info(rmation)?|cannot help|unable to (assist|help|answer)|cannot answer)/i,
+        /(i am (sorry|an automated)|i'm (sorry|an automated)|virtual assistant|automated assistant|automated response|automated system)/i,
+        /(je n'ai pas assez d'information|pas en mesure de vous aider|ne peux pas r[eé]pondre|message automatis[eé]|r[eé]ponse automatis[eé])/i,
+        /(press [1-9]|appuyez sur [1-9]|tape[zr] [1-9])/i,
+        /(mailbox is not monitored|bo[iî]te (non surveill[eé]e|automatique))/i,
+        /(this number does not accept|ce num[eé]ro n'accepte pas)/i
     ];
     return patterns.some(p => p.test(t));
 }
@@ -629,26 +645,76 @@ function recordOutgoingAiMessage(phone) {
 }
 
 /**
- * Loop Breaker: Identifies simple polite closing acknowledgments after an appointment is already booked
+ * Loop Breaker: Identifies polite acknowledgments and closing pleasantries to suppress redundant AI replies.
+ * Prevents endless polite ping-pong loops (e.g. "Merci à vous!" -> "C'est bien noté merci!").
  */
 function isCourtesyAck(rawText, history = [], sessionData = {}) {
     if (!rawText) return false;
-    const clean = rawText.trim().toLowerCase().replace(/[.!?,;:~]+$/, '').trim();
+    const cleanPunct = rawText.trim().toLowerCase()
+        .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?!]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (!cleanPunct) return false;
+
+    // Check 1: Direct single regex patterns
     const courtesyPatterns = [
-        /^(merci|merci beaucoup|thanks|thank you|ok merci|parfait merci|super merci|parfait|d'accord|cool|c'est not[eé]|sounds good|great thanks|perfect|see you|a bientot|à bientôt|a jeudi|à jeudi|a demain|à demain)$/i,
-        /^(bonne journ[eé]e|bonne fin de journ[eé]e|have a good day|have a great day|take care|bonne soir[eé]e)$/i
+        /^(merci(\s+(beaucoup|infiniment|bien|[aà]\s+(vous|toi)))?|thanks(\s+(a\s+lot|very\s+much|so\s+much))?|thank\s+you(\s+so\s+much)?|thx)$/i,
+        /^(ok\s+merci|parfait\s+merci|super\s+merci|merci\s+bonne\s+(journ[eé]e|soir[eé]e)|merci\s+bon\s+week-?end)$/i,
+        /^(parfait|d'accord|cool|c'est\s+not[eé]|sounds\s+good|great\s+thanks|perfect|awesome)$/i,
+        /^(avec\s+plaisir|de\s+rien|bienvenue|you'?re\s+welcome|no\s+worries|my\s+pleasure)$/i,
+        /^(bonne\s+suite(\s+[aà]\s+(vous|toi))?|bonne\s+journ[eé]e(\s+[aà]\s+(vous|toi))?|bonne\s+fin\s+de\s+journ[eé]e|bon\s+week-?end|bonne\s+soir[eé]e)$/i,
+        /^(have\s+a\s+(good|great|nice)\s+(day|weekend|evening)|take\s+care|cheers)$/i,
+        /^(a\s+bient[oô]t|à\s+bientôt|a\s+plus|à\s+plus|au\s+revoir|bye|bye-?bye|see\s+you(\s+soon)?)$/i,
+        /^(toi\s+aussi|vous\s+aussi|pareillement|you\s+too|same\s+to\s+you)$/i
     ];
-    const isAck = courtesyPatterns.some(p => p.test(clean));
+    let isAck = courtesyPatterns.some(p => p.test(cleanPunct));
+
+    // Check 2: Composite courtesy phrases (e.g. "Avec plaisir! Bonne suite à vous.")
+    if (!isAck) {
+        const courtesySubstrings = [
+            'bonne fin de journee', 'bonne fin de journée',
+            'bonne journee a vous', 'bonne journée à vous',
+            'bonne suite a vous', 'bonne suite à vous', 'bonne continuation', 'bonne suite',
+            'merci beaucoup', 'merci infiniment', 'merci a vous', 'merci à vous', 'merci a toi', 'merci à toi', 'merci bien', 'merci',
+            'thank you very much', 'thank you so much', 'thank you', 'thanks a lot', 'thanks', 'thx',
+            'have a great day', 'have a good day', 'have a nice day', 'have a great weekend', 'have a good weekend',
+            'avec grand plaisir', 'avec plaisir', 'de rien', 'bienvenue', 'you are welcome', 'you re welcome', 'my pleasure', 'no problem', 'no worries',
+            'bonne journee', 'bonne journée', 'bonne soiree', 'bonne soirée', 'bon weekend', 'bon week end',
+            'a bientot', 'à bientôt', 'au revoir', 'a plus', 'à plus', 'see you soon', 'see you', 'take care', 'cheers', 'bye bye', 'bye',
+            'toi aussi', 'vous aussi', 'pareillement', 'you too', 'same to you',
+            'c est note', 'c est noté', 'parfait merci', 'super merci', 'ok merci', 'sounds good', 'great thanks', 'perfect', 'parfait', 'super', 'd accord', 'daccord', 'cool', 'ok'
+        ];
+        let remainder = ` ${cleanPunct} `;
+        for (const phrase of courtesySubstrings) {
+            remainder = remainder.replace(new RegExp(`\\s+${phrase}\\s+`, 'g'), ' ');
+        }
+        if (remainder.trim().length === 0) {
+            isAck = true;
+        }
+    }
+
     if (!isAck) return false;
 
-    // Verify if last messages confirmed a meeting or scheduled a followup
+    // Check last assistant message content
     const lastAssistantMsg = [...history].reverse().find(m => m.role === 'assistant')?.content || '';
-    const hadBookingOrConfirmation = 
+
+    // 1. Meeting was booked or confirmed
+    const hadBookingOrConfirmation =
         sessionData?.appointmentBooked ||
         lastAssistantMsg.includes('meet.google.com') ||
         /\b(confirm[eé]|r[eé]serv[eé]|confirmed|booked|not[eé] pour|rendez-vous)\b/i.test(lastAssistantMsg);
+    if (hadBookingOrConfirmation) return true;
 
-    return hadBookingOrConfirmation;
+    // 2. Assistant already delivered a polite closing/wrap-up or followup confirmation
+    const assistantAlreadyClosed = /\b(bonne continuation|bonne suite|garder.*(en tête|contact)|au plaisir|revenir vers|n'h[eé]sitez pas|bonne journ[eé]e|belle journ[eé]e|bonne fin de|take care|have a (great|good) (day|weekend)|best of luck|keep you in mind|feel free to reach out|c'est bien not[eé])\b/i.test(lastAssistantMsg);
+    if (assistantAlreadyClosed) return true;
+
+    // 3. Prevent ping-pong: If assistant already sent 2 or more messages recently and user sent a short acknowledgment
+    const recentAssistantMsgs = history.slice(-4).filter(m => m.role === 'assistant');
+    if (recentAssistantMsgs.length >= 2) return true;
+
+    return false;
 }
 
 /**
@@ -693,17 +759,51 @@ function isOptInKeyword(rawText) {
 }
 
 /**
- * Handles incoming Twilio SMS Webhooks autonomously with AI conversation
+ * Handles incoming Twilio SMS & WhatsApp Webhooks autonomously with AI conversation
  */
-async function handleIncomingSms({ from, body, messageSid }) {
-    const formattedFrom = normalizePhone(from);
+async function handleIncomingSms({ from, body, messageSid, channel, provider, whatsappPhoneNumberId, alreadyRecorded = false }) {
+    const isWhatsApp = String(from || '').startsWith('whatsapp:') || channel === 'whatsapp' || provider === 'meta';
+    const rawClean = String(from || '').replace('whatsapp:', '');
+    const formattedFrom = normalizePhone(rawClean);
     const text = (body || '').trim();
+    const effectiveChannel = isWhatsApp ? 'whatsapp' : (channel || 'sms');
+    const effectiveProvider = provider || (isWhatsApp ? (String(from || '').startsWith('whatsapp:') ? 'twilio' : 'meta') : 'telnyx');
+    const cleanDigits = formattedFrom.replace(/[^\d]/g, '');
+    const sessionId = `${effectiveChannel}_${cleanDigits}`;
 
-    console.log(`[Twilio Webhook] Incoming SMS from ${formattedFrom}: "${text}"`);
+    console.log(`[Omnichannel Inbound] Channel: ${effectiveChannel.toUpperCase()} | Provider: ${effectiveProvider} | From: ${formattedFrom}: "${text}"`);
+
+    // Records the inbound message in the inbox when we exit early (filters, opt-out, rate limit),
+    // so the conversation still shows everything the customer wrote even if the AI stays silent.
+    const recordInboundOnly = async (extraFields = {}) => {
+        if (alreadyRecorded || !text) return;
+        try {
+            const ref = db.collection('conversations').doc(sessionId);
+            await db.runTransaction(async (tx) => {
+                const snap = await tx.get(ref);
+                const msgs = snap.exists ? (snap.data().messages || []) : [];
+                if (messageSid && msgs.some(m => m.messageId === messageSid)) return;
+                msgs.push({ role: 'user', author: 'user', content: text, channel: effectiveChannel, messageId: messageSid || null, timestamp: new Date().toISOString() });
+                tx.set(ref, {
+                    sessionId,
+                    channel: effectiveChannel,
+                    provider: effectiveProvider,
+                    phoneNumber: formattedFrom,
+                    lastCustomerMessageAt: new Date().toISOString(),
+                    unread: true,
+                    updatedAt: new Date().toISOString(),
+                    messages: msgs.slice(-50),
+                    ...extraFields
+                }, { merge: true });
+            });
+        } catch (e) {
+            console.warn('[Omnichannel Inbound] Could not record filtered message:', e.message);
+        }
+    };
 
     // 1. Opt-out check (Compliance: CASL & TCPA)
     if (isOptOutKeyword(text)) {
-        console.log(`[Twilio Webhook] Opt-out requested by ${formattedFrom}`);
+        console.log(`[Omnichannel Inbound] Opt-out requested by ${formattedFrom} on ${effectiveChannel}`);
 
         const phoneVars = getPhoneVariations(formattedFrom);
 
@@ -726,13 +826,21 @@ async function handleIncomingSms({ from, body, messageSid }) {
             .get();
         huntSnapOld.forEach(d => d.ref.update({ smsOptOut: true, doNotContact: true }));
 
-        const reply = "Solutions Quasar Inc. : Vous avez bien été désabonné(e) de nos messages SMS. / You have been successfully unsubscribed.";
+        const isFr = isPhoneFrancophone(formattedFrom);
+        const reply = isWhatsApp
+            ? (isFr
+                ? "Solutions Quasar Inc. : Vous avez bien été désabonné(e) de nos messages WhatsApp. / You have been successfully unsubscribed."
+                : "Solutions Quasar Inc.: You have been successfully unsubscribed from WhatsApp messages.")
+            : (isFr
+                ? "Solutions Quasar Inc. : Vous avez bien été désabonné(e) de nos messages SMS. / You have been successfully unsubscribed."
+                : "Solutions Quasar Inc.: You have been successfully unsubscribed from SMS messages.");
+        await recordInboundOnly();
         return reply;
     }
 
     // 1b. Opt-in check (Resubscribe: START / RECOMMENCER / etc.)
     if (isOptInKeyword(text)) {
-        console.log(`[Twilio Webhook] Opt-in / Resubscribe requested by ${formattedFrom}`);
+        console.log(`[Omnichannel Inbound] Opt-in / Resubscribe requested by ${formattedFrom} on ${effectiveChannel}`);
         const phoneVars = getPhoneVariations(formattedFrom);
 
         const leadsSnap = await db.collection('crm_leads').where('phone', 'in', phoneVars).get();
@@ -746,19 +854,28 @@ async function handleIncomingSms({ from, body, messageSid }) {
             .get();
         huntSnap.forEach(d => d.ref.update({ smsOptOut: false, doNotContact: false }));
 
-        const reply = "Solutions Quasar Inc. : Vous avez bien été réabonné(e) à nos messages SMS. / You have been successfully resubscribed.";
+        const isFr = isPhoneFrancophone(formattedFrom);
+        const reply = isWhatsApp
+            ? (isFr
+                ? "Solutions Quasar Inc. : Vous avez bien été réabonné(e) à nos messages WhatsApp. / You have been successfully resubscribed."
+                : "Solutions Quasar Inc.: You have been successfully resubscribed to WhatsApp messages.")
+            : (isFr
+                ? "Solutions Quasar Inc. : Vous avez bien été réabonné(e) à nos messages SMS. / You have been successfully resubscribed."
+                : "Solutions Quasar Inc.: You have been successfully resubscribed to SMS messages.");
+        await recordInboundOnly();
         return reply;
     }
 
     // 1c. Security / Anti-Spam Filter: Cyrillic / Eastern European scripts
     if (isCyrillicSpam(text)) {
-        console.warn(`[Twilio Webhook Anti-Spam] Cyrillic characters detected from ${formattedFrom}. Silently rejecting message.`);
+        console.warn(`[Omnichannel Anti-Spam] Cyrillic characters detected from ${formattedFrom}. Silently rejecting message.`);
         return null;
     }
 
     // 1d. Auto-Responder / Out-of-Office Bot Filter
     if (isAutoResponderText(text)) {
-        console.log(`[Twilio Webhook Anti-Spam] Auto-responder detected from ${formattedFrom}: "${text}". Halting AI sequence without sending reply.`);
+        console.log(`[Omnichannel Anti-Spam] Auto-responder detected from ${formattedFrom}: "${text}". Halting AI sequence without sending reply.`);
+        await recordInboundOnly();
         return null;
     }
 
@@ -766,17 +883,23 @@ async function handleIncomingSms({ from, body, messageSid }) {
     const rateCheck = checkInboundRateLimit(formattedFrom);
     if (!rateCheck.allowed) {
         if (rateCheck.dailyCapReached) {
-            console.log(`[Twilio Webhook Anti-Spam] Daily cap reached for ${formattedFrom}. Transferring to human agent.`);
-            const sessionId = `sms_${formattedFrom.replace('+', '')}`;
+            console.log(`[Omnichannel Anti-Spam] Daily cap reached for ${formattedFrom}. Transferring to human agent.`);
             await db.collection('conversations').doc(sessionId).set({ aiEnabled: false }, { merge: true });
+            await recordInboundOnly();
             const isEnHandoff = isPhoneFrancophone(formattedFrom) ? false : true;
             return isEnHandoff
                 ? "Thank you! To best assist you with detailed answers, I will have Benjamin connect with you directly."
                 : "Merci ! Pour que nous puissions faire le point plus efficacement, je laisse Benjamin prendre le relais avec vous directement.";
         }
-        console.warn(`[Twilio Webhook Anti-Spam] ${rateCheck.message} for ${formattedFrom}. Throttling response.`);
+        console.warn(`[Omnichannel Anti-Spam] ${rateCheck.message} for ${formattedFrom}. Throttling response.`);
+        await recordInboundOnly();
         return null;
     }
+
+    // Lazy requires (circular dependency with sms-sequence-service); declared before first use
+    const smsSequenceService = require('./sms-sequence-service');
+    const calendarReminderService = require('./calendar-reminder-service');
+    const followupService = require('./followup-service');
 
     // 2. Identify Lead / Client across crm_leads, clients, and leads (Lead Hunter)
     let clientName = '';
@@ -797,8 +920,9 @@ async function handleIncomingSms({ from, body, messageSid }) {
         const d = leadsSearch.docs[0];
         leadRef = d.ref;
         leadData = d.data();
-        clientName = leadData.name || leadData.business_name || '';
         companyName = leadData.company || leadData.business_name || '';
+        const humanCandidate = smsSequenceService.extractHumanFirstName(leadData);
+        clientName = humanCandidate || '';
         if (leadData.preferredLanguage) {
             preferredLang = String(leadData.preferredLanguage).toLowerCase().startsWith('en') ? 'en' : 'fr';
         }
@@ -812,8 +936,9 @@ async function handleIncomingSms({ from, body, messageSid }) {
             const d = clientsSearch.docs[0];
             leadRef = d.ref;
             leadData = d.data();
-            clientName = leadData.name || '';
             companyName = leadData.company || '';
+            const humanCandidate = smsSequenceService.extractHumanFirstName(leadData);
+            clientName = humanCandidate || '';
             if (leadData.preferredLanguage) {
                 preferredLang = String(leadData.preferredLanguage).toLowerCase().startsWith('en') ? 'en' : 'fr';
             }
@@ -837,8 +962,9 @@ async function handleIncomingSms({ from, body, messageSid }) {
             if (matchedHuntingDoc) {
                 leadRef = matchedHuntingDoc.ref;
                 leadData = matchedHuntingDoc.data();
-                clientName = leadData.name || leadData.business_name || leadData.company || '';
                 companyName = leadData.company || leadData.business_name || leadData.name || '';
+                const humanCandidate = smsSequenceService.extractHumanFirstName(leadData);
+                clientName = humanCandidate || '';
                 if (leadData.preferredLanguage) {
                     preferredLang = String(leadData.preferredLanguage).toLowerCase().startsWith('en') ? 'en' : 'fr';
                 } else if (leadData.country === 'US' || leadData.country === 'USA') {
@@ -854,7 +980,6 @@ async function handleIncomingSms({ from, body, messageSid }) {
     }
 
     // 3. Load or initialize Conversation Session
-    const sessionId = `sms_${formattedFrom.replace('+', '')}`;
     const sessionDocRef = db.collection('conversations').doc(sessionId);
     const sessionDoc = await sessionDocRef.get();
 
@@ -862,39 +987,51 @@ async function handleIncomingSms({ from, body, messageSid }) {
     let aiEnabled = true;
     if (sessionDoc.exists) {
         const sessionData = sessionDoc.data() || {};
-        history = (sessionData.messages || []).slice(-20);
+        history = (sessionData.messages || []).slice(-50);
         if (sessionData.aiEnabled !== undefined) {
             aiEnabled = sessionData.aiEnabled;
         }
-        if (!clientName && sessionData.clientName) clientName = sessionData.clientName;
+        if (!clientName && sessionData.clientName) {
+            const verifiedHuman = smsSequenceService.extractHumanFirstName({
+                first_name: sessionData.clientName,
+                name: sessionData.clientName,
+                company: sessionData.companyName || companyName
+            });
+            if (verifiedHuman) clientName = verifiedHuman;
+        }
         if (!companyName && sessionData.companyName) companyName = sessionData.companyName;
     }
 
-    // Append incoming user message
-    history.push({
+    // Append incoming user message (unless the webhook already recorded it, e.g. WhatsApp Cloud API)
+    if (!alreadyRecorded) history.push({
         role: "user",
+        author: "user",
         content: text,
+        channel: effectiveChannel,
         timestamp: new Date().toISOString()
     });
 
     // Mark stalled conversation as resolved/replied if active
     try {
         const stalledRecoveryService = require('./stalled-recovery-service');
-        stalledRecoveryService.markConversationReplied(formattedFrom).catch(() => {});
-    } catch (_) {}
+        stalledRecoveryService.markConversationReplied(formattedFrom).catch(() => { });
+    } catch (_) { }
 
     // 1f. Loop Breaker: Courtesy Acknowledgment after confirmed booking or followup
     if (isCourtesyAck(text, history, sessionDoc.exists ? sessionDoc.data() : {})) {
-        console.log(`[Twilio Webhook Loop Breaker] Courtesy acknowledgment received from ${formattedFrom}: "${text}" after appointment/followup. Suppressing redundant reply.`);
+        console.log(`[Omnichannel Loop Breaker] Courtesy acknowledgment received from ${formattedFrom}: "${text}" after appointment/followup. Suppressing redundant reply.`);
         await sessionDocRef.set({
             sessionId,
-            channel: 'sms',
+            channel: effectiveChannel,
+            provider: effectiveProvider,
             phoneNumber: formattedFrom,
-            clientName: clientName || null,
+            whatsappPhoneNumberId: whatsappPhoneNumberId || (sessionDoc.exists ? sessionDoc.data().whatsappPhoneNumberId : null),
+            lastCustomerMessageAt: new Date().toISOString(),
+            clientName: clientName || (isWhatsApp ? 'Prospect WhatsApp' : null),
             companyName: companyName || null,
             unread: false,
             updatedAt: new Date().toISOString(),
-            messages: history
+            messages: history.slice(-50)
         }, { merge: true });
         return null;
     }
@@ -909,14 +1046,15 @@ async function handleIncomingSms({ from, body, messageSid }) {
     try {
         const smsSequenceService = require('./sms-sequence-service');
         const curStatus = (leadData?.status || '').toUpperCase();
-        const curSeqStatus = leadData?.sequenceStatus || '';
-        const isAlreadyMeetingOrClient = curStatus === 'MEETING_SCHEDULED' || curStatus === 'CLIENT' || curSeqStatus === 'STOPPED_MEETING';
+        const curSeqStatus = (leadData?.sequenceStatus || '').toUpperCase();
+        const curSmsStatus = leadData?.smsStatus || '';
+        const isAlreadyMeetingOrClient = curStatus === 'MEETING_SCHEDULED' || curStatus === 'CLIENT' || curSeqStatus === 'STOPPED_MEETING' || curSmsStatus === 'Appointment Booked';
 
         await smsSequenceService.cancelSequenceOnReply({
             leadId: leadRef?.id,
             phone: formattedFrom,
             reason: isAlreadyMeetingOrClient ? 'STOPPED_MEETING' : 'STOPPED_REPLIED',
-            status: isAlreadyMeetingOrClient ? leadData.status : 'INTERESTED'
+            status: isAlreadyMeetingOrClient ? (curStatus === 'CLIENT' ? 'CLIENT' : 'MEETING_SCHEDULED') : 'INTERESTED'
         });
         await smsSequenceService.notifyAdminOnProspectAction({
             leadId: leadRef?.id,
@@ -931,10 +1069,6 @@ async function handleIncomingSms({ from, body, messageSid }) {
     }
 
     // Resolve prospect timezone with STRICT PRIORITY TO BUSINESS PHYSICAL LOCATION
-    const smsSequenceService = require('./sms-sequence-service');
-    const calendarReminderService = require('./calendar-reminder-service');
-    const followupService = require('./followup-service');
-
     const tzDetails = smsSequenceService.resolveTimezoneDetails({
         phone: formattedFrom,
         city: leadData?.city,
@@ -954,9 +1088,12 @@ async function handleIncomingSms({ from, body, messageSid }) {
         console.log(`[Twilio Webhook] AI is DISABLED for ${sessionId}. Storing message for human agent takeover.`);
         await sessionDocRef.set({
             sessionId,
-            channel: 'sms',
+            channel: effectiveChannel,
+            provider: effectiveProvider,
+            whatsappPhoneNumberId: whatsappPhoneNumberId || (sessionDoc.exists ? sessionDoc.data().whatsappPhoneNumberId : null),
+            lastCustomerMessageAt: new Date().toISOString(),
             phoneNumber: formattedFrom,
-            clientName: clientName || null,
+            clientName: clientName || (isWhatsApp ? 'Prospect WhatsApp' : null),
             companyName: companyName || null,
             businessCity: businessCity || null,
             businessState: businessState || null,
@@ -970,17 +1107,17 @@ async function handleIncomingSms({ from, body, messageSid }) {
             aiEnabled: false,
             unread: true,
             updatedAt: new Date().toISOString(),
-            messages: history
+            messages: history.slice(-50)
         }, { merge: true });
 
         if (leadRef) {
             try {
                 await leadRef.update({
-                    status: 'Replied',
+                    status: 'INTERESTED',
                     lastSmsInteraction: new Date().toISOString(),
                     smsStatus: 'Replied'
                 });
-            } catch (_) {}
+            } catch (_) { }
         }
 
         return null; // Suppresses auto-reply, sends empty TwiML
@@ -1034,6 +1171,7 @@ Lors de la confirmation : "C'est noté ! Parlez-vous bien de 11h selon l'heure d
 The prospect is communicating in ENGLISH.
 You MUST write your entire response strictly and 100% in natural, fluent, professional ENGLISH.
 NEVER answer in French.
+- GREETING RULE: NEVER address the contact by their company/business name (e.g. NEVER say "Hey [Company]" or "Hi [Business]"). If a human first name is provided (${clientName || 'NONE'}), address them naturally. If no human person name is provided, greet directly without a name (e.g. "Hi there!" or "Hey,").
 - Length: Strictly under 160 characters (max 200). Be concise, clear, and friendly.
 - Objective: Answer clearly, address objections, or propose a quick 10-15 minute discovery call.
 - Booking workflow: Always call 'get_available_slots' to propose 2 real open calendar slots with exact date and time. NEVER invent or guess days, dates or times without calling the tool.
@@ -1047,6 +1185,7 @@ ${divergenceDirective}`
 Le prospect communique en FRANÇAIS.
 Tu dois rédiger ta réponse en français chaleureux, fluide et professionnel.
 RÈGLE D'OR BILINGUISME : Tu représentes Solutions Quasar, une entreprise bilingue d'Amérique du Nord. Si le dernier message du prospect contient de l'anglais ou s'il bascule en anglais (ex: "What?", "Who is this?", "Do you speak English?"), bascule IMMÉDIATEMENT en anglais pour lui répondre en anglais avec courtoisie. Ne dis JAMAIS que tu ne parles que français ou que tu ne peux pas répondre en anglais !
+- RÈGLE SALUTATION STRICTE : N'utilise JAMAIS le nom de l'entreprise ou du commerce comme prénom pour saluer (ex: INTERDICTION d'écrire "Bonjour [NomEntreprise]" ou "Hey [Business]"). Si le prénom d'une personne est fourni (${clientName || 'AUCUN'}), utilise-le. Sinon, salue directement SANS prénom (ex: "Bonjour !" ou "Allo !").
 - Longueur : Strictement moins de 160 caractères (max 200). Sois concis et courtois.
 - Objectif : Répondre avec précision, lever les objections ou proposer un court appel découverte de 10-15 minutes.
 - Démarche de réservation : Appelle TOUJOURS 'get_available_slots' pour proposer 2 vrais créneaux libres avec date et heure précises. N'invente JAMAIS de jour ni d'heure sans appeler l'outil.
@@ -1068,7 +1207,7 @@ ${divergenceDirective}`;
 ${languageDirective}
 
 [INFORMATIONS CONTEXTUELLES DU PROSPECT / PROSPECT CONTEXT]
-- Nom / Name: ${clientName || (isEn ? 'Prospect' : 'Inconnu')}
+- Interlocuteur (Prénom humain) / Contact Person: ${clientName ? clientName : (isEn ? 'UNKNOWN (Do NOT use company name! Greet directly without a name!)' : 'INCONNU (N\'utilise JAMAIS le nom de l\'entreprise comme prénom ! Salue sans prénom !)')}
 - Entreprise / Company: ${companyName || (isEn ? 'Company' : 'Inconnue')}
 - Téléphone / Phone: ${formattedFrom}${tzDetails.phoneTimezone && tzDetails.phoneTimezone !== prospectTimezone ? ` (Indicatif portable: ${phoneTzName})` : ''}
 - Emplacement physique de l'entreprise: ${businessLocationStr || 'Non spécifié'}
@@ -1139,13 +1278,13 @@ RÈGLES IMPORTANTES SMS :
                 parameters: {
                     type: "object",
                     properties: {
-                        newAppointmentTime: { 
-                            type: "string", 
-                            description: "Nouvelle date et heure FUTURE exacte du rendez-vous au format ISO (ex: 2026-10-23T15:00:00-04:00). Min 2h d'avance. / Exact new future appointment time in ISO format." 
+                        newAppointmentTime: {
+                            type: "string",
+                            description: "Nouvelle date et heure FUTURE exacte du rendez-vous au format ISO (ex: 2026-10-23T15:00:00-04:00). Min 2h d'avance. / Exact new future appointment time in ISO format."
                         },
-                        reason: { 
-                            type: "string", 
-                            description: "Motif du report ou notes contextuelles / Reason for reschedule" 
+                        reason: {
+                            type: "string",
+                            description: "Motif du report ou notes contextuelles / Reason for reschedule"
                         }
                     },
                     required: ["newAppointmentTime"]
@@ -1173,21 +1312,21 @@ RÈGLES IMPORTANTES SMS :
                 parameters: {
                     type: "object",
                     properties: {
-                        delayDays: { 
-                            type: "integer", 
-                            description: "Délai en jours avant la relance (ex: 7 pour 1 sem., 14 pour 2 sem., 30 pour 1 mois, 60 pour 2 mois, 90 pour 3 mois) / Delay in days" 
+                        delayDays: {
+                            type: "integer",
+                            description: "Délai en jours avant la relance (ex: 7 pour 1 sem., 14 pour 2 sem., 30 pour 1 mois, 60 pour 2 mois, 90 pour 3 mois) / Delay in days"
                         },
-                        targetDate: { 
-                            type: "string", 
-                            description: "Date cible exacte ou approximative si mentionnée (format ISO ou YYYY-MM-DD, ex: 2026-11-15) / Target date" 
+                        targetDate: {
+                            type: "string",
+                            description: "Date cible exacte ou approximative si mentionnée (format ISO ou YYYY-MM-DD, ex: 2026-11-15) / Target date"
                         },
-                        reason: { 
-                            type: "string", 
-                            description: "Motif précis du report / suivi (ex: 'Prospect en vacances jusqu'au 12 nov.', 'Budget à revoir début décembre', 'Rappelez-moi mardi prochain') / Reason for follow-up" 
+                        reason: {
+                            type: "string",
+                            description: "Motif précis du report / suivi (ex: 'Prospect en vacances jusqu'au 12 nov.', 'Budget à revoir début décembre', 'Rappelez-moi mardi prochain') / Reason for follow-up"
                         },
-                        contextNote: { 
-                            type: "string", 
-                            description: "Notes contextuelles utiles pour la future relance (ex: 'Intéressé par la refonte web et l'agent IA, comparer avec son prestataire actuel') / Contextual notes for the follow-up" 
+                        contextNote: {
+                            type: "string",
+                            description: "Notes contextuelles utiles pour la future relance (ex: 'Intéressé par la refonte web et l'agent IA, comparer avec son prestataire actuel') / Contextual notes for the follow-up"
                         }
                     },
                     required: ["reason"]
@@ -1198,7 +1337,7 @@ RÈGLES IMPORTANTES SMS :
 
     let messagesForOpenAI = [
         { role: "system", content: systemPromptWithContext },
-        ...history.map(m => ({ role: m.role, content: m.content }))
+        ...history.slice(-20).map(m => ({ role: m.role, content: m.content }))
     ];
 
     let completion = await openai.chat.completions.create({
@@ -1223,7 +1362,7 @@ RÈGLES IMPORTANTES SMS :
         for (const tc of toolCalls) {
             const fnName = tc.function.name;
             let fnArgs = {};
-            try { fnArgs = JSON.parse(tc.function.arguments || '{}'); } catch (_) {}
+            try { fnArgs = JSON.parse(tc.function.arguments || '{}'); } catch (_) { }
 
             console.log(`[Twilio SMS AI Tool] Calling ${fnName} with args:`, fnArgs);
 
@@ -1247,7 +1386,7 @@ RÈGLES IMPORTANTES SMS :
                         prospectTimezone: prospectTimezone,
                         businessLocation: businessLocationStr,
                         appointmentTime: normalizedTime,
-                        notes: isEn 
+                        notes: isEn
                             ? `Booked by SMS AI. Topic: ${fnArgs.topic || 'Quasar Discovery Call'} [${businessLocationStr ? `${businessLocationStr} - ` : ''}${prospectTzName}]`
                             : `Réservé par l'IA SMS. Sujet: ${fnArgs.topic || 'Découverte Quasar'} [${businessLocationStr ? `${businessLocationStr} - ` : ''}${prospectTzName}]`
                     });
@@ -1255,8 +1394,8 @@ RÈGLES IMPORTANTES SMS :
                         appointmentBooked = true;
                         try {
                             const stalledRecoveryService = require('./stalled-recovery-service');
-                            stalledRecoveryService.markConversationBooked(formattedFrom).catch(() => {});
-                        } catch (_) {}
+                            stalledRecoveryService.markConversationBooked(formattedFrom).catch(() => { });
+                        } catch (_) { }
                     }
                     toolOutput = {
                         success: true,
@@ -1280,8 +1419,8 @@ RÈGLES IMPORTANTES SMS :
                         appointmentBooked = true;
                         try {
                             const stalledRecoveryService = require('./stalled-recovery-service');
-                            stalledRecoveryService.markConversationBooked(formattedFrom).catch(() => {});
-                        } catch (_) {}
+                            stalledRecoveryService.markConversationBooked(formattedFrom).catch(() => { });
+                        } catch (_) { }
                         try {
                             await smsSequenceService.notifyAdminOnProspectAction({
                                 leadId: activeAppt.id,
@@ -1291,7 +1430,7 @@ RÈGLES IMPORTANTES SMS :
                                 actionType: 'reschedule',
                                 text: `🔄 RDV REPROGRAMMÉ au ${new Date(normalizedTime).toLocaleString('fr-CA', { timeZone: prospectTimezone })} (${prospectTzName})`
                             });
-                        } catch (_) {}
+                        } catch (_) { }
                         toolOutput = {
                             success: true,
                             rescheduled: true,
@@ -1340,7 +1479,7 @@ RÈGLES IMPORTANTES SMS :
                                 actionType: 'cancellation',
                                 text: `❌ RDV ANNULÉ par le prospect via SMS (Motif: ${fnArgs.reason || 'Non précisé'})`
                             });
-                        } catch (_) {}
+                        } catch (_) { }
                         toolOutput = {
                             success: true,
                             cancelled: true,
@@ -1400,8 +1539,8 @@ RÈGLES IMPORTANTES SMS :
         toolCalls = choice?.message?.tool_calls;
     }
 
-    const aiReply = choice?.message?.content?.trim() || (isEn 
-        ? "Thank you! Our team will get back to you shortly." 
+    const aiReply = choice?.message?.content?.trim() || (isEn
+        ? "Thank you! Our team will get back to you shortly."
         : "Merci ! Notre équipe vous répondra dans les plus brefs délais.");
 
     // Safety Net: Auto-heal if AI produced a confirmation text without calling book_appointment tool
@@ -1423,7 +1562,7 @@ RÈGLES IMPORTANTES SMS :
                         prospectTimezone: prospectTimezone,
                         businessLocation: businessLocationStr,
                         appointmentTime: resolvedIso,
-                        notes: isEn 
+                        notes: isEn
                             ? `Auto-synced by Quasar Safety Net. Topic: Discovery Call [${businessLocationStr ? `${businessLocationStr} - ` : ''}${prospectTzName}]`
                             : `Auto-synchronisé par le filet de sécurité Quasar. Sujet: Appel découverte [${businessLocationStr ? `${businessLocationStr} - ` : ''}${prospectTzName}]`
                     });
@@ -1440,15 +1579,19 @@ RÈGLES IMPORTANTES SMS :
         role: "assistant",
         author: "ai",
         content: aiReply,
+        channel: effectiveChannel,
         timestamp: new Date().toISOString()
     });
 
     // Save session in Firestore
     await sessionDocRef.set({
         sessionId,
-        channel: 'sms',
+        channel: effectiveChannel,
+        provider: effectiveProvider,
         phoneNumber: formattedFrom,
-        clientName: clientName || null,
+        whatsappPhoneNumberId: whatsappPhoneNumberId || (sessionDoc.exists ? sessionDoc.data().whatsappPhoneNumberId : null),
+        lastCustomerMessageAt: new Date().toISOString(),
+        clientName: clientName || (isWhatsApp ? 'Prospect WhatsApp' : null),
         companyName: companyName || null,
         businessCity: businessCity || null,
         businessState: businessState || null,
@@ -1464,17 +1607,49 @@ RÈGLES IMPORTANTES SMS :
         lastAssistantReplyAt: new Date().toISOString(),
         unread: false,
         updatedAt: new Date().toISOString(),
-        messages: history
+        messages: history.slice(-50)
     }, { merge: true });
 
-    // Update lead status if matched
-    if (leadRef) {
+    // Update lead status if matched (preserving MEETING_SCHEDULED / CLIENT and halting sequences)
+    if (appointmentBooked) {
+        const bookedPatch = {
+            status: 'MEETING_SCHEDULED',
+            stage: 'MEETING_SCHEDULED',
+            sequenceStatus: 'STOPPED_MEETING',
+            smsStatus: 'Appointment Booked',
+            lastSmsInteraction: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        };
+        if (leadRef) {
+            try { await leadRef.update(bookedPatch); } catch (_) { }
+        }
         try {
-            await leadRef.update({
-                lastSmsInteraction: new Date().toISOString(),
-                smsStatus: 'Replied'
+            await smsSequenceService.cancelSequenceOnReply({
+                leadId: leadRef?.id,
+                phone: formattedFrom,
+                reason: 'STOPPED_MEETING',
+                status: 'MEETING_SCHEDULED'
             });
-        } catch (_) {}
+        } catch (_) { }
+    } else if (leadRef) {
+        try {
+            const curStatus = (leadData?.status || '').toUpperCase();
+            const curSeqStatus = (leadData?.sequenceStatus || '').toUpperCase();
+            const isAlreadyMeetingOrClient = curStatus === 'MEETING_SCHEDULED' || curStatus === 'CLIENT' || curSeqStatus === 'STOPPED_MEETING' || leadData?.smsStatus === 'Appointment Booked';
+            const patch = {
+                lastSmsInteraction: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            };
+            if (!isAlreadyMeetingOrClient) {
+                patch.smsStatus = 'Replied';
+                if (!leadData?.status || leadData?.status === 'NEW' || leadData?.status === 'CONTACTED') {
+                    patch.status = 'INTERESTED';
+                    patch.stage = 'INTERESTED';
+                }
+            }
+            await leadRef.update(patch);
+        } catch (_) { }
     }
 
     // --- NATURAL HUMAN TYPING SIMULATION TIMER ---
@@ -1586,6 +1761,27 @@ ${missionDirective}`;
     return completion.choices[0]?.message?.content?.trim() || '';
 }
 
+/**
+ * Sends an outbound WhatsApp message via Twilio (supports Sandbox and Production)
+ */
+async function sendWhatsApp({ to, message }) {
+    if (!twilioClient) {
+        throw new Error("Client Twilio non initialisé.");
+    }
+    const sandboxNumber = process.env.TWILIO_WHATSAPP_NUMBER || '+14155238886';
+    const cleanTo = normalizePhone(String(to || '').replace('whatsapp:', ''));
+    const formattedFrom = sandboxNumber.startsWith('whatsapp:') ? sandboxNumber : `whatsapp:${sandboxNumber}`;
+    const formattedTo = `whatsapp:${cleanTo}`;
+
+    console.log(`[Twilio WhatsApp] Sending to ${formattedTo} from ${formattedFrom}: "${message}"`);
+    const res = await twilioClient.messages.create({
+        from: formattedFrom,
+        to: formattedTo,
+        body: message
+    });
+    return res;
+}
+
 module.exports = {
     twilioClient,
     fromPhoneNumber,
@@ -1594,6 +1790,7 @@ module.exports = {
     isPhoneFrancophone,
     detectMessageLanguage,
     sendSms,
+    sendWhatsApp,
     getSmsAiConfig,
     saveSmsAiConfig,
     generateAiOutreachSms,

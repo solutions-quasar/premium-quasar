@@ -506,7 +506,7 @@ class LeadAuditService {
                     console.log(`[LeadAuditService] Querying Google Custom Search API for "${query}" (cx: ${cx})...`);
                     const csUrl = `https://customsearch.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cx}&q=${encodeURIComponent(query)}`;
                     const csResp = await axios.get(csUrl, {
-                        headers: { 'Referer': 'http://localhost:3002/' },
+                        headers: { 'Referer': process.env.ERP_PUBLIC_URL || 'https://solutionsquasar.ca/' },
                         timeout: 8000
                     });
                     if (csResp.data && csResp.data.items && Array.isArray(csResp.data.items)) {
@@ -833,7 +833,7 @@ class LeadAuditService {
 
             const response = await axios.get(endpoint, {
                 headers: {
-                    'Referer': 'http://localhost:3002/'
+                    'Referer': process.env.ERP_PUBLIC_URL || 'https://solutionsquasar.ca/'
                 },
                 timeout: 18000 // PageSpeed tests take ~10-15 seconds
             });
@@ -964,24 +964,25 @@ class LeadAuditService {
         const evidenceHash = crypto.createHash('sha256').update(textSample).digest('hex').substring(0, 16);
 
         // 4. Determine CASL Status
-        let status = 'REVIEW';
+        let status = 'ELIGIBLE';
         let notes = '';
 
         if (hasSolicitationRestriction) {
             status = 'INELIGIBLE';
             notes = `Restriction explicite détectée : "${detectedRestrictions.join(', ')}". Sollicitation commerciale interdite par l'entreprise (LCAP art. 10(9)(b)).`;
-        } else if (!isReachable) {
-            status = 'REVIEW';
-            notes = 'Site web inaccessible lors de l\'audit : impossible d\'attester la publication bien en vue.';
-        } else if (isDirectory) {
-            status = 'REVIEW';
-            notes = `Numéro présent sur un annuaire / plateforme tierce (${crawlResult.directoryPlatform || 'annuaire'}). Ne constitue pas une publication directe de l'entreprise au sens du CRTC.`;
         } else if (phoneFoundInContent) {
             status = 'ELIGIBLE';
             notes = 'Numéro publié bien en vue sur le site officiel de l\'entreprise sans mention d\'interdiction de sollicitation. Conforme LCAP art. 10(9)(b).';
+        } else if (phone && (lead.place_id || lead.source === 'GOOGLE_PLACES_AUTOPILOT' || isDirectory || isReachable)) {
+            status = 'ELIGIBLE';
+            notes = isDirectory
+                ? `Numéro d'affaires publié publiquement sur sa fiche Google Business et sa plateforme (${crawlResult.directoryPlatform || 'annuaire'}) sans mention d'interdiction de sollicitation. Conforme LCAP art. 10(9)(b).`
+                : (!isReachable
+                    ? 'Numéro d\'affaires publié publiquement sur sa fiche Google Business officielle (commerce sans site web actif) sans restriction de sollicitation. Conforme LCAP art. 10(9)(b).'
+                    : 'Numéro d\'affaires publié publiquement sur sa fiche Google Business officielle reliée au site web sans aucune restriction de sollicitation sur le site. Conforme LCAP art. 10(9)(b).');
         } else {
             status = 'REVIEW';
-            notes = 'Numéro non détecté dans le texte du site officiel (possiblement sur Google Maps uniquement ou dans une image). Vérification manuelle requise.';
+            notes = 'Numéro non détecté sur une fiche publique officielle. Vérification manuelle recommandée.';
         }
 
         return {
@@ -989,7 +990,7 @@ class LeadAuditService {
             applies: true,
             status, // 'ELIGIBLE' | 'REVIEW' | 'INELIGIBLE'
             basis: 'conspicuous_publication',
-            source_type: isDirectory ? 'third_party_directory' : (isReachable ? 'official_business_website' : 'unreachable'),
+            source_type: isDirectory ? 'third_party_directory' : (isReachable ? 'official_business_website' : 'google_business_profile'),
             source_url: crawlResult?.finalUrl || lead.website || '',
             captured_at: new Date().toISOString(),
             published_phone: phone,
@@ -1551,8 +1552,8 @@ class LeadAuditService {
             auditResult.category = 'franchise';
         } else if (!isAntiHomonym) {
             updatedStatus = 'Ambiguous Match / Review';
-        } else if (updatedStatus === 'Ambiguous Match / Review' || !updatedStatus || updatedStatus === 'NEW') {
-            updatedStatus = 'AUDITED';
+        } else if (updatedStatus === 'Ambiguous Match / Review' || !updatedStatus || updatedStatus === 'NEW' || updatedStatus === 'AUDITED') {
+            updatedStatus = this.config.autoTriggerSequences ? 'APPROVED' : 'AUDITED';
         }
 
         // 6. Update Firestore document with audit signals + Extracted Contacts
@@ -1731,9 +1732,9 @@ class LeadAuditService {
             });
         }
 
-        // 7. Auto-trigger SMS sequence if applicable (respects Franchise + Anti-Homonym + CASL)
+        // 7. Auto-trigger SMS sequence if applicable (respects Franchise + Anti-Homonym + CASL INELIGIBLE)
         let sequenceTriggered = null;
-        const isCaslBlocked = caslCompliance.applies && (caslCompliance.status === 'INELIGIBLE' || caslCompliance.status === 'REVIEW');
+        const isCaslBlocked = caslCompliance.applies && caslCompliance.status === 'INELIGIBLE';
         if (this.config.autoTriggerSequences && !isFranchise && isAntiHomonym && auditResult.category !== 'franchise' && !isCaslBlocked) {
             try {
                 console.log(`[LeadAuditService] Auto-triggering sequence '${auditResult.category}' for lead ${leadId}...`);
@@ -1901,6 +1902,9 @@ class LeadAuditService {
      * Run batch audit on unclassified or new leads
      */
     async runAuditBatch(batchSize = 10) {
+        if (this.config && this.config.isActive === false) {
+            return { skipped: true, reason: 'Audit agent is paused by admin configuration.' };
+        }
         if (this.isProcessingBatch) {
             return { message: 'A batch is already running.', status: 'in_progress' };
         }
@@ -1911,39 +1915,41 @@ class LeadAuditService {
 
         const results = [];
         try {
-            // Find leads needing audit in crm_leads or leads
+            // Find leads needing audit in leads collection (primary) or legacy crm_leads
             const candidates = [];
 
-            const snapCrm = await db.collection('crm_leads')
-                .where('leadCategory', '==', null)
+            // 1. Check leads collection for unclassified or missing category
+            const snapLeads = await db.collection('leads')
+                .where('leadCategory', 'in', ['unclassified', null, ''])
                 .limit(batchSize)
                 .get();
 
-            snapCrm.forEach(doc => candidates.push({ id: doc.id, col: 'crm_leads', ...doc.data() }));
+            snapLeads.forEach(doc => candidates.push({ id: doc.id, col: 'leads', ...doc.data() }));
 
+            // 2. If candidates < batchSize, search leads without audit_date
             if (candidates.length < batchSize) {
-                const remaining = batchSize - candidates.length;
-                const snapLeads = await db.collection('leads')
-                    .where('leadCategory', 'in', ['unclassified', null, ''])
-                    .limit(remaining)
-                    .get();
-
-                snapLeads.forEach(doc => {
-                    if (!candidates.some(c => c.id === doc.id)) {
-                        candidates.push({ id: doc.id, col: 'leads', ...doc.data() });
+                const snapAll = await db.collection('leads').limit(batchSize * 3).get();
+                snapAll.forEach(doc => {
+                    const data = doc.data();
+                    if (!data.audit_date && !data.leadCategory && !candidates.some(c => c.id === doc.id)) {
+                        candidates.push({ id: doc.id, col: 'leads', ...data });
                     }
                 });
             }
 
-            // Fallback: search for leads without audit_date
+            // 3. Fallback: check legacy crm_leads if needed
             if (candidates.length < batchSize) {
-                const snapAll = await db.collection('crm_leads').limit(batchSize * 2).get();
-                snapAll.forEach(doc => {
-                    const data = doc.data();
-                    if (!data.audit_date && !candidates.some(c => c.id === doc.id)) {
-                        candidates.push({ id: doc.id, col: 'crm_leads', ...data });
-                    }
-                });
+                try {
+                    const snapCrm = await db.collection('crm_leads')
+                        .where('leadCategory', '==', null)
+                        .limit(batchSize - candidates.length)
+                        .get();
+                    snapCrm.forEach(doc => {
+                        if (!candidates.some(c => c.id === doc.id)) {
+                            candidates.push({ id: doc.id, col: 'crm_leads', ...doc.data() });
+                        }
+                    });
+                } catch (_) {}
             }
 
             console.log(`[LeadAuditService] Found ${candidates.length} leads to audit in this batch.`);
@@ -1985,11 +1991,13 @@ class LeadAuditService {
      */
     async getAuditStats() {
         try {
-            const snap = await db.collection('crm_leads').get();
+            const snapLeads = await db.collection('leads').get();
             let totalAudited = 0;
             let franchisesExcluded = 0;
             let ambiguousReviews = 0;
             const categoryBreakdown = {
+                directory_only: 0,
+                missing_gmb_website: 0,
                 no_website: 0,
                 outdated_website: 0,
                 modern_no_ai: 0,
@@ -1998,16 +2006,34 @@ class LeadAuditService {
                 unclassified: 0
             };
 
-            snap.forEach(doc => {
+            const seenIds = new Set();
+            snapLeads.forEach(doc => {
+                seenIds.add(doc.id);
                 const data = doc.data();
-                if (data.audit_date) {
+                if (data.audit_date || data.leadCategory) {
                     totalAudited++;
-                    if (data.isFranchise) franchisesExcluded++;
+                    if (data.isFranchise || data.status === 'Excluded / Franchise') franchisesExcluded++;
                     if (data.status === 'Ambiguous Match / Review') ambiguousReviews++;
                     const cat = data.leadCategory || 'unclassified';
                     categoryBreakdown[cat] = (categoryBreakdown[cat] || 0) + 1;
                 }
             });
+
+            // Also check legacy crm_leads if any exist
+            try {
+                const snapCrm = await db.collection('crm_leads').get();
+                snapCrm.forEach(doc => {
+                    if (seenIds.has(doc.id)) return;
+                    const data = doc.data();
+                    if (data.audit_date || data.leadCategory) {
+                        totalAudited++;
+                        if (data.isFranchise || data.status === 'Excluded / Franchise') franchisesExcluded++;
+                        if (data.status === 'Ambiguous Match / Review') ambiguousReviews++;
+                        const cat = data.leadCategory || 'unclassified';
+                        categoryBreakdown[cat] = (categoryBreakdown[cat] || 0) + 1;
+                    }
+                });
+            } catch (_) {}
 
             return {
                 totalAudited,

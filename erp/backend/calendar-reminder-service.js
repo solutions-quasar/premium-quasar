@@ -17,7 +17,7 @@ const smsSequenceService = require('./sms-sequence-service');
 const googleAuth = require('./google-auth');
 
 const ADMIN_PHONE = '+15062337006';
-const DEFAULT_MEET_LINK = 'https://meet.google.com/qsr-auto-meet';
+const DEFAULT_MEET_LINK = '';
 
 function getHumanTzName(tz, isEn = false) {
     if (!tz) return isEn ? 'Atlantic Time' : "heure de l'Atlantique";
@@ -210,7 +210,7 @@ class CalendarReminderService {
                 clientName: prospectName,
                 companyName: prospectEmail || prospectPhone || 'Solutions Quasar Lead',
                 actionType: 'booking',
-                text: `📅 RDV fixé le ${formattedDate} à ${formattedTime} (Atlantique)${prospectTzNotice}. Meet: ${meetLink}`
+                text: `📅 RDV fixé le ${formattedDate} à ${formattedTime} (Atlantique)${prospectTzNotice}.${meetLink ? ` Meet: ${meetLink}` : ''}`
             });
         } catch (alertErr) {
             console.error('[CalendarReminderService] Error notifying admin on booking:', alertErr.message);
@@ -259,7 +259,7 @@ class CalendarReminderService {
                 requestBody: {
                     summary: `RDV Solutions Quasar - ${appointment.prospectName}`,
                     location: businessLoc || '',
-                    description: `Rendez-vous stratégique Solutions Quasar avec ${appointment.prospectName}.${locExtra}${tzExtra}\nNotes: ${appointment.notes || 'Aucune'}\nTéléphone: ${appointment.prospectPhone}\nMeet: ${appointment.meetLink}`,
+                    description: `Rendez-vous stratégique Solutions Quasar avec ${appointment.prospectName}.${locExtra}${tzExtra}\nNotes: ${appointment.notes || 'Aucune'}\nTéléphone: ${appointment.prospectPhone}${appointment.meetLink ? `\nMeet: ${appointment.meetLink}` : ''}`,
                     start: { dateTime: apptDate.toISOString(), timeZone: 'America/Moncton' },
                     end: { dateTime: endDate.toISOString(), timeZone: 'America/Moncton' },
                     attendees: appointment.prospectEmail ? [{ email: appointment.prospectEmail }] : [],
@@ -746,7 +746,9 @@ class CalendarReminderService {
                     } else if (rKey === 'h1') {
                         text = `Bonjour ${appt.prospectName}, notre rendez-vous Solutions Quasar débute dans 1 heure (${timeString}). À très bientôt ! - Benjamin`;
                     } else if (rKey === 'h0') {
-                        text = `Bonjour ${appt.prospectName}, c'est l'heure ! Rejoignez directement notre visioconférence Google Meet ici : ${appt.meetLink}. À tout de suite ! - Benjamin, Solutions Quasar`;
+                        text = appt.meetLink
+                            ? `Bonjour ${appt.prospectName}, c'est l'heure ! Rejoignez directement notre visioconférence Google Meet ici : ${appt.meetLink}. À tout de suite ! - Benjamin, Solutions Quasar`
+                            : `Bonjour ${appt.prospectName}, c'est l'heure de notre rendez-vous Solutions Quasar ! À tout de suite ! - Benjamin, Solutions Quasar`;
                     }
 
                     if (isDryRun) {
@@ -825,6 +827,44 @@ class CalendarReminderService {
         } catch (err) {
             console.error('[CalendarReminderService] findActiveAppointment error:', err.message);
             return null;
+        }
+    }
+
+    /**
+     * Reconciles all active confirmed appointments with their corresponding lead documents
+     * across both `leads` and `crm_leads` collections, guaranteeing status is strictly MEETING_SCHEDULED
+     * and sequenceStatus is STOPPED_MEETING.
+     */
+    async reconcileActiveAppointments() {
+        try {
+            const smsSequenceService = require('./sms-sequence-service');
+            const now = Date.now();
+            const snap = await db.collection('appointments')
+                .where('status', '==', 'confirmed')
+                .get();
+
+            let reconciledCount = 0;
+            for (const doc of snap.docs) {
+                const appt = doc.data();
+                const apptTime = appt.appointmentTime ? new Date(appt.appointmentTime).getTime() : 0;
+                // Reconcile if upcoming or within past 30 days
+                if (apptTime >= now - 30 * 24 * 60 * 60 * 1000) {
+                    await smsSequenceService.cancelSequenceOnReply({
+                        leadId: appt.leadId || null,
+                        phone: appt.prospectPhone || null,
+                        reason: 'STOPPED_MEETING',
+                        status: 'MEETING_SCHEDULED'
+                    });
+                    reconciledCount++;
+                }
+            }
+            if (reconciledCount > 0) {
+                console.log(`[CalendarReminderService] Reconciled ${reconciledCount} active appointments into CRM pipeline.`);
+            }
+            return { success: true, count: reconciledCount };
+        } catch (err) {
+            console.error('[CalendarReminderService] reconcileActiveAppointments error:', err.message);
+            return { success: false, error: err.message };
         }
     }
 }

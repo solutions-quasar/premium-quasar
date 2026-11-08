@@ -150,39 +150,48 @@ class StalledRecoveryService {
     }
 
     /**
-     * Generates a context-aware Soft Bump message (under 140 chars)
+     * Generates a context-aware Soft Bump message (under 140 chars).
+     * STRICT RULE: NEVER uses the company name as a person's name!
+     * Only uses real human first name if available, otherwise greets naturally without a name.
      */
-    generateSoftBumpMessage({ clientName, language = 'fr' }) {
+    generateSoftBumpMessage({ lead, clientName, companyName, language = 'fr' }) {
         const isEn = language === 'en';
-        const firstName = clientName ? clientName.trim().split(' ')[0] : '';
+        const humanFirstName = smsSequenceService.extractHumanFirstName(lead || { 
+            name: clientName, 
+            company: companyName 
+        });
 
         if (isEn) {
-            return firstName
-                ? `Hey ${firstName}, just following up on our chat from the other day. Did you get a chance to check the times for a quick call?`
+            return humanFirstName
+                ? `Hey ${humanFirstName}, just following up on our chat from the other day. Did you get a chance to check the times for a quick call?`
                 : `Hey, just following up on our chat from the other day. Did you get a chance to check the times for a quick call?`;
         }
 
-        return firstName
-            ? `Allo ${firstName}, je faisais un rapide suivi suite à notre échange. Avez-vous eu 2 minutes pour jeter un œil aux disponibilités ?`
+        return humanFirstName
+            ? `Allo ${humanFirstName}, je faisais un rapide suivi suite à notre échange. Avez-vous eu 2 minutes pour jeter un œil aux disponibilités ?`
             : `Allo, je faisais un rapide suivi suite à notre échange. Avez-vous eu 2 minutes pour jeter un œil aux disponibilités ?`;
     }
 
     /**
-     * Generates a polite Break-up message (under 160 chars)
+     * Generates a polite Break-up message (under 160 chars).
+     * STRICT RULE: NEVER uses the company name as a person's name!
      */
-    generateBreakupMessage({ clientName, companyName, language = 'fr' }) {
+    generateBreakupMessage({ lead, clientName, companyName, language = 'fr' }) {
         const isEn = language === 'en';
-        const firstName = clientName ? clientName.trim().split(' ')[0] : '';
-        const targetOrg = companyName ? companyName.trim() : (isEn ? 'your projects' : 'vos projets');
+        const humanFirstName = smsSequenceService.extractHumanFirstName(lead || { 
+            name: clientName, 
+            company: companyName 
+        });
+        const targetOrg = companyName ? companyName.trim() : (isEn ? 'your business' : 'votre entreprise');
 
         if (isEn) {
-            return firstName
-                ? `Hi ${firstName}, I assume your priorities shifted or the timing isn't right, no problem at all! I'll close our file for now. Wishing you the best with ${targetOrg}!`
+            return humanFirstName
+                ? `Hi ${humanFirstName}, I assume your priorities shifted or the timing isn't right, no problem at all! I'll close our file for now. Wishing you the best with ${targetOrg}!`
                 : `Hi, I assume your priorities shifted or the timing isn't right, no problem at all! I'll close our file for now. Wishing you the best with ${targetOrg}!`;
         }
 
-        return firstName
-            ? `Bonjour ${firstName}, je présume que le timing n'est pas idéal ou que vos priorités ont changé, aucun souci ! Je classe le dossier. Bonne continuation avec ${targetOrg} !`
+        return humanFirstName
+            ? `Bonjour ${humanFirstName}, je présume que le timing n'est pas idéal ou que vos priorités ont changé, aucun souci ! Je classe le dossier. Bonne continuation avec ${targetOrg} !`
             : `Bonjour, je présume que le timing n'est pas idéal ou que vos priorités ont changé, aucun souci ! Je classe le dossier. Bonne continuation avec ${targetOrg} !`;
     }
 
@@ -208,6 +217,12 @@ class StalledRecoveryService {
             const conv = doc.data();
             const messages = conv.messages || [];
             if (messages.length === 0) continue;
+
+            // Safety: Stalled recovery (Soft bump & Breakup) ONLY applies to conversations
+            // where the prospect actually engaged / replied at least once (role === 'user')!
+            // It must NEVER fire on cold outbound sequences where the user never answered!
+            const hasUserReplied = messages.some(m => m.role === 'user');
+            if (!hasUserReplied) continue;
 
             const lastMsg = messages[messages.length - 1];
             // Safety: We only act if the LAST message was from the assistant (waiting for prospect)
@@ -260,7 +275,9 @@ class StalledRecoveryService {
             if (stalledState === 'WAITING_REPLY') {
                 if (hoursSinceLastAssistant >= this.BUMP_DELAY_HOURS) {
                     const bumpText = this.generateSoftBumpMessage({
+                        lead: leadData,
                         clientName: conv.clientName || leadData?.name,
+                        companyName: conv.companyName || leadData?.company || leadData?.business_name,
                         language: lang
                     });
 
@@ -313,8 +330,9 @@ class StalledRecoveryService {
 
                 if (hoursSinceBump >= this.BREAKUP_DELAY_HOURS) {
                     const breakupText = this.generateBreakupMessage({
+                        lead: leadData,
                         clientName: conv.clientName || leadData?.name,
-                        companyName: conv.companyName || leadData?.company,
+                        companyName: conv.companyName || leadData?.company || leadData?.business_name,
                         language: lang
                     });
 

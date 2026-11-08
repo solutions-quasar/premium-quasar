@@ -3,6 +3,7 @@ dotenv.config();
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
+const twilio = require('twilio');
 const OpenAI = require('openai');
 const stripe = process.env.STRIPE_SECRET_KEY ? require('stripe')(process.env.STRIPE_SECRET_KEY) : null;
 
@@ -14,6 +15,7 @@ const googleAuth = require('./google-auth');
 const { saveCredential, verifyConnection, getApp } = require('./firebase-manager');
 const { discoverSchema } = require('./schema-discovery');
 const voiceAuth = require('./voice-auth');
+const gmailInbox = require('./gmail-inbox-service');
 
 
 const PROD_URL = 'https://quasar-erp-b26d5.web.app';
@@ -35,8 +37,19 @@ app.use(cors({
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID']
 }));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({
+    limit: '50mb',
+    verify: (req, res, buf) => {
+        req.rawBody = buf;
+    }
+}));
+app.use(express.urlencoded({
+    limit: '50mb',
+    extended: true,
+    verify: (req, res, buf) => {
+        req.rawBody = buf;
+    }
+}));
 
 // --- Activity Logging & Correlation Middleware ---
 app.use(async (req, res, next) => {
@@ -195,16 +208,76 @@ app.get('/api/neural/search', async (req, res) => {
 
 // Custom Password Reset Endpoint
 app.post('/api/forgot-password', async (req, res) => {
-    const { email, lang } = req.body;
+    const rawEmail = req.body?.email;
+    const lang = req.body?.lang || 'fr';
+    const cleanEmail = String(rawEmail || '').trim().toLowerCase();
 
-    // Note: This endpoint is public so users can reset password without login.
-    // However, we should rate limit this in production.
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+        return res.status(400).json({ success: false, error: "Veuillez saisir une adresse courriel valide." });
+    }
 
     try {
         if (admin.apps.length === 0) throw new Error("Admin not initialized");
 
-        // Generate Standard Firebase Link (we only need this to get the oobCode)
-        const firebaseLink = await admin.auth().generatePasswordResetLink(email);
+        // 1. Verify if user exists in Firebase Auth; if not, check if they are an authorized admin/team member
+        let userRecord = null;
+        try {
+            userRecord = await admin.auth().getUserByEmail(cleanEmail);
+        } catch (err) {
+            if (err.code === 'auth/user-not-found') {
+                // Check if email belongs to a team member in Firestore or a known Solutions Quasar admin
+                const knownAdmins = {
+                    'benjamin@solutionsquasar.ca': 'Benjamin Sultan',
+                    'bensult78@gmail.com': 'Benjamin Sultan',
+                    'mathieu@solutionsquasar.ca': 'Mathieu Rieg',
+                    'mathieu@aeqc.ca': 'Mathieu Rieg',
+                    'riegtimeo@gmail.com': 'Tim Rieg',
+                    'info@solutionsquasar.ca': 'Solutions Quasar Admin'
+                };
+
+                let authorizedName = knownAdmins[cleanEmail] || null;
+                if (!authorizedName) {
+                    const teamSnap = await db.collection('team').get();
+                    teamSnap.forEach(docSnap => {
+                        const d = docSnap.data();
+                        if (d.email && String(d.email).trim().toLowerCase() === cleanEmail) {
+                            authorizedName = d.name || 'Membre Quasar';
+                        }
+                    });
+                }
+                if (!authorizedName) {
+                    const usersSnap = await db.collection('users').get();
+                    usersSnap.forEach(docSnap => {
+                        const d = docSnap.data();
+                        if (d.email && String(d.email).trim().toLowerCase() === cleanEmail) {
+                            authorizedName = d.displayName || d.name || 'Administrateur Quasar';
+                        }
+                    });
+                }
+
+                if (authorizedName) {
+                    console.log(`[Auth Reset] Provisioning missing Firebase Auth account for authorized admin: ${cleanEmail}`);
+                    userRecord = await admin.auth().createUser({
+                        email: cleanEmail,
+                        displayName: authorizedName,
+                        emailVerified: true,
+                        password: crypto.randomBytes(16).toString('hex') + 'A1!'
+                    });
+                } else {
+                    return res.status(404).json({
+                        success: false,
+                        error: lang === 'fr'
+                            ? `Aucun compte administrateur trouvé pour "${cleanEmail}".`
+                            : `No administrator account found for "${cleanEmail}".`
+                    });
+                }
+            } else {
+                throw err;
+            }
+        }
+
+        // 2. Generate Standard Firebase Link to extract oobCode
+        const firebaseLink = await admin.auth().generatePasswordResetLink(cleanEmail);
 
         // Extract oobCode from the Firebase link
         const urlObj = new URL(firebaseLink);
@@ -212,13 +285,16 @@ app.post('/api/forgot-password', async (req, res) => {
 
         if (!oobCode) throw new Error("Failed to generate secure reset code.");
 
-        // Determine App URL based on origin or default
-        const appUrl = req.headers.origin || 'https://quasar-erp-b26d5.web.app';
+        // Always use production URL unless origin is a valid https public domain
+        const reqOrigin = req.headers.origin || '';
+        const appUrl = (reqOrigin.startsWith('https://') && !reqOrigin.includes('localhost'))
+            ? reqOrigin
+            : 'https://quasar-erp-b26d5.web.app';
 
-        // Construct DIRECT LINK to our custom page (Now correctly pointing to the /erp/ subfolder)
-        const directLink = `${appUrl}/erp/reset-password.html?oobCode=${oobCode}`;
+        // Construct DIRECT LINK to our custom page (pointing to the /erp/ subfolder)
+        const directLink = `${appUrl}/erp/reset-password.html?oobCode=${encodeURIComponent(oobCode)}&lang=${encodeURIComponent(lang)}`;
 
-        const isFr = lang === 'fr';
+        const isFr = lang !== 'en';
 
         // Custom Email Template (Premium Aesthetics)
         const htmlContent = `
@@ -243,12 +319,12 @@ app.post('/api/forgot-password', async (req, res) => {
                     <div style="font-size: 10px; color: #555; margin-top: 5px; text-transform: uppercase;">A.I. Powered Neural ERP</div>
                 </div>
                 <div class="content">
-                    <h2 style="margin-top: 0; font-size: 20px;">${isFr ? "REINITIALISATION DES ACCES" : "SECURE ACCESS RESET"}</h2>
+                    <h2 style="margin-top: 0; font-size: 20px;">${isFr ? "RÉINITIALISATION DES ACCÈS" : "SECURE ACCESS RESET"}</h2>
                     <p style="color: #A0A5B0; line-height: 1.6; font-size: 15px;">
-                        ${isFr ? "Nous avons reçu une demande de réinitialisation pour votre compte. Veuillez utiliser le lien sécurisé ci-dessous pour définir votre nouvelle clé d'accès." : "We received a request to reset your account credentials. Please use the secure link below to establish your new access key."}
+                        ${isFr ? "Nous avons reçu une demande de réinitialisation pour votre compte administrateur. Veuillez utiliser le bouton sécurisé ci-dessous pour définir votre nouveau mot de passe." : "We received a request to reset your administrator account credentials. Please use the secure link below to establish your new password."}
                     </p>
                     
-                    <a href="${directLink}" class="btn">${isFr ? "REINITIALISER MAINTENANT" : "RESET PASSWORD NOW"}</a>
+                    <a href="${directLink}" class="btn">${isFr ? "RÉINITIALISER MON MOT DE PASSE" : "RESET PASSWORD NOW"}</a>
                     
                     <p style="margin-top: 40px; font-size: 12px; color: #555;">${isFr ? "Ou copiez manuellement ce lien :" : "Or manually copy this neural link:"}</p>
                     <a href="${directLink}" class="link" style="font-size:10px;">${directLink}</a>
@@ -272,17 +348,55 @@ app.post('/api/forgot-password', async (req, res) => {
 
         const data = await resend.emails.send({
             from: 'Solutions Quasar Inc. <' + fromEmail + '>',
-            to: [email],
-            subject: isFr ? '🔑 Réinitialisation de votre clé d\'accès' : '🔑 Secure Access Key Reset',
+            to: [cleanEmail],
+            subject: isFr ? '🔑 Réinitialisation de votre mot de passe ERP Quasar' : '🔑 Secure Access Key Reset',
             html: htmlContent
         });
 
         if (data.error) throw new Error(data.error.message);
 
-        res.json({ success: true, message: 'Custom reset email sent via Resend.' });
+        res.json({ success: true, message: 'Custom reset email sent via Resend.', email: cleanEmail });
 
     } catch (error) {
         console.error("Forgot Password Error:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Authenticated Admin Direct Password Update Endpoint
+app.post('/api/admin/update-password', verifyToken, async (req, res) => {
+    try {
+        const uid = req.user?.uid;
+        const { newPassword, targetEmail } = req.body || {};
+
+        if (!uid) return res.status(401).json({ success: false, error: "Non autorisé." });
+        if (!newPassword || String(newPassword).length < 6) {
+            return res.status(400).json({ success: false, error: "Le mot de passe doit contenir au moins 6 caractères." });
+        }
+
+        let targetUid = uid;
+        if (targetEmail && String(targetEmail).trim().toLowerCase() !== String(req.user.email || '').trim().toLowerCase()) {
+            const cleanTarget = String(targetEmail).trim().toLowerCase();
+            try {
+                const u = await admin.auth().getUserByEmail(cleanTarget);
+                targetUid = u.uid;
+            } catch (err) {
+                if (err.code === 'auth/user-not-found') {
+                    const created = await admin.auth().createUser({
+                        email: cleanTarget,
+                        password: String(newPassword),
+                        emailVerified: true
+                    });
+                    return res.json({ success: true, message: `Compte créé et mot de passe défini pour ${cleanTarget}.` });
+                }
+                throw err;
+            }
+        }
+
+        await admin.auth().updateUser(targetUid, { password: String(newPassword) });
+        res.json({ success: true, message: "Mot de passe mis à jour avec succès." });
+    } catch (error) {
+        console.error("[Admin Update Password Error]:", error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -307,15 +421,23 @@ app.post('/api/contact', async (req, res) => {
     const suspiciousNames = ['RobertTox', 'Eric Jones', 'TalkWithCustomer'];
     const isSuspiciousName = suspiciousNames.some(n => (name || '').toLowerCase().includes(n.toLowerCase()));
     const hasRussianCyrillic = /[А-Яа-яЁё]/.test(message || '') || /[А-Яа-яЁё]/.test(name || '');
-    
+
     if (isSuspiciousName || hasRussianCyrillic) {
         console.warn(`Blocked spam content for name: ${name}`);
         return res.status(200).json({ success: true });
     }
 
+    // Extract and resolve clean email & phone values
+    const trimmedEmail = (email && typeof email === 'string') ? email.trim() : '';
+    const trimmedPhone = (phone && typeof phone === 'string') ? phone.trim() : '';
+    const trimmedContactMethod = (contact_method && typeof contact_method === 'string') ? contact_method.trim() : '';
+
+    const resolvedEmail = trimmedEmail || (trimmedContactMethod.includes('@') ? trimmedContactMethod : '');
+    const resolvedPhone = trimmedPhone || (!trimmedContactMethod.includes('@') && trimmedContactMethod !== '' ? trimmedContactMethod : '');
+    const resolvedContact = resolvedEmail || resolvedPhone || trimmedContactMethod;
+
     // Basic validation
-    const contactValue = phone || email || contact_method;
-    if (!name || !contactValue) {
+    if (!name || !resolvedContact) {
         return res.status(400).json({ success: false, error: "Name and Contact Method are required." });
     }
 
@@ -324,13 +446,18 @@ app.post('/api/contact', async (req, res) => {
         return res.status(500).json({ success: false, error: "Email service not configured. Please check server logs." });
     }
 
+    const resolvedCompany = (company && typeof company === 'string' && company.trim() !== '' && company !== 'null') ? company.trim() : null;
+    const resolvedInterest = (interest && typeof interest === 'string' && interest.trim() !== '' && interest !== 'null') ? interest.trim() : 'Strategy Call';
+    const subjectCompany = resolvedCompany ? ` (${resolvedCompany})` : '';
+    const emailSubject = `New Lead: ${name}${subjectCompany} - ${resolvedInterest}`;
+
     const htmlContent = `
     <div style="font-family: sans-serif; padding: 20px; color: #333;">
         <h2 style="color: #dfa53a;">New Strategy Call Request</h2>
         <p><strong>Name:</strong> ${name}</p>
-        <p><strong>Email:</strong> ${email || 'N/A'}</p>
-        <p><strong>Phone:</strong> ${phone || contact_method || 'N/A'}</p>
-        <p><strong>Company:</strong> ${company || 'N/A'}</p>
+        <p><strong>Email:</strong> ${resolvedEmail ? `<a href="mailto:${resolvedEmail}">${resolvedEmail}</a>` : 'N/A'}</p>
+        <p><strong>Phone:</strong> ${resolvedPhone ? `<a href="tel:${resolvedPhone}">${resolvedPhone}</a>` : 'N/A'}</p>
+        <p><strong>Company:</strong> ${resolvedCompany || 'N/A'}</p>
         <p><strong>SMS Opt-In Consent:</strong> ${sms_consent ? '✅ YES (10DLC Consented)' : '❌ NO'}</p>
         <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin-top: 10px;">
             <strong>Message:</strong><br>
@@ -352,75 +479,29 @@ app.post('/api/contact', async (req, res) => {
         await resend.emails.send({
             from: 'Website Lead <' + fromEmail + '>',
             to: [notificationEmail],
-            reply_to: contact_method.includes('@') ? contact_method : undefined,
-            subject: `New Lead: ${name} - ${interest}`,
+            reply_to: resolvedEmail || undefined,
+            subject: emailSubject,
             html: htmlContent
         });
 
-        // 1b. Send Auto-Confirmation to Client (if email is provided)
-        if (contact_method.includes('@')) {
-            const isFr = lang === 'fr';
-            const subject = isFr ? 'Nous avons bien reçu votre demande - Solutions Quasar' : 'We received your request - Solutions Quasar';
-
-            const title = isFr ? 'Demande Reçue' : 'Request Received';
-            const greeting = isFr ? `Bonjour ${name},` : `Hello ${name},`;
-            const p1 = isFr
-                ? `Merci d'avoir contacté Solutions Quasar. Nous avons bien reçu votre demande concernant <strong>${interest}</strong>.`
-                : `Thank you for reaching out to Solutions Quasar. We have received your inquiry regarding <strong>${interest}</strong>.`;
-            const p2 = isFr
-                ? `Notre équipe examine chaque demande avec attention. Nous vous recontacterons sous peu pour discuter de la façon dont nous pouvons élever votre présence numérique.`
-                : `Our team reviews every request carefully. We will get back to you shortly to discuss how we can elevate your digital presence.`;
-            const footer = isFr
-                ? `Si vous avez des questions urgentes, n'hésitez pas à répondre directement à cet email.`
-                : `If you have any urgent questions, feel free to reply to this email.`;
-
-            const userHtml = `
-            <div style="font-family: sans-serif; background-color: #0B0D10; color: #F0F2F5; padding: 40px 20px;">
-                <div style="max-width: 600px; margin: 0 auto; background-color: #15171C; border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1);">
-                    <div style="background-color: #0B0D10; padding: 20px; text-align: center; border-bottom: 2px solid #DFA53A;">
-                        <h1 style="color: #DFA53A; margin: 0; font-size: 24px; letter-spacing: 2px;">SOLUTIONS QUASAR</h1>
-                    </div>
-                    <div style="padding: 30px;">
-                        <h2 style="color: #F0C468; margin-top: 0;">${title}</h2>
-                        <p>${greeting}</p>
-                        <p>${p1}</p>
-                        <p>${p2}</p>
-                        <br>
-                        <p style="color: #A0A5B0; font-size: 14px;">${footer}</p>
-                    </div>
-                    <div style="background-color: #0B0D10; padding: 15px; text-align: center; color: #555; font-size: 12px;">
-                        &copy; ${new Date().getFullYear()} Solutions Quasar Inc.
-                    </div>
-                </div>
-            </div>`;
-
-            try {
-                // *** CRITICAL SECURITY FIX ***
-                // Auto-responder has been disabled to prevent Open Relay Spam attacks.
-                // Bots were using this to send spam to third parties.
-                /*
-                await resend.emails.send({
-                    from: 'Solutions Quasar <' + fromEmail + '>',
-                    to: [contact_method],
-                    subject: subject,
-                    html: userHtml
-                });
-                */
-                console.log(`Auto-confirmation temporarily disabled for security. Suppressed email to ${contact_method}`);
-            } catch (confError) {
-                console.error("Confirmation Email Failed:", confError);
-                // Don't block the main flow
-            }
+        // 1b. Send Auto-Confirmation to Client (Disabled for Security / Anti-Open-Relay)
+        if (resolvedEmail) {
+            // *** CRITICAL SECURITY FIX ***
+            // Auto-responder remains disabled to prevent Open Relay Spam attacks.
+            console.log(`Auto-confirmation suppressed for security reasons to ${resolvedEmail}`);
         }
 
         // 2. Sync to Firebase (Save to Firestore)
-        await db.collection('crm_leads').add({
+        await db.collection('leads').add({
             name,
-            company: company || null,
-            contactMethod: contact_method,
-            interest: interest || 'General',
+            company: resolvedCompany,
+            email: resolvedEmail || null,
+            phone: resolvedPhone || null,
+            contactMethod: resolvedEmail || resolvedPhone || 'N/A',
+            interest: resolvedInterest,
             message: message || '',
-            status: 'New',
+            sms_consent: Boolean(sms_consent),
+            status: 'NEW',
             source: 'website_contact_form',
             createdAt: new Date().toISOString()
         });
@@ -443,19 +524,23 @@ app.post('/api/contact', async (req, res) => {
                 await resend.emails.send({
                     from: 'Website Lead <' + fallbackSender + '>',
                     to: [sandboxEmail],
-                    subject: `[SANDBOX] New Lead: ${name}`,
+                    reply_to: resolvedEmail || undefined,
+                    subject: `[SANDBOX] ${emailSubject}`,
                     html: `<p><strong>Original Destination:</strong> info@solutionsquasar.ca</p><hr>${htmlContent}`
                 });
 
                 // Still save to DB
                 try {
-                    await db.collection('crm_leads').add({
+                    await db.collection('leads').add({
                         name,
-                        company: company || null,
-                        contactMethod: contact_method,
-                        interest: interest || 'General',
+                        company: resolvedCompany,
+                        email: resolvedEmail || null,
+                        phone: resolvedPhone || null,
+                        contactMethod: resolvedEmail || resolvedPhone || 'N/A',
+                        interest: resolvedInterest,
                         message: message || '',
-                        status: 'New',
+                        sms_consent: Boolean(sms_consent),
+                        status: 'NEW',
                         source: 'website_contact_form (sandbox_redirect)',
                         createdAt: new Date().toISOString()
                     });
@@ -624,7 +709,7 @@ app.post('/api/sales/create-checkout-session', verifyToken, async (req, res) => 
             customer_email: clientEmail,
             line_items: [{
                 price_data: {
-                    currency: 'usd',
+                    currency: (req.body.currency || 'cad').toLowerCase(),
                     product_data: {
                         name: `Invoice #${number || invoiceId}`,
                         description: `Payment for ${clientName || 'Invoice'}`,
@@ -1104,7 +1189,7 @@ app.get('/api/integrations/google/auth-url', (req, res) => {
     try {
         const host = req.get('host') || 'localhost:5000';
         const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
-        const resolvedRedirectUri = redirectUri || (isLocal 
+        const resolvedRedirectUri = redirectUri || (isLocal
             ? `http://${host}/api/integrations/google/callback`
             : `${SERVER_URL}/api/integrations/google/callback`);
 
@@ -1135,7 +1220,7 @@ app.get('/api/integrations/google/events', async (req, res) => {
     try {
         const { projectId = 'master_admin', timeMin, timeMax } = req.query;
         const calendar = await googleAuth.getCalendar(projectId);
-        
+
         const now = new Date();
         const start = timeMin || new Date(now.getTime() - 30 * 24 * 3600 * 1000).toISOString();
         const end = timeMax || new Date(now.getTime() + 90 * 24 * 3600 * 1000).toISOString();
@@ -1159,12 +1244,12 @@ app.get('/api/integrations/google/events', async (req, res) => {
                     apptMap.set(data.google_event_id, { id: doc.id, ...data, ref: doc.ref });
                 }
             });
-        } catch (_) {}
+        } catch (_) { }
 
         const items = (response.data.items || []).map(item => {
             const hasTime = !!item.start?.dateTime;
             const isQuasar = (item.summary || '').toLowerCase().includes('quasar') || (item.summary || '').toLowerCase().includes('rdv');
-            
+
             // Reconcile with Firestore if an appointment matches this Google Calendar event
             let linkedAppt = apptMap.get(item.id) || null;
             if (linkedAppt && item.start?.dateTime) {
@@ -1213,7 +1298,7 @@ app.post('/api/integrations/google/sync-event', async (req, res) => {
     try {
         const { event } = req.body;
         if (!event || !event.start) return res.status(400).json({ success: false, error: 'Event start is required' });
-        
+
         const calendar = await googleAuth.getCalendar('master_admin');
         const start = event.start;
         const end = event.end || new Date(new Date(start).getTime() + 45 * 60 * 1000).toISOString();
@@ -1235,10 +1320,10 @@ app.post('/api/integrations/google/sync-event', async (req, res) => {
             }
         });
 
-        res.json({ 
-            success: true, 
-            googleEventId: inserted.data.id, 
-            meetLink: inserted.data.hangoutLink || null 
+        res.json({
+            success: true,
+            googleEventId: inserted.data.id,
+            meetLink: inserted.data.hangoutLink || null
         });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
@@ -1280,7 +1365,7 @@ app.patch('/api/integrations/google/events/:id', async (req, res) => {
                     await doc.ref.update(updateData);
                 }
             }
-        } catch (_) {}
+        } catch (_) { }
 
         res.json({ success: true, event: updated.data });
     } catch (e) {
@@ -1320,7 +1405,7 @@ app.delete('/api/integrations/google/events/:id', async (req, res) => {
             for (const doc of apptsSnap.docs) {
                 await calendarReminderService.cancelAppointment(doc.id, 'deleted_from_erp_calendar');
             }
-        } catch (_) {}
+        } catch (_) { }
 
         res.json({ success: true });
     } catch (e) {
@@ -1375,7 +1460,7 @@ app.get('/api/integrations/google/callback', async (req, res) => {
 
         const host = req.get('host') || 'localhost:5000';
         const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
-        const fallbackRedirectUri = isLocal 
+        const fallbackRedirectUri = isLocal
             ? `http://${host}/api/integrations/google/callback`
             : `${SERVER_URL}/api/integrations/google/callback`;
 
@@ -1388,7 +1473,7 @@ app.get('/api/integrations/google/callback', async (req, res) => {
             const oauth2 = google.oauth2({ version: 'v2', auth: client });
             const userinfo = await oauth2.userinfo.get();
             googleEmail = userinfo.data?.email || null;
-        } catch (_) {}
+        } catch (_) { }
 
         if (projectId === 'master_admin' || !projectId) {
             await db.collection('settings').doc('google_calendar_config').set({
@@ -1414,6 +1499,61 @@ app.get('/api/integrations/google/callback', async (req, res) => {
     } catch (e) {
         console.error("Google Callback Error:", e);
         res.status(500).send("Failed to connect Google account: " + e.message);
+    }
+});
+
+// --- GMAIL → BOÎTE OMNICANALE ---
+function resolveGmailServerUrl(req) {
+    const host = req.get('host') || 'localhost:5000';
+    const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
+    return isLocal ? `http://${host}` : SERVER_URL;
+}
+
+app.get('/api/integrations/gmail/auth-url', verifyToken, (req, res) => {
+    try {
+        const url = gmailInbox.getAuthUrl(resolveGmailServerUrl(req), req.query.returnTo || null);
+        res.json({ success: true, url });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.get('/api/integrations/gmail/callback', async (req, res) => {
+    try {
+        const { code, state } = req.query;
+        if (!code) return res.status(400).send('Code OAuth manquant.');
+        let returnTo = null;
+        try { returnTo = JSON.parse(Buffer.from(state || '', 'base64url').toString('utf8')).returnTo || null; } catch (_) { }
+        await gmailInbox.handleCallback(code, resolveGmailServerUrl(req));
+        const target = returnTo || `${SERVER_URL}/erp/index.html#sms`;
+        res.redirect(target.includes('?') ? `${target}&gmail=connected` : `${target}?gmail=connected`);
+    } catch (e) {
+        console.error('Gmail Callback Error:', e);
+        res.status(500).send('Échec de la connexion Gmail : ' + e.message);
+    }
+});
+
+app.get('/api/integrations/gmail/status', verifyToken, async (req, res) => {
+    try {
+        res.json({ success: true, ...(await gmailInbox.getStatus()) });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.post('/api/integrations/gmail/disconnect', verifyToken, async (req, res) => {
+    try {
+        res.json(await gmailInbox.disconnect());
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.post('/api/gmail-inbox/sync', verifyToken, async (req, res) => {
+    try {
+        res.json({ success: true, ...(await gmailInbox.syncInbox()) });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 
@@ -2249,7 +2389,23 @@ app.post('/api/chat', verifyToken, async (req, res) => {
         const appInstance = await getApp(projectId);
         const tenantDb = appInstance.firestore();
         const dynamicTools = await discoverSchema(tenantDb);
-        const availableTools = [...tools, ...dynamicTools];
+        // Filter tools to respect OpenAI API maximum limit (128 tools max)
+        const agentToolsMap = agentData.tools || {};
+        const hasExplicitTools = Object.keys(agentToolsMap).length > 0;
+        const rawTools = [...tools, ...dynamicTools];
+        let availableTools = rawTools;
+        if (hasExplicitTools) {
+            availableTools = rawTools.filter(t => {
+                const fnName = t.function?.name;
+                if (agentToolsMap[fnName] === true) return true;
+                if (agentToolsMap[fnName] === false) return false;
+                return tools.some(st => st.function?.name === fnName);
+            });
+        }
+        // Hard cap at 100 tools max to guarantee OpenAI API limits are never breached
+        if (availableTools.length > 100) {
+            availableTools = availableTools.slice(0, 100);
+        }
 
         // 3. Smart Context Injection: Fetch Relevant Memories
         const lastUserMsg = messages[messages.length - 1]?.content || "";
@@ -2449,7 +2605,23 @@ async function processAiChat({ agentId, messages, sessionId, clientContext = "" 
     const appInstance = await getApp(projectId);
     const tenantDb = appInstance.firestore();
     const dynamicTools = await discoverSchema(tenantDb);
-    const availableTools = [...tools, ...dynamicTools];
+    // Filter tools to respect OpenAI API maximum limit (128 tools max)
+    const agentToolsMap = agentData.tools || {};
+    const hasExplicitTools = Object.keys(agentToolsMap).length > 0;
+    const rawTools = [...tools, ...dynamicTools];
+    let availableTools = rawTools;
+    if (hasExplicitTools) {
+        availableTools = rawTools.filter(t => {
+            const fnName = t.function?.name;
+            if (agentToolsMap[fnName] === true) return true;
+            if (agentToolsMap[fnName] === false) return false;
+            return tools.some(st => st.function?.name === fnName);
+        });
+    }
+    // Hard cap at 100 tools max to guarantee OpenAI API limits are never breached
+    if (availableTools.length > 100) {
+        availableTools = availableTools.slice(0, 100);
+    }
 
     // 3. Prepare Messages
     const lastUserMsg = messages[messages.length - 1]?.content || "";
@@ -2641,6 +2813,21 @@ async function lookupAgentByPage(pageId) {
             };
         }
 
+        // Robust fallback: pick the active receptionist agent that has credentials
+        const fallbackSnap = await db.collection('ai_agents')
+            .where('name', '==', 'Public Receptionnist')
+            .limit(1)
+            .get();
+        if (!fallbackSnap.empty) {
+            const data = fallbackSnap.docs[0].data();
+            return {
+                id: fallbackSnap.docs[0].id,
+                projectId: data.knowledgeBase?.projectId || data.projectId || 'main',
+                facebookAccessToken: data.facebookAccessToken,
+                instagramAccessToken: data.instagramAccessToken
+            };
+        }
+
         return null;
     } catch (e) {
         console.error("Error in lookupAgentByPage:", e);
@@ -2648,33 +2835,103 @@ async function lookupAgentByPage(pageId) {
     }
 }
 
-// Helper to send message back to Meta
-async function sendMetaMessage(senderId, textOrAction, source = 'facebook', tokenOverride = null) {
-    const axios = require('axios'); // Ensure axios is loaded
-    const token = tokenOverride || (source === 'instagram' ? process.env.INSTAGRAM_ACCESS_TOKEN : process.env.META_PAGE_ACCESS_TOKEN);
+// Helper to send message back to Meta (Messenger / Instagram via Page token "EAA...")
+// Returns Meta's response ({ recipient_id, message_id }) for text messages.
+async function sendMetaMessage(recipientId, textOrAction, source = 'facebook', tokenOverride = null, { humanAgentTag = false } = {}) {
+    const axios = require('axios');
+    let token = tokenOverride || (source === 'instagram' ? process.env.INSTAGRAM_ACCESS_TOKEN : process.env.META_PAGE_ACCESS_TOKEN);
 
+    // Fallback: first agent that has a token for this channel
     if (!token) {
-        console.warn(`[Meta API] No token available for ${source}. Cannot send ${textOrAction}. Check environment variables or Agent configuration.`);
-        return;
+        try {
+            const agentSnap = await db.collection('ai_agents').limit(5).get();
+            for (const doc of agentSnap.docs) {
+                const ag = doc.data();
+                const candidate = source === 'instagram' ? ag.instagramAccessToken : ag.facebookAccessToken;
+                if (candidate && candidate.length > 20) {
+                    token = candidate;
+                    break;
+                }
+            }
+        } catch (_) { }
     }
 
-    const payload = { recipient: { id: senderId } };
+    if (!token) {
+        throw new Error(`Aucun jeton ${source === 'instagram' ? 'Instagram' : 'Messenger'} configuré (agent IA ou .env).`);
+    }
 
-    // Support Meta sender actions (typing_on, typing_off, mark_seen)
-    if (typeof textOrAction === 'string' && (textOrAction === 'typing_on' || textOrAction === 'typing_off' || textOrAction === 'mark_seen')) {
+    const payload = { recipient: { id: recipientId } };
+    const isAction = textOrAction === 'typing_on' || textOrAction === 'typing_off' || textOrAction === 'mark_seen';
+    if (isAction) {
         payload.sender_action = textOrAction;
     } else {
+        payload.messaging_type = humanAgentTag ? 'MESSAGE_TAG' : 'RESPONSE';
+        if (humanAgentTag) payload.tag = 'HUMAN_AGENT';
         payload.message = { text: textOrAction };
     }
 
     try {
-        console.log(`[Meta API] Attempting to send ${textOrAction === 'typing_on' ? 'typing' : textOrAction} to ${senderId} via ${source}...`);
-        const res = await axios.post(`https://graph.facebook.com/v21.0/me/messages?access_token=${token}`, payload);
-        console.log(`[Meta API] Success: HTTP ${res.status} for ${textOrAction}`);
+        const graphHost = String(token).startsWith('IG') ? 'graph.instagram.com' : 'graph.facebook.com';
+        const res = await axios.post(`https://${graphHost}/v21.0/me/messages`, payload, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!isAction) console.log(`[Meta API] ${source} message sent to ${recipientId} (${res.data?.message_id || 'no id'})`);
+        return res.data || {};
+    } catch (err) {
+        const errDetails = err.response?.data?.error || { message: err.message };
+        if (!isAction) console.error(`[Meta API] FAILURE sending ${source} message:`, JSON.stringify(errDetails));
+        const e = new Error(errDetails.message || 'Erreur API Meta');
+        e.metaError = errDetails;
+        throw e;
+    }
+}
+
+// Meta refuses free-form messages > 24 h after the customer's last message
+function isMetaOutsideWindowError(err) {
+    const me = err?.metaError || {};
+    return [2018278, 2534022].includes(me.error_subcode) || (me.code === 10 && /window|fen[eê]tre|24/i.test(me.message || ''));
+}
+
+// Helper to send message via WhatsApp Cloud API
+async function sendWhatsAppMessage({ to, text, phoneNumberId = null, tokenOverride = null }) {
+    const axios = require('axios');
+    const token = tokenOverride || process.env.WHATSAPP_ACCESS_TOKEN;
+    const phoneId = phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID;
+
+    if (!token || !phoneId) {
+        console.error(`[WhatsApp API Error] Credentials missing (Token: ${Boolean(token)}, PhoneId: ${phoneId}).`);
+        throw new Error("WHATSAPP_PHONE_NUMBER_ID ou WHATSAPP_ACCESS_TOKEN non configuré dans .env.");
+    }
+
+    const cleanTo = String(to).replace(/[^\d]/g, '');
+    const url = `https://graph.facebook.com/v21.0/${phoneId}/messages`;
+
+    try {
+        console.log(`[WhatsApp API] Sending WhatsApp text to ${cleanTo} via PhoneId ${phoneId}...`);
+        const res = await axios.post(url, {
+            messaging_product: "whatsapp",
+            recipient_type: "individual",
+            to: cleanTo,
+            type: "text",
+            text: {
+                preview_url: false,
+                body: text
+            }
+        }, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        console.log(`[WhatsApp API] Success: HTTP ${res.status}`, res.data?.messages?.[0]?.id);
+        return { success: true, messageId: res.data?.messages?.[0]?.id, data: res.data };
     } catch (err) {
         const errDetails = err.response?.data?.error || err.message;
-        console.error(`[Meta API] CRITICAL FAILURE sending ${textOrAction}:`, JSON.stringify(errDetails));
-        throw err;
+        console.error(`[WhatsApp API] CRITICAL FAILURE sending message:`, JSON.stringify(errDetails));
+        if (errDetails?.code === 131047) {
+            throw new Error("Plus de 24 h depuis le dernier message du client : WhatsApp exige un modèle de message approuvé (template) pour le recontacter.");
+        }
+        throw new Error(typeof errDetails === 'object' ? (errDetails.message || JSON.stringify(errDetails)) : errDetails);
     }
 }
 
@@ -2714,21 +2971,22 @@ app.post('/api/public/chat/:agentId', async (req, res) => {
     }
 });
 
-// --- META WEBHOOK (FACEBOOK & INSTAGRAM) ---
+// --- META WEBHOOK (FACEBOOK, INSTAGRAM & WHATSAPP) ---
 
-// Verification
+// Verification (Meta "Verify and save")
 app.get('/api/webhook/meta', (req, res) => {
     const mode = req.query['hub.mode'];
-    const token = req.query['hub.verify_token'];
+    const token = (req.query['hub.verify_token'] || '').trim();
     const challenge = req.query['hub.challenge'];
+    const expectedToken = (process.env.META_VERIFY_TOKEN || 'fHteFHY124YRvj2487EERGH4745Dssdfr').trim();
 
-    if (mode && token === process.env.META_VERIFY_TOKEN) {
+    if (mode === 'subscribe' && token === expectedToken) {
         return res.status(200).send(challenge);
     }
+    console.warn(`[Meta Webhook Verify Failed] received mode=${mode}`);
     res.status(403).end();
 });
 
-// Event Handler
 // Helper to log dense meta webhook traffic
 async function logMetaWebhookEvent(projectId, action, data, status = 'Success', message = null) {
     try {
@@ -2750,209 +3008,496 @@ async function logMetaWebhookEvent(projectId, action, data, status = 'Success', 
     }
 }
 
-async function getFacebookUserProfile(senderId, source = 'facebook', tokenOverride = null) {
+async function getFacebookUserProfile(userId, source = 'facebook', tokenOverride = null) {
     const token = tokenOverride || (source === 'instagram' ? process.env.INSTAGRAM_ACCESS_TOKEN : process.env.META_PAGE_ACCESS_TOKEN);
     if (!token) return null;
     try {
-        const fields = source === 'instagram' ? 'name,profile_pic' : 'first_name,last_name,profile_pic';
-        const url = `https://graph.facebook.com/v19.0/${senderId}?fields=${fields}&access_token=${token}`;
-        const response = await fetch(url);
+        const fields = source === 'instagram' ? 'name,username' : 'first_name,last_name';
+        const graphHost = String(token).startsWith('IG') ? 'graph.instagram.com' : 'graph.facebook.com';
+        const response = await fetch(`https://${graphHost}/v21.0/${userId}?fields=${fields}`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
         const data = await response.json();
+        if (data.error) return null;
         return data;
     } catch (e) {
-        console.error("[FB Profile] Error fetching profile for " + senderId + ":", e);
+        console.error(`[Meta Profile] Error fetching profile for ${userId}:`, e.message);
         return null;
     }
 }
 
-app.post('/api/webhook/meta', async (req, res) => {
-    try {
-        const body = req.body;
-        console.log(`[Meta Webhook] Received webhook payload:`, JSON.stringify(body));
+/**
+ * Verifies Meta's X-Hub-Signature-256 header with the app secret.
+ * META_APP_SECRET may hold several secrets separated by commas (e.g. one app for
+ * WhatsApp, another for Messenger/Instagram).
+ */
+let metaSecretWarned = false;
+function verifyMetaSignature(req) {
+    const secrets = (process.env.META_APP_SECRET || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (!secrets.length) {
+        if (!metaSecretWarned) {
+            console.warn('⚠️ META_APP_SECRET manquant : la signature des webhooks Meta n\'est PAS vérifiée.');
+            metaSecretWarned = true;
+        }
+        return true;
+    }
+    const signature = req.get('x-hub-signature-256') || '';
+    const raw = req.rawBody;
+    let valid = false;
+    if (signature.startsWith('sha256=') && raw) {
+        const received = Buffer.from(signature.slice(7), 'hex');
+        valid = secrets.some(secret => {
+            const expected = crypto.createHmac('sha256', secret).update(raw).digest();
+            return expected.length === received.length && crypto.timingSafeEqual(expected, received);
+        });
+    }
+    if (valid) return true;
+    // Report-only mode: log, but accept, until META_SIGNATURE_ENFORCE=true.
+    // Lets you check in the logs that every Meta app (Messenger, Instagram, WhatsApp) signs with a known secret.
+    const objectType = req.body?.object || 'unknown';
+    if (process.env.META_SIGNATURE_ENFORCE !== 'true') {
+        console.warn(`[Meta Webhook Security] Signature NON valide pour "${objectType}" (mode observation : accepté). Ajoutez le secret de cette app à META_APP_SECRET.`);
+        return true;
+    }
+    return false;
+}
 
-        // Let's force-log to the default database for diagnostics so I can read it
-        try {
-            await db.collection('debug_webhooks').add({
-                timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                object: body.object,
-                body: body
-            });
-        } catch (e) {
-            console.error("Debug webhook log failed:", e.message);
+/**
+ * Appends a message to a conversation inside a transaction, so two messages
+ * arriving at the same time can't overwrite each other. Skips a message whose
+ * messageId is already in the thread.
+ */
+async function appendConversationMessage(convRef, message, fields = {}) {
+    return db.runTransaction(async (tx) => {
+        const snap = await tx.get(convRef);
+        const history = snap.exists ? (snap.data().messages || []) : [];
+        if (message.messageId && history.some(m => m.messageId === message.messageId)) {
+            tx.set(convRef, fields, { merge: true });
+            return false;
+        }
+        history.push(message);
+        tx.set(convRef, { ...fields, messages: history.slice(-50) }, { merge: true });
+        return true;
+    });
+}
+
+// Marks a webhook event as processed. Returns false if it was already processed.
+async function claimWebhookEvent(eventId, data = {}) {
+    try {
+        await db.collection('webhook_events').doc(eventId).create({ timestamp: new Date().toISOString(), ...data });
+        return true;
+    } catch (e) {
+        if (e.code === 6) return false; // ALREADY_EXISTS
+        console.warn('[Webhook Dedup] Could not claim event:', e.message);
+        return true;
+    }
+}
+
+async function releaseWebhookEvent(eventId) {
+    await db.collection('webhook_events').doc(eventId).delete().catch(() => { });
+}
+
+// Readable text for any WhatsApp message type. isRealText = written by the customer (AI may answer).
+function describeWhatsAppMessage(m) {
+    const t = m.type;
+    const cap = (obj) => obj?.caption ? ` ${obj.caption}` : '';
+    switch (t) {
+        case 'text': return { text: m.text?.body || '', isRealText: true };
+        case 'button': return { text: m.button?.text || '', isRealText: true };
+        case 'interactive': return { text: m.interactive?.button_reply?.title || m.interactive?.list_reply?.title || '', isRealText: true };
+        case 'image': return { text: `[📷 Photo]${cap(m.image)}`, isRealText: !!m.image?.caption };
+        case 'video': return { text: `[🎬 Vidéo]${cap(m.video)}`, isRealText: !!m.video?.caption };
+        case 'document': return { text: `[📄 Document${m.document?.filename ? ' : ' + m.document.filename : ''}]${cap(m.document)}`, isRealText: !!m.document?.caption };
+        case 'audio': return { text: m.audio?.voice ? '[🎤 Message vocal]' : '[🎵 Audio]', isRealText: false };
+        case 'sticker': return { text: '[Autocollant]', isRealText: false };
+        case 'location': return { text: `[📍 Position${m.location?.name ? ' : ' + m.location.name : ''}] https://maps.google.com/?q=${m.location?.latitude},${m.location?.longitude}`, isRealText: false };
+        case 'contacts': return { text: `[👤 Contact partagé : ${m.contacts?.[0]?.name?.formatted_name || ''}]`, isRealText: false };
+        case 'reaction': return { text: '', isRealText: false }; // ignored
+        default: return { text: '[Message non pris en charge — voir WhatsApp]', isRealText: false };
+    }
+}
+
+// Readable text for Messenger / Instagram messages (attachments, stories, shares)
+function describeMetaMessage(msg) {
+    if (!msg || msg.is_deleted) return { text: '', isRealText: false };
+    const parts = [];
+    if (msg.reply_to?.story) parts.push('[↩️ Réponse à votre story]');
+    for (const a of msg.attachments || []) {
+        const url = a.payload?.url ? ` ${a.payload.url}` : '';
+        switch (a.type) {
+            case 'image': parts.push(`[📷 Photo]${url}`); break;
+            case 'video': parts.push(`[🎬 Vidéo]${url}`); break;
+            case 'audio': parts.push('[🎤 Message vocal]'); break;
+            case 'file': parts.push(`[📄 Fichier]${url}`); break;
+            case 'story_mention': parts.push(`[📣 Vous a mentionné dans sa story]${url}`); break;
+            case 'share':
+            case 'ig_reel':
+            case 'reel': parts.push(`[🔗 Publication partagée]${url}`); break;
+            case 'location': parts.push('[📍 Position]'); break;
+            default: parts.push(`[Pièce jointe : ${a.type}]`);
+        }
+    }
+    if (msg.is_unsupported) parts.push('[Message non pris en charge — voir l\'application]');
+    if (msg.text) parts.push(msg.text);
+    return { text: parts.join('\n').trim(), isRealText: !!msg.text };
+}
+
+// ---------- WhatsApp Cloud API ----------
+async function handleWhatsAppInbound(value, waMsg) {
+    const senderPhone = waMsg.from; // e.g. "15141234567"
+    const messageId = waMsg.id;
+    const { text, isRealText } = describeWhatsAppMessage(waMsg);
+    if (!text || !senderPhone) return;
+
+    if (messageId && !(await claimWebhookEvent(messageId, { senderId: senderPhone, source: 'whatsapp' }))) {
+        console.log(`[WhatsApp Webhook] Duplicate message ${messageId} ignored.`);
+        return;
+    }
+
+    const whatsappPhoneNumberId = value.metadata?.phone_number_id || null;
+    const contactProfile = (value.contacts || []).find(c => c.wa_id === senderPhone)?.profile?.name || value.contacts?.[0]?.profile?.name || '';
+    const cleanDigits = String(senderPhone).replace(/[^\d]/g, '');
+    const formattedPhone = `+${cleanDigits}`;
+    const sessionId = `whatsapp_${cleanDigits}`;
+    const convRef = db.collection('conversations').doc(sessionId);
+
+    console.log(`[Meta Webhook] WHATSAPP message from ${senderPhone}: "${text}"`);
+
+    try {
+        const existingSnap = await convRef.get();
+        const existing = existingSnap.exists ? existingSnap.data() : {};
+
+        // Lookup existing lead or client (only for new conversations)
+        let clientName = existing.clientName || contactProfile || null;
+        let companyName = existing.companyName || null;
+        let leadId = existing.leadId || null;
+        let clientId = existing.clientId || null;
+        if (!existingSnap.exists) {
+            try {
+                const phoneVars = typeof twilioService.getPhoneVariations === 'function'
+                    ? twilioService.getPhoneVariations(formattedPhone)
+                    : [formattedPhone, cleanDigits, `+1${cleanDigits.slice(-10)}`];
+                const leadSnap = await db.collection('crm_leads').where('phone', 'in', phoneVars).limit(1).get();
+                if (!leadSnap.empty) {
+                    const ld = leadSnap.docs[0].data();
+                    leadId = leadSnap.docs[0].id;
+                    clientName = ld.name || ld.contact_name || clientName;
+                    companyName = ld.company || ld.business_name || null;
+                } else {
+                    const clientSnap = await db.collection('clients').where('phone', 'in', phoneVars).limit(1).get();
+                    if (!clientSnap.empty) {
+                        const cd = clientSnap.docs[0].data();
+                        clientId = clientSnap.docs[0].id;
+                        clientName = cd.name || cd.displayName || clientName;
+                        companyName = cd.company || null;
+                    }
+                }
+            } catch (lookupErr) {
+                console.warn("[WhatsApp Webhook] Contact lookup error:", lookupErr.message);
+            }
+        }
+
+        await appendConversationMessage(convRef, {
+            role: 'user',
+            author: 'user',
+            content: text,
+            channel: 'whatsapp',
+            timestamp: waMsg.timestamp ? new Date(Number(waMsg.timestamp) * 1000).toISOString() : new Date().toISOString(),
+            messageId: messageId || null
+        }, {
+            sessionId,
+            channel: 'whatsapp',
+            provider: 'meta',
+            phoneNumber: formattedPhone,
+            senderId: senderPhone,
+            whatsappPhoneNumberId: whatsappPhoneNumberId || existing.whatsappPhoneNumberId || null,
+            clientName: clientName || null,
+            companyName: companyName || null,
+            leadId: leadId || null,
+            clientId: clientId || null,
+            unread: true,
+            aiEnabled: existing.aiEnabled !== false,
+            lastCustomerMessageAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        });
+    } catch (recordErr) {
+        if (messageId) await releaseWebhookEvent(messageId); // let Meta retry
+        throw recordErr;
+    }
+
+    // Photos without caption, voice notes, etc. → stored for a human, no AI reply
+    if (!isRealText) return;
+
+    // AI reply, opt-out (STOP) & human takeover are handled by the shared SMS/WhatsApp engine
+    try {
+        const aiReply = await twilioService.handleIncomingSms({
+            from: formattedPhone,
+            body: text,
+            messageSid: messageId,
+            channel: 'whatsapp',
+            provider: 'meta',
+            whatsappPhoneNumberId,
+            alreadyRecorded: true
+        });
+        if (!aiReply) return;
+
+        const sendRes = await sendWhatsAppMessage({ to: senderPhone, text: aiReply, phoneNumberId: whatsappPhoneNumberId });
+
+        // The engine saves its own reply; mirror replies it returns without saving (STOP, START, handoff)
+        const after = await convRef.get();
+        const last = (after.data()?.messages || []).slice(-1)[0];
+        if (!last || last.role !== 'assistant' || last.content !== aiReply) {
+            await appendConversationMessage(convRef, {
+                role: 'assistant',
+                author: 'ai',
+                content: aiReply,
+                channel: 'whatsapp',
+                timestamp: new Date().toISOString(),
+                messageId: sendRes?.messageId || null
+            }, { updatedAt: new Date().toISOString() });
+        }
+    } catch (aiErr) {
+        console.error("[WhatsApp AI Reply Error]", aiErr.message);
+    }
+}
+
+// ---------- Messenger & Instagram ----------
+async function handleMetaMessagingEvent(object, entryId, ev) {
+    const source = object === 'instagram' ? 'instagram' : 'facebook';
+    const msg = ev.message;
+    if (!msg) return; // reactions, read receipts, postbacks: ignored
+
+    const isEcho = !!msg.is_echo;
+    const userId = String((isEcho ? ev.recipient?.id : ev.sender?.id) || '');
+    if (!userId) return;
+
+    const { text, isRealText } = describeMetaMessage(msg);
+    if (!text) return;
+
+    const mid = msg.mid;
+    const eventKey = mid ? `meta_${mid}` : null;
+    if (eventKey && !(await claimWebhookEvent(eventKey, { senderId: userId, source }))) {
+        console.log(`[Meta Webhook] Duplicate ${source} event ${mid} ignored.`);
+        return;
+    }
+
+    const pageId = String(entryId || 'main');
+    const convSessionId = `${source}_${userId}`;
+    const convRef = db.collection('conversations').doc(convSessionId);
+    const channelLabel = source === 'instagram' ? 'Instagram' : 'Messenger';
+    const msgTimestamp = ev.timestamp ? new Date(Number(ev.timestamp)).toISOString() : new Date().toISOString();
+
+    let agentInfo = null;
+    let isAiOn = true;
+    try {
+        agentInfo = await lookupAgentByPage(pageId);
+        const metaToken = agentInfo ? (source === 'instagram' ? agentInfo.instagramAccessToken : agentInfo.facebookAccessToken) : null;
+        const existingSnap = await convRef.get();
+        const existing = existingSnap.exists ? existingSnap.data() : {};
+        isAiOn = existing.aiEnabled !== false;
+
+        // Message sent by you from the Instagram / Messenger app (echo)
+        if (isEcho) {
+            if (!existingSnap.exists) return; // don't create threads from echoes alone
+            await appendConversationMessage(convRef, {
+                role: 'assistant',
+                author: 'human',
+                senderName: `Depuis l'app ${channelLabel}`,
+                content: text,
+                channel: source,
+                timestamp: msgTimestamp,
+                messageId: mid || null
+            }, { updatedAt: new Date().toISOString() });
+            return;
+        }
+
+        // Contact name: keep any real / manually edited name, only fill generic ones
+        let clientName = existing.clientName || null;
+        let companyName = existing.companyName || null;
+        const isGenericName = !clientName || /^(Contact|Compte) (Instagram|Facebook)|^Utilisateur (Test )?(Instagram|Facebook)/i.test(clientName);
+        if (isGenericName) {
+            try {
+                const clientSnap = await db.collection('clients').where('facebookPsid', '==', userId).limit(1).get();
+                if (!clientSnap.empty) {
+                    const cl = clientSnap.docs[0].data();
+                    clientName = cl.name || cl.displayName || clientName;
+                    companyName = cl.company || companyName;
+                } else {
+                    const profile = await getFacebookUserProfile(userId, source, metaToken);
+                    const realName = source === 'instagram'
+                        ? (profile?.name || (profile?.username ? `@${profile.username}` : null))
+                        : (profile?.first_name ? `${profile.first_name} ${profile.last_name || ''}`.trim() : null);
+                    if (realName) clientName = realName;
+                }
+            } catch (profErr) {
+                console.warn("[Meta Webhook] Profile lookup error:", profErr.message);
+            }
+        }
+        if (!clientName) clientName = `${source === 'instagram' ? 'Contact Instagram' : 'Contact Facebook'} (${userId.slice(-4)})`;
+
+        await appendConversationMessage(convRef, {
+            role: 'user',
+            author: 'user',
+            content: text,
+            channel: source,
+            timestamp: msgTimestamp,
+            messageId: mid || null
+        }, {
+            sessionId: convSessionId,
+            channel: source,
+            senderId: userId,
+            metaPageId: pageId,
+            clientName,
+            companyName: companyName || null,
+            unread: true,
+            aiEnabled: isAiOn,
+            lastCustomerMessageAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        });
+        console.log(`[Meta Webhook] Recorded ${source.toUpperCase()} message into ERP Inbox (${convSessionId})`);
+    } catch (recordErr) {
+        if (eventKey) await releaseWebhookEvent(eventKey); // let Meta retry
+        throw recordErr;
+    }
+
+    const agentId = agentInfo?.id;
+    const projectId = agentInfo?.projectId || 'main';
+    await logMetaWebhookEvent(projectId, 'Webhook Received', { senderId: userId, pageId, message: text });
+
+    if (!agentId || !isAiOn || !isRealText) return;
+
+    const metaToken = source === 'instagram' ? agentInfo.instagramAccessToken : agentInfo.facebookAccessToken;
+
+    // Flood protection (per sender, per agent, per day)
+    try {
+        const appInstance = await getApp(projectId);
+        const tenantDb = appInstance.firestore();
+        const agentDoc = await tenantDb.collection('ai_agents').doc(agentId).get();
+        const agentData = agentDoc.data() || {};
+        const limit = agentData.maxMessagesPerDay !== undefined ? parseInt(agentData.maxMessagesPerDay) : 50;
+        const todayStr = new Date().toISOString().split('T')[0];
+        const usageRef = tenantDb.collection('agent_usage').doc(`${userId}_${agentId}_${todayStr}`);
+        const usageDoc = await usageRef.get();
+        const currentCount = usageDoc.exists ? (usageDoc.data().count || 0) : 0;
+        if (currentCount >= limit) {
+            console.log(`[Meta Webhook] Rate-limited sender ${userId} (Limit: ${limit})`);
+            await logMetaWebhookEvent(projectId, 'Rate Limited', { senderId: userId, limit });
+            return;
+        }
+        await usageRef.set({ count: currentCount + 1, last_time: new Date().toISOString() }, { merge: true });
+    } catch (err) {
+        console.warn("[Meta Webhook] Rate-limit check warning:", err.message);
+    }
+
+    await sendMetaMessage(userId, 'mark_seen', source, metaToken).catch(() => { });
+    await sendMetaMessage(userId, 'typing_on', source, metaToken).catch(() => { });
+    const heartbeat = setInterval(() => {
+        sendMetaMessage(userId, 'typing_on', source, metaToken).catch(() => clearInterval(heartbeat));
+    }, 4000);
+
+    try {
+        // AI memory = this same inbox thread (includes your manual replies), not a separate meta_ doc
+        const threadSnap = await convRef.get();
+        const aiMessages = (threadSnap.data()?.messages || [])
+            .filter(m => (m.role === 'user' || m.role === 'assistant') && m.content)
+            .slice(-12)
+            .map(m => ({ role: m.role, content: m.content }));
+
+        const clientContext = `\n\n[CLIENT INFO]\n- Name: ${threadSnap.data()?.clientName || 'Inconnu'}\n- Status: Connection (${channelLabel})`;
+        await logMetaWebhookEvent(projectId, 'Processing AI', { agentId, text });
+
+        const aiRes = await processAiChat({
+            agentId,
+            messages: aiMessages.length ? aiMessages : [{ role: 'user', content: text }],
+            sessionId: null, // no separate meta_ log document
+            clientContext
+        });
+        clearInterval(heartbeat);
+
+        if (!aiRes.message) return;
+        const sent = await sendMetaMessage(userId, aiRes.message, source, metaToken);
+        if (sent?.message_id) await claimWebhookEvent(`meta_${sent.message_id}`, { source: `${source}_ai_sent` });
+        await appendConversationMessage(convRef, {
+            role: 'assistant',
+            author: 'ai',
+            content: aiRes.message,
+            channel: source,
+            timestamp: new Date().toISOString(),
+            messageId: sent?.message_id || null
+        }, { updatedAt: new Date().toISOString() });
+        await logMetaWebhookEvent(projectId, 'Reply Sent', { senderId: userId });
+    } catch (aiErr) {
+        clearInterval(heartbeat);
+        console.error("[Meta AI Reply Error]", aiErr.message);
+        await logMetaWebhookEvent(projectId, 'Reply Sent Failed', { senderId: userId }, 'Error', aiErr.message);
+    }
+}
+
+// Event Handler
+app.post('/api/webhook/meta', async (req, res) => {
+    if (!verifyMetaSignature(req)) {
+        console.warn('[Meta Webhook] Invalid X-Hub-Signature-256 — request rejected.');
+        return res.sendStatus(403);
+    }
+
+    const body = req.body || {};
+
+    // Diagnostics log (no customer content): set DEBUG_WEBHOOKS=true to enable
+    if (process.env.DEBUG_WEBHOOKS === 'true') {
+        db.collection('debug_webhooks').add({
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            object: body.object || 'unknown',
+            entryCount: body.entry?.length || 0,
+            receivedAt: new Date().toISOString()
+        }).catch(e => console.error("Debug webhook log failed:", e.message));
+    }
+
+    let failed = false;
+    try {
+        if (body.object === 'whatsapp_business_account') {
+            for (const entry of body.entry || []) {
+                for (const change of entry.changes || []) {
+                    const value = change.value || {};
+                    for (const waMsg of value.messages || []) { // statuses (sent/delivered/read) are ignored
+                        try {
+                            await handleWhatsAppInbound(value, waMsg);
+                        } catch (e) {
+                            failed = true;
+                            console.error('[WhatsApp Webhook] Message error:', e.message);
+                        }
+                    }
+                }
+            }
+            return res.sendStatus(failed ? 500 : 200);
         }
 
         if (body.object !== 'page' && body.object !== 'instagram') {
             return res.sendStatus(404);
         }
 
-        const messagingEvent = body.entry?.[0]?.messaging?.[0];
-        if (messagingEvent && messagingEvent.message && !messagingEvent.message.is_echo) {
-            const senderId = messagingEvent.sender.id;
-            const messageText = messagingEvent.message.text;
-            const pageId = body.entry?.[0]?.id; // Recipient Page ID
-            const source = body.object === 'instagram' ? 'instagram' : 'facebook';
-
-            console.log(`[Meta Webhook] ${source.toUpperCase()} Message from ${senderId} on Page ${pageId}: ${messageText}`);
-
-            if (!messageText) {
-                return res.sendStatus(200); // Ignore non-text messages for now
+        for (const entry of body.entry || []) {
+            let events = entry.messaging || [];
+            // Instagram "changes" format (Meta dashboard test button)
+            if (!events.length && Array.isArray(entry.changes)) {
+                events = entry.changes
+                    .filter(c => c.value && (c.field === 'messages' || !c.field))
+                    .map(c => ({
+                        sender: c.value.sender || { id: c.value.from?.id || c.value.sender_id || 'test_user_12334' },
+                        recipient: c.value.recipient || { id: c.value.to?.id || c.value.recipient_id || entry.id },
+                        timestamp: c.value.timestamp || Date.now(),
+                        message: c.value.message || { text: c.value.text || '' }
+                    }));
             }
-
-            // 1. Lookup Agent ID & Project ID
-            const agentInfo = await lookupAgentByPage(pageId);
-            const agentId = agentInfo?.id;
-            const projectId = agentInfo?.projectId || 'main';
-
-            await logMetaWebhookEvent(projectId, 'Webhook Received', { senderId, pageId, message: messageText });
-
-            if (!agentId) {
-                console.warn(`[Meta Webhook] No agent linked to Page/Account ID ${pageId}`);
-                await logMetaWebhookEvent(projectId, 'Agent Match Failed', { pageId }, 'Error', `No agent linked to Page ${pageId}`);
-                return res.sendStatus(200);
-            }
-
-            // 2. Process via AI
-            let clientContext = "";
-            let limit = 50;
-
-            try {
-                const appInstance = await getApp(projectId);
-                const tenantDb = appInstance.firestore();
-                const messageId = messagingEvent.message.mid;
-
-                // --- 1. ATOMIC DEDUPLICATION ---
-                // Meta retries if AI takes > 20s. We use 'mid' to process ONLY the first attempt.
-                if (messageId) {
-                    try {
-                        await tenantDb.collection('webhook_events').doc(messageId).create({
-                            timestamp: new Date().toISOString(),
-                            senderId,
-                            source,
-                            text: messageText
-                        });
-                        console.log(`[Meta Webhook] Processing new message ${messageId}`);
-
-                        // --- 2. START TYPING ANIMATION (AWAITED) ---
-                        // We await these to ensure Cloud Function doesn't freeze before sending.
-                        const metaToken = source === 'instagram' ? agentInfo.instagramAccessToken : agentInfo.facebookAccessToken;
-                        await sendMetaMessage(senderId, 'mark_seen', source, metaToken).catch(e => console.error("[Mark Seen Error]", e.message));
-
-                        // Small delay to ensure state propagates in Meta's servers
-                        await new Promise(resolve => setTimeout(resolve, 1000));
-
-                        await sendMetaMessage(senderId, 'typing_on', source, metaToken).catch(e => console.error("[Typing Animation Error]", e.message));
-
-                    } catch (dupErr) {
-                        if (dupErr.code === 6) { // 6 = ALREADY_EXISTS (gRPC/Firestore)
-                            console.log(`[Meta Webhook] Duplicate message ${messageId} ignored.`);
-                            return res.sendStatus(200);
-                        }
-                        console.warn(`[Meta Webhook] Dedup check error for ${messageId}:`, dupErr.message);
-                    }
-                }
-
-                // --- FLOOD PROTECTION LIMITS ---
+            for (const ev of events) {
                 try {
-                    const agentDoc = await tenantDb.collection('ai_agents').doc(agentId).get();
-                    const agentData = agentDoc.data() || {};
-                    limit = agentData.maxMessagesPerDay !== undefined ? parseInt(agentData.maxMessagesPerDay) : 50;
-
-                    const todayStr = new Date().toISOString().split('T')[0];
-                    const usageId = `${senderId}_${agentId}_${todayStr}`;
-                    const usageRef = tenantDb.collection('agent_usage').doc(usageId);
-
-                    const usageDoc = await usageRef.get();
-                    const currentCount = usageDoc.exists ? (usageDoc.data().count || 0) : 0;
-
-                    if (currentCount >= limit) {
-                        console.log(`[Meta Webhook] Rate-limited sender ${senderId} (Limit crossed: ${limit})`);
-                        await logMetaWebhookEvent(projectId, 'Rate Limited', { senderId, limit });
-                        return res.sendStatus(200);
-                    }
-
-                    await usageRef.set({ count: currentCount + 1, last_time: new Date().toISOString() }, { merge: true });
-
-                    // --- ITEMISED AUDIT LOG FOR BILLING ---
-                    await tenantDb.collection('agent_billing_logs').add({
-                        senderId,
-                        agentId,
-                        projectId,
-                        message: messageText,
-                        timestamp: new Date().toISOString(),
-                        cost: agentData.pricing?.pricePerMessage !== undefined ? parseFloat(agentData.pricing.pricePerMessage) : 0.05,
-                        type: 'incoming_chat',
-                        source: source
-                    });
-
-                    console.log(`[Meta Webhook] Allowed message ${currentCount + 1}/${limit} for ${senderId}`);
-
-                } catch (limitErr) {
-                    console.warn("[Meta Webhook] Daily limit lookup failed:", limitErr.message);
+                    await handleMetaMessagingEvent(body.object, entry.id, ev);
+                } catch (e) {
+                    failed = true;
+                    console.error('[Meta Webhook] Event error:', e.message);
                 }
-
-                const clientSnap = await tenantDb.collection('clients').where('facebookPsid', '==', senderId).get();
-                if (!clientSnap.empty) {
-                    const cl = clientSnap.docs[0].data();
-                    clientContext = `\n\n[CLIENT INFO]\n- Name: ${cl.name || cl.displayName}\n- Email: ${cl.email || "N/A"}\n- Status: Existing Customer`;
-                    console.log(`[Meta Webhook] Matched sender ${senderId} to Existing Client: ${cl.name || cl.displayName}`);
-                } else {
-                    const fbProfile = await getFacebookUserProfile(senderId, source, source === 'instagram' ? agentInfo.instagramAccessToken : agentInfo.facebookAccessToken);
-                    if (fbProfile && (fbProfile.first_name || fbProfile.name)) {
-                        const fullName = source === 'instagram' ? fbProfile.name : `${fbProfile.first_name} ${fbProfile.last_name}`;
-                        clientContext = `\n\n[CLIENT INFO]\n- Name: ${fullName}\n- Status: New Connection (${source === 'instagram' ? 'Instagram' : 'Facebook'})`;
-                        console.log(`[Meta Webhook] Fetched Profile for ${senderId}: ${fullName}`);
-                    }
-                }
-            } catch (err) {
-                console.warn("[Meta Webhook] Client context lookup failed:", err.message);
-            }
-
-            await logMetaWebhookEvent(projectId, 'Processing AI', { agentId, text: messageText, clientContext });
-
-            // --- 2. START TYPING ANIMATION (HEARTBEAT) ---
-            const metaToken = source === 'instagram' ? agentInfo.instagramAccessToken : agentInfo.facebookAccessToken;
-            await sendMetaMessage(senderId, 'mark_seen', source, metaToken).catch(e => console.error("[Mark Seen Error]", e.message));
-
-            // Heartbeat to keep typing active every 4s (Meta auto-clears it after ~20s)
-            const heartbeat = setInterval(() => {
-                sendMetaMessage(senderId, 'typing_on', source, metaToken).catch(e => {
-                    console.warn("[Typing Heartbeat Error]", e.message);
-                    clearInterval(heartbeat);
-                });
-            }, 4000);
-
-            // First one immediately
-            await sendMetaMessage(senderId, 'typing_on', source, metaToken).catch(e => console.error("[Initial Typing Error]", e.message));
-
-            const aiRes = await processAiChat({
-                agentId,
-                messages: [{ role: 'user', content: messageText }],
-                sessionId: `meta_${senderId}`,
-                clientContext: clientContext
-            });
-
-            // STOP Heartbeat before sending message
-            clearInterval(heartbeat);
-
-            // 3. Send Reply
-            if (aiRes.message) {
-                await logMetaWebhookEvent(projectId, 'Sending Reply to Meta', { senderId, reply: aiRes.message });
-                try {
-                    await sendMetaMessage(senderId, aiRes.message, source, source === 'instagram' ? agentInfo.instagramAccessToken : agentInfo.facebookAccessToken);
-                    console.log(`[Meta Webhook] Replied to ${senderId}`);
-                    await logMetaWebhookEvent(projectId, 'Reply Sent', { senderId });
-                } catch (sendError) {
-                    console.error("[Meta Send Error]", sendError);
-                    await logMetaWebhookEvent(projectId, 'Reply Sent Failed', { senderId }, 'Error', sendError.message);
-                    throw sendError;
-                }
-            } else {
-                await logMetaWebhookEvent(projectId, 'AI Empty Response', { aiRes }, 'Warning', 'AI chatbot returned no content message');
             }
         }
-
-        res.sendStatus(200);
-
+        res.sendStatus(failed ? 500 : 200);
     } catch (e) {
         console.error("Meta Webhook Error:", e);
         await logMetaWebhookEvent('main', 'Webhook Crash', { error: e.message }, 'Error', e.stack);
@@ -3122,8 +3667,13 @@ app.post('/api/sms/send-outreach', verifyToken, async (req, res) => {
         // Update Lead status if linked
         if (leadId) {
             try {
-                await db.collection('crm_leads').doc(leadId).update({
-                    status: 'Contacted',
+                let leadRef = db.collection('leads').doc(leadId);
+                let leadSnap = await leadRef.get();
+                if (!leadSnap.exists) {
+                    leadRef = db.collection('crm_leads').doc(leadId);
+                }
+                await leadRef.update({
+                    status: 'CONTACTED',
                     smsStatus: 'Sent',
                     lastSmsSent: new Date().toISOString()
                 });
@@ -3151,9 +3701,9 @@ app.post('/api/phone/validate', verifyToken, async (req, res) => {
         }
         let leadData = null;
         if (leadId) {
-            let leadSnap = await db.collection('crm_leads').doc(leadId).get();
+            let leadSnap = await db.collection('leads').doc(leadId).get();
             if (!leadSnap.exists) {
-                leadSnap = await db.collection('leads').doc(leadId).get();
+                leadSnap = await db.collection('crm_leads').doc(leadId).get();
             }
             if (leadSnap.exists) {
                 leadData = { id: leadId, ...leadSnap.data() };
@@ -3161,9 +3711,9 @@ app.post('/api/phone/validate', verifyToken, async (req, res) => {
         }
         const result = await phoneValidatorService.validatePhoneNumber(phone, leadData || { id: leadId });
         if (leadId && result.phone_type) {
-            let targetRef = db.collection('crm_leads').doc(leadId);
+            let targetRef = db.collection('leads').doc(leadId);
             let s = await targetRef.get();
-            if (!s.exists) targetRef = db.collection('leads').doc(leadId);
+            if (!s.exists) targetRef = db.collection('crm_leads').doc(leadId);
             await targetRef.set({
                 phone_type: result.phone_type,
                 carrier_name: result.carrier_name || null,
@@ -3179,25 +3729,40 @@ app.post('/api/phone/validate', verifyToken, async (req, res) => {
     }
 });
 
-// 3. List SMS Conversations
+// 3. List Omnichannel Conversations (SMS, WhatsApp, Instagram, Facebook Messenger)
 app.get('/api/sms/conversations', verifyToken, async (req, res) => {
     try {
-        const snap = await db.collection('conversations')
-            .where('channel', '==', 'sms')
-            .get();
+        const { channel } = req.query;
+        let snap;
+        if (channel && channel !== 'all') {
+            snap = await db.collection('conversations')
+                .where('channel', '==', channel)
+                .get();
+        } else {
+            snap = await db.collection('conversations').get();
+        }
 
         let list = [];
         snap.forEach(doc => {
             const data = doc.data();
+            if (!data.channel && data.agentId) return; // AI memory/log document, not an inbox thread
+            const convChannel = data.channel || 'sms';
+            // Only include omnichannel messaging channels
+            if (!['sms', 'whatsapp', 'instagram', 'facebook', 'email'].includes(convChannel)) return;
+
             const msgs = data.messages || [];
             const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
             list.push({
                 id: doc.id,
+                channel: convChannel,
                 phoneNumber: data.phoneNumber || '',
+                senderId: data.senderId || data.phoneNumber || '',
                 clientName: data.clientName || '',
                 companyName: data.companyName || '',
                 leadId: data.leadId || null,
                 clientId: data.clientId || null,
+                senderEmail: data.senderEmail || null,
+                subject: data.subject || null,
                 aiEnabled: data.aiEnabled !== false, // default true
                 unread: data.unread || false,
                 updatedAt: data.updatedAt || (lastMsg ? lastMsg.timestamp : new Date().toISOString()),
@@ -3206,7 +3771,8 @@ app.get('/api/sms/conversations', verifyToken, async (req, res) => {
                     role: lastMsg.role,
                     content: lastMsg.content,
                     timestamp: lastMsg.timestamp,
-                    author: lastMsg.author || (lastMsg.role === 'assistant' ? 'ai' : 'user')
+                    author: lastMsg.author || (lastMsg.role === 'assistant' ? 'ai' : 'user'),
+                    channel: lastMsg.channel || convChannel
                 } : null
             });
         });
@@ -3216,42 +3782,43 @@ app.get('/api/sms/conversations', verifyToken, async (req, res) => {
 
         res.json({ success: true, conversations: list });
     } catch (e) {
-        console.error("[SMS Conversations List Error]", e);
+        console.error("[Omnichannel Conversations List Error]", e);
         res.status(500).json({ success: false, error: e.message });
     }
 });
 
-// 4. Get Single SMS Conversation with Thread
+// 4. Get Single Omnichannel Conversation with Thread
 app.get('/api/sms/conversations/:id', verifyToken, async (req, res) => {
     try {
         const docRef = db.collection('conversations').doc(req.params.id);
         const docSnap = await docRef.get();
         if (!docSnap.exists) {
-            return res.status(404).json({ success: false, error: "Conversation SMS introuvable" });
+            return res.status(404).json({ success: false, error: "Conversation introuvable" });
         }
         const data = docSnap.data();
 
         // Mark as read
         if (data.unread) {
-            await docRef.update({ unread: false }).catch(() => {});
+            await docRef.update({ unread: false }).catch(() => { });
         }
 
         res.json({
             success: true,
             conversation: {
                 id: docSnap.id,
+                channel: data.channel || 'sms',
                 ...data,
                 unread: false,
                 aiEnabled: data.aiEnabled !== false
             }
         });
     } catch (e) {
-        console.error("[SMS Conversation Detail Error]", e);
+        console.error("[Omnichannel Conversation Detail Error]", e);
         res.status(500).json({ success: false, error: e.message });
     }
 });
 
-// 5. Send Manual Agent Reply to SMS Thread
+// 5. Send Manual Agent Reply to Omnichannel Thread
 app.post('/api/sms/conversations/:id/reply', verifyToken, async (req, res) => {
     try {
         const { message } = req.body;
@@ -3266,28 +3833,97 @@ app.post('/api/sms/conversations/:id/reply', verifyToken, async (req, res) => {
         }
 
         const conv = docSnap.data();
-        const targetPhone = conv.phoneNumber;
-        if (!targetPhone) {
-            return res.status(400).json({ success: false, error: "Numéro de téléphone manquant pour cette conversation." });
+        let channel = conv.channel;
+        if (!channel) {
+            if (req.params.id.startsWith('facebook_') || req.params.id.startsWith('meta_')) {
+                channel = 'facebook';
+            } else if (req.params.id.startsWith('email_')) {
+                channel = 'email';
+            } else if (req.params.id.startsWith('whatsapp_')) {
+                channel = 'whatsapp';
+            } else if (req.params.id.startsWith('instagram_')) {
+                channel = 'instagram';
+            } else {
+                channel = 'sms';
+            }
+        }
+        let sendRes = null;
+
+        if (channel === 'email') {
+            sendRes = await gmailInbox.sendReply(conv, message.trim());
+        } else if (channel === 'whatsapp') {
+            const target = conv.phoneNumber || conv.senderId;
+            if (!target) {
+                return res.status(400).json({ success: false, error: "Numéro de téléphone WhatsApp manquant pour cette conversation." });
+            }
+            // Route through Twilio if provider is Twilio or Meta token is not available
+            if (conv.provider === 'twilio' || (!process.env.WHATSAPP_ACCESS_TOKEN && !conv.whatsappPhoneNumberId)) {
+                sendRes = await twilioService.sendWhatsApp({
+                    to: target,
+                    message: message.trim()
+                });
+            } else {
+                // WhatsApp Cloud API 24-Hour Customer Window Enforcement
+                if (conv.lastCustomerMessageAt) {
+                    const elapsedMs = Date.now() - new Date(conv.lastCustomerMessageAt).getTime();
+                    const hoursElapsed = elapsedMs / (1000 * 60 * 60);
+                    if (hoursElapsed > 24) {
+                        return res.status(400).json({
+                            success: false,
+                            error: "La fenêtre de 24h WhatsApp Cloud API est expirée. Le client doit vous réécrire ou vous devez utiliser un modèle (template) approuvé par Meta."
+                        });
+                    }
+                }
+                sendRes = await sendWhatsAppMessage({
+                    to: target,
+                    text: message.trim(),
+                    phoneNumberId: conv.whatsappPhoneNumberId
+                });
+            }
+        } else if (channel === 'facebook' || channel === 'instagram') {
+            const senderId = conv.senderId || (req.params.id.startsWith('facebook_') ? req.params.id.replace('facebook_', '') : (req.params.id.startsWith('meta_') ? req.params.id.replace('meta_', '') : null));
+            if (!senderId) {
+                return res.status(400).json({ success: false, error: `Identifiant destinataire ${channel} manquant.` });
+            }
+            // Use the token of the page/account that received this conversation
+            let pageToken = null;
+            if (conv.metaPageId) {
+                const pageAgent = await lookupAgentByPage(conv.metaPageId);
+                pageToken = pageAgent ? (channel === 'instagram' ? pageAgent.instagramAccessToken : pageAgent.facebookAccessToken) : null;
+            }
+            try {
+                sendRes = await sendMetaMessage(senderId, message.trim(), channel, pageToken);
+            } catch (sendErr) {
+                if (!isMetaOutsideWindowError(sendErr)) throw sendErr;
+                try {
+                    // > 24 h: retry with the HUMAN_AGENT tag (7-day window, needs the Human Agent permission)
+                    sendRes = await sendMetaMessage(senderId, message.trim(), channel, pageToken, { humanAgentTag: true });
+                } catch (_) {
+                    throw new Error("Plus de 24 h depuis le dernier message du client : Meta bloque l'envoi. Il faut la permission « Human Agent » (jusqu'à 7 jours) ou attendre que le client réécrive.");
+                }
+            }
+            if (sendRes?.message_id) await claimWebhookEvent(`meta_${sendRes.message_id}`, { source: `${channel}_human_sent` });
+        } else {
+            // SMS (Twilio / Telnyx)
+            const targetPhone = conv.phoneNumber;
+            if (!targetPhone) {
+                return res.status(400).json({ success: false, error: "Numéro de téléphone manquant pour cette conversation." });
+            }
+            sendRes = await twilioService.sendSms({ to: targetPhone, message: message.trim() });
         }
 
-        // Send SMS via Twilio from official company number
-        const sendRes = await twilioService.sendSms({ to: targetPhone, message: message.trim() });
-
-        // Append to messages array
-        const history = conv.messages || [];
+        // Append to messages array (atomic)
         const senderName = req.user?.name || req.user?.email || 'Agent Solutions Quasar';
         const newMsg = {
             role: 'assistant',
             author: 'human',
             senderName,
             content: message.trim(),
-            timestamp: new Date().toISOString()
+            channel: channel,
+            timestamp: new Date().toISOString(),
+            messageId: sendRes?.message_id || sendRes?.messageId || null
         };
-        history.push(newMsg);
-
-        await docRef.update({
-            messages: history.slice(-50),
+        await appendConversationMessage(docRef, newMsg, {
             updatedAt: new Date().toISOString(),
             unread: false
         });
@@ -3295,16 +3931,27 @@ app.post('/api/sms/conversations/:id/reply', verifyToken, async (req, res) => {
         // Also update lead if linked
         if (conv.leadId) {
             try {
-                await db.collection('crm_leads').doc(conv.leadId).update({
-                    lastSmsSent: new Date().toISOString(),
+                let leadRef = db.collection('leads').doc(conv.leadId);
+                let leadSnap = await leadRef.get();
+                if (!leadSnap.exists) {
+                    leadRef = db.collection('crm_leads').doc(conv.leadId);
+                }
+                await leadRef.update({
+                    lastMessageSent: new Date().toISOString(),
                     lastContactDate: new Date().toISOString()
                 });
-            } catch (_) {}
+            } catch (_) { }
         }
 
-        res.json({ success: true, message: newMsg, twilioSid: sendRes.messageSid });
+        res.json({
+            success: true,
+            message: newMsg,
+            channel: channel,
+            sendDetails: sendRes,
+            twilioSid: sendRes?.messageSid || sendRes?.messageId || null
+        });
     } catch (e) {
-        console.error("[SMS Reply Error]", e);
+        console.error("[Omnichannel Reply Error]", e);
         res.status(500).json({ success: false, error: e.message });
     }
 });
@@ -3341,18 +3988,33 @@ app.post('/api/sms/conversations/:id/suggest-reply', verifyToken, async (req, re
     }
 });
 
-// 8. Start New SMS Conversation (Ad-hoc SMS)
+// 8. Start New Conversation (Ad-hoc SMS or WhatsApp)
 app.post('/api/sms/conversations/start', verifyToken, async (req, res) => {
     try {
-        const { to, message, clientName, companyName, leadId, clientId } = req.body;
+        const { to, message, clientName, companyName, leadId, clientId, channel = 'sms' } = req.body;
         if (!to || !message) {
             return res.status(400).json({ success: false, error: "Numéro de téléphone ('to') et message requis" });
         }
 
-        const normalizedPhone = twilioService.normalizePhone(to);
-        const sessionId = `sms_${normalizedPhone.replace('+', '')}`;
+        const selectedChannel = channel === 'whatsapp' ? 'whatsapp' : 'sms';
+        const cleanDigits = String(to).replace(/[^\d]/g, '');
+        const normalizedPhone = twilioService.normalizePhone ? twilioService.normalizePhone(to) : (to.startsWith('+') ? to : `+${to}`);
+        const sessionId = `${selectedChannel}_${cleanDigits}`;
 
-        const sendRes = await twilioService.sendSms({ to: normalizedPhone, message: message.trim() });
+        let sendRes = null;
+        if (selectedChannel === 'whatsapp') {
+            const useTwilio = req.body.provider === 'twilio' || (!process.env.WHATSAPP_ACCESS_TOKEN && process.env.TWILIO_WHATSAPP_NUMBER);
+            if (useTwilio) {
+                sendRes = await twilioService.sendWhatsApp({ to: normalizedPhone, message: message.trim() });
+            } else {
+                return res.status(400).json({
+                    success: false,
+                    error: "L'ouverture d'une nouvelle conversation WhatsApp vers un contact nécessite un modèle de message (Template) pré-approuvé par Meta, ou l'utilisation du Sandbox Twilio WhatsApp."
+                });
+            }
+        } else {
+            sendRes = await twilioService.sendSms({ to: normalizedPhone, message: message.trim() });
+        }
 
         const sessionRef = db.collection('conversations').doc(sessionId);
         const sessionDoc = await sessionRef.get();
@@ -3367,14 +4029,16 @@ app.post('/api/sms/conversations/start', verifyToken, async (req, res) => {
             author: 'human',
             senderName,
             content: message.trim(),
+            channel: selectedChannel,
             timestamp: new Date().toISOString()
         };
         history.push(newMsg);
 
         await sessionRef.set({
             sessionId,
-            channel: 'sms',
+            channel: selectedChannel,
             phoneNumber: normalizedPhone,
+            senderId: cleanDigits,
             clientName: clientName || null,
             companyName: companyName || null,
             leadId: leadId || null,
@@ -3385,15 +4049,85 @@ app.post('/api/sms/conversations/start', verifyToken, async (req, res) => {
             messages: history.slice(-50)
         }, { merge: true });
 
-        res.json({ success: true, sessionId, message: newMsg, twilioSid: sendRes.messageSid });
+        res.json({
+            success: true,
+            sessionId,
+            channel: selectedChannel,
+            message: newMsg,
+            twilioSid: sendRes?.messageSid || sendRes?.messageId || null
+        });
     } catch (e) {
-        console.error("[SMS Start Conversation Error]", e);
+        console.error("[Start Conversation Error]", e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 8b. Simulator Endpoint for Inbound Omnichannel Messages (Local / Test Mode)
+app.post('/api/conversations/simulate-inbound', verifyToken, async (req, res) => {
+    try {
+        const { channel = 'whatsapp', from, name, company, text } = req.body;
+        if (!text || !text.trim()) {
+            return res.status(400).json({ success: false, error: "Le texte du message est obligatoire." });
+        }
+
+        const validChannels = ['sms', 'whatsapp', 'instagram', 'facebook'];
+        const selectedChannel = validChannels.includes(channel) ? channel : 'whatsapp';
+
+        const cleanPhone = from ? from.replace(/[^\d+]/g, '') : '+15145550199';
+        const rawId = selectedChannel === 'instagram' || selectedChannel === 'facebook'
+            ? (from ? from.replace(/[^a-zA-Z0-9_.]/g, '') : `meta_user_${Date.now().toString().slice(-6)}`)
+            : cleanPhone.replace(/[^\d]/g, '');
+
+        const sessionId = `${selectedChannel}_${rawId}`;
+        const docRef = db.collection('conversations').doc(sessionId);
+        const docSnap = await docRef.get();
+
+        let history = docSnap.exists ? (docSnap.data().messages || []) : [];
+        const clientName = name || (docSnap.exists ? docSnap.data().clientName : null) || (
+            selectedChannel === 'whatsapp' ? 'Prospect WhatsApp' :
+                selectedChannel === 'instagram' ? '@client_instagram' :
+                    selectedChannel === 'facebook' ? 'Utilisateur Facebook' : 'Contact SMS'
+        );
+        const companyName = company || (docSnap.exists ? docSnap.data().companyName : null) || 'Entreprise Test';
+
+        const newMsg = {
+            role: 'user',
+            author: 'user',
+            content: text.trim(),
+            channel: selectedChannel,
+            timestamp: new Date().toISOString(),
+            messageId: `sim_${Date.now()}`
+        };
+        history.push(newMsg);
+
+        await docRef.set({
+            sessionId,
+            channel: selectedChannel,
+            phoneNumber: (selectedChannel === 'sms' || selectedChannel === 'whatsapp') ? cleanPhone : null,
+            senderId: rawId,
+            clientName,
+            companyName,
+            unread: true,
+            aiEnabled: docSnap.exists ? (docSnap.data().aiEnabled !== false) : true,
+            updatedAt: new Date().toISOString(),
+            messages: history.slice(-50)
+        }, { merge: true });
+
+        res.json({
+            success: true,
+            conversationId: sessionId,
+            message: newMsg,
+            channel: selectedChannel,
+            note: `Message entrant simulé avec succès sur le canal ${selectedChannel.toUpperCase()}`
+        });
+    } catch (e) {
+        console.error("[Simulate Inbound Error]", e);
         res.status(500).json({ success: false, error: e.message });
     }
 });
 
 // 9. Twilio Incoming SMS Webhook
-app.post(['/api/webhook/twilio/sms', '/api/twilio/sms', '/api/twilio/inbound'], async (req, res) => {
+app.post(['/api/webhook/twilio/sms', '/api/twilio/sms', '/api/twilio/inbound', '/webhook/twilio/sms', '/twilio/sms'], async (req, res) => {
     try {
         const { From, Body, MessageSid } = req.body;
         if (!From || !Body) {
@@ -3402,12 +4136,12 @@ app.post(['/api/webhook/twilio/sms', '/api/twilio/sms', '/api/twilio/inbound'], 
 
         const aiReply = await twilioService.handleIncomingSms({ from: From, body: Body, messageSid: MessageSid });
 
-        // TwiML Response format: If AI is disabled or returned null, send empty <Response/>
-        const twiml = aiReply 
-            ? `<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n    <Message>${aiReply}</Message>\n</Response>`
-            : `<?xml version="1.0" encoding="UTF-8"?>\n<Response/>`;
-
-        res.type('text/xml').send(twiml);
+        // TwiML Response format: properly escaped via Twilio MessagingResponse
+        const twiml = new twilio.twiml.MessagingResponse();
+        if (aiReply) {
+            twiml.message(aiReply);
+        }
+        res.type('text/xml').send(twiml.toString());
 
     } catch (e) {
         console.error("[Twilio Webhook Error]", e);
@@ -3416,23 +4150,23 @@ app.post(['/api/webhook/twilio/sms', '/api/twilio/sms', '/api/twilio/inbound'], 
         const isEnErr = twilioService.detectMessageLanguage(incomingText, [], twilioService.isPhoneFrancophone(incomingPhone) ? 'fr' : 'en') === 'en';
         const fallbackMsg = isEnErr
             ? "Solutions Quasar Inc.: Thank you for your message. Our team will get back to you shortly."
-            : "Solutions Quasar Inc. : Merci pour votre message. Notre equipe vous repondra rapidement.";
-        res.status(500).type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Message>${fallbackMsg}</Message>
-</Response>`);
+            : "Solutions Quasar Inc. : Merci pour votre message. Notre équipe vous répondra rapidement.";
+        
+        const errTwiml = new twilio.twiml.MessagingResponse();
+        errTwiml.message(fallbackMsg);
+        res.type('text/xml').send(errTwiml.toString());
     }
 });
 
 // 9b. Telnyx / Unified Inbound SMS Webhook
 async function handleTelnyxOrUnifiedInboundSms(req, res) {
+    let isTelnyx = false;
     try {
         console.log('[Inbound SMS Webhook] Received payload:', JSON.stringify(req.body).slice(0, 300));
 
         let fromPhone = '';
         let messageText = '';
         let messageId = '';
-        let isTelnyx = false;
 
         // A. Telnyx API v2 Webhook
         if (req.body?.data?.event_type === 'message.received') {
@@ -3441,7 +4175,7 @@ async function handleTelnyxOrUnifiedInboundSms(req, res) {
             fromPhone = payload?.from?.phone_number || '';
             messageText = payload?.text || '';
             messageId = payload?.id || req.body.data.id || `telnyx_${Date.now()}`;
-        } 
+        }
         // B. Standard / Twilio Form-Encoded or JSON
         else {
             fromPhone = req.body.From || req.body.from || '';
@@ -3453,13 +4187,19 @@ async function handleTelnyxOrUnifiedInboundSms(req, res) {
             return res.status(200).json({ received: true, note: 'Ignored: No from or text' });
         }
 
-        console.log(`[Inbound SMS Webhook] (${isTelnyx ? 'Telnyx' : 'Twilio'}) From: ${fromPhone} | Body: "${messageText}"`);
+        const isWhatsApp = String(fromPhone).startsWith('whatsapp:') || String(req.body.To || '').startsWith('whatsapp:');
+        const channel = isWhatsApp ? 'whatsapp' : 'sms';
+        const provider = isWhatsApp ? 'twilio' : (isTelnyx ? 'telnyx' : 'twilio');
 
-        // Process incoming SMS in conversation thread & trigger AI response if enabled
+        console.log(`[Inbound Webhook] (${isTelnyx ? 'Telnyx' : (isWhatsApp ? 'Twilio WhatsApp' : 'Twilio SMS')}) From: ${fromPhone} | Body: "${messageText}"`);
+
+        // Process incoming SMS/WhatsApp in conversation thread & trigger AI response if enabled
         const aiReply = await twilioService.handleIncomingSms({
             from: fromPhone,
             body: messageText,
-            messageSid: messageId
+            messageSid: messageId,
+            channel: channel,
+            provider: provider
         });
 
         // If Telnyx webhook and AI replied, dispatch reply via sendSms
@@ -3479,21 +4219,27 @@ async function handleTelnyxOrUnifiedInboundSms(req, res) {
             return res.status(200).json({ received: true, replied: Boolean(aiReply) });
         }
 
-        // If Twilio: send TwiML
-        const twiml = aiReply 
-            ? `<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n    <Message>${aiReply}</Message>\n</Response>`
-            : `<?xml version="1.0" encoding="UTF-8"?>\n<Response/>`;
-
-        res.type('text/xml').send(twiml);
+        // If Twilio: send properly formatted & escaped TwiML
+        const twiml = new twilio.twiml.MessagingResponse();
+        if (aiReply) {
+            twiml.message(aiReply);
+        }
+        res.type('text/xml').send(twiml.toString());
 
     } catch (e) {
         console.error("[Inbound SMS Webhook Error]", e);
-        res.status(200).json({ received: true, error: e.message });
+        if (isTelnyx) {
+            res.status(200).json({ received: true, error: e.message });
+        } else {
+            // Twilio always expects valid TwiML XML
+            const fallbackTwiml = new twilio.twiml.MessagingResponse();
+            res.type('text/xml').send(fallbackTwiml.toString());
+        }
     }
 }
 
-app.post('/api/sms/inbound', handleTelnyxOrUnifiedInboundSms);
-app.post('/api/webhook/telnyx/sms', handleTelnyxOrUnifiedInboundSms);
+app.post(['/api/sms/inbound', '/sms/inbound'], handleTelnyxOrUnifiedInboundSms);
+app.post(['/api/webhook/telnyx/sms', '/webhook/telnyx/sms'], handleTelnyxOrUnifiedInboundSms);
 
 // --- SMS SEQUENCES & TIMEZONE AUTOMATION ENGINE ---
 const smsSequenceService = require('./sms-sequence-service');
@@ -3518,13 +4264,18 @@ app.post('/api/sequences/settings', verifyToken, async (req, res) => {
     }
 });
 
-// Get Master Auto-Send Status
+// Get Master Auto-Send Status (also opportunistically processes due sequence steps in serverless environments)
 app.get('/api/sms/auto-send-status', verifyToken, async (req, res) => {
     try {
         const settings = await smsSequenceService.getSequenceSettings();
+        // Opportunistically process due steps & enroll stranded approved mobile leads
+        smsSequenceService.processDueSequenceSteps().catch(err => console.warn('[Auto-Send Tick]', err.message));
+        smsSequenceService.enrollApprovedUnsequencedLeads(10).catch(err => console.warn('[Auto-Enroll Tick]', err.message));
+
         res.json({
             success: true,
-            autoSendEnabled: settings.autoSendEnabled !== false
+            autoSendEnabled: settings.autoSendEnabled !== false,
+            dryRun: settings.dryRun !== false
         });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
@@ -3562,10 +4313,10 @@ app.post('/api/leads/batch-validate-phones', verifyToken, async (req, res) => {
         const targetIds = leadIds.slice(0, 15);
 
         for (const id of targetIds) {
-            let leadRef = db.collection('crm_leads').doc(id);
+            let leadRef = db.collection('leads').doc(id);
             let snap = await leadRef.get();
             if (!snap.exists) {
-                leadRef = db.collection('leads').doc(id);
+                leadRef = db.collection('crm_leads').doc(id);
                 snap = await leadRef.get();
             }
             if (!snap.exists) continue;
@@ -3684,6 +4435,24 @@ app.post('/api/sequences/stop', verifyToken, async (req, res) => {
         const { leadId, instanceId } = req.body;
         const result = await smsSequenceService.stopLeadSequence({ leadId, instanceId });
         res.json(result);
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 4c. Process Due Sequence Steps & Auto-Enroll Approved Mobile Leads (Serverless Heartbeat & Manual Trigger)
+app.post('/api/sequences/process-due', verifyToken, async (req, res) => {
+    try {
+        const enrolled = await smsSequenceService.enrollApprovedUnsequencedLeads(15);
+        const seqRes = await smsSequenceService.processDueSequenceSteps();
+        await followupService.processDueFollowups().catch(() => { });
+        await stalledRecoveryService.processStalledConversations().catch(() => { });
+        res.json({
+            success: true,
+            enrolledCount: enrolled?.enrolledCount || 0,
+            processedCount: seqRes?.processedCount || 0,
+            rescheduledCount: seqRes?.rescheduledCount || 0
+        });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
@@ -3976,7 +4745,19 @@ app.get('/api/appointments', verifyToken, async (req, res) => {
         const snap = await db.collection('appointments').orderBy('appointmentTime', 'asc').limit(50).get();
         const list = [];
         snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+        // Background reconcile with leads and crm_leads pipelines
+        calendarReminderService.reconcileActiveAppointments().catch(err => console.warn('[Appt Reconcile]', err.message));
         res.json({ success: true, appointments: list });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 2b. Explicit Reconcile Appointments with CRM Pipeline
+app.post('/api/appointments/reconcile', verifyToken, async (req, res) => {
+    try {
+        const result = await calendarReminderService.reconcileActiveAppointments();
+        res.json(result);
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
@@ -4024,7 +4805,7 @@ app.post('/api/hunter/run-now', verifyToken, async (req, res) => {
             customIndustry: req.body?.industry,
             customCountry: req.body?.country,
             customRegion: req.body?.region,
-            referer: req.headers.referer || req.headers.origin || 'http://localhost:3002/'
+            referer: req.headers.referer || req.headers.origin || process.env.ERP_PUBLIC_URL || 'https://solutionsquasar.ca/'
         });
         res.json(result);
     } catch (e) {

@@ -399,7 +399,7 @@ class LeadHunterService {
                     'Content-Type': 'application/json',
                     'X-Goog-Api-Key': apiKey,
                     'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.websiteUri,places.id,places.internationalPhoneNumber,places.nationalPhoneNumber,places.addressComponents,places.types,nextPageToken',
-                    'Referer': options.referer || 'http://localhost:3002/'
+                    'Referer': options.referer || process.env.ERP_PUBLIC_URL || 'https://solutionsquasar.ca/'
                 };
 
                 const response = await fetch(endpoint, {
@@ -634,38 +634,44 @@ class LeadHunterService {
                         phone: finalPhone,
                         leadId: docRef.id
                     });
-
-                    // Trigger Autonomous Cognitive Audit & Matching Sequence immediately
-                    if (this.config.autoAuditAndSequence) {
-                        try {
-                            console.log(`[LeadHunterService] Launching AI Audit & Sequence for Lead ${docRef.id}...`);
-                            aiActivityService.log({
-                                category: 'audit',
-                                type: 'audit_start',
-                                level: 'info',
-                                title: `Audit IA démarré : ${name}`,
-                                detail: `Analyse du site web et préparation du pitch...`,
-                                leadName: name
-                            });
-                            await leadAuditService.auditLead(docRef.id);
-                        } catch (auditErr) {
-                            console.warn(`[LeadHunterService] Lead audit error for ${docRef.id}:`, auditErr.message);
-                            aiActivityService.log({
-                                category: 'audit',
-                                type: 'audit_error',
-                                level: 'warning',
-                                title: `Avertissement Audit IA pour ${name}`,
-                                detail: auditErr.message,
-                                leadName: name
-                            });
-                        }
-                    }
                 }
 
                 if (pageNum < 5 && currentPageToken) {
                     await new Promise(r => setTimeout(r, 1200));
                 } else {
                     break;
+                }
+            }
+
+            // Trigger Autonomous Cognitive Audit & Matching Sequence in parallel batches to stay well under 60s
+            if (this.config.autoAuditAndSequence && addedLeadsList.length > 0) {
+                console.log(`[LeadHunterService] Launching AI Audit & Sequences for ${addedLeadsList.length} leads in parallel batches...`);
+                const batchSize = 3;
+                for (let i = 0; i < addedLeadsList.length; i += batchSize) {
+                    const batch = addedLeadsList.slice(i, i + batchSize);
+                    await Promise.all(batch.map(async (leadItem) => {
+                        try {
+                            aiActivityService.log({
+                                category: 'audit',
+                                type: 'audit_start',
+                                level: 'info',
+                                title: `Audit IA démarré : ${leadItem.name}`,
+                                detail: `Analyse du site web et préparation du pitch...`,
+                                leadName: leadItem.name
+                            });
+                            await leadAuditService.auditLead(leadItem.id);
+                        } catch (auditErr) {
+                            console.warn(`[LeadHunterService] Lead audit error for ${leadItem.id}:`, auditErr.message);
+                            aiActivityService.log({
+                                category: 'audit',
+                                type: 'audit_error',
+                                level: 'warning',
+                                title: `Avertissement Audit IA pour ${leadItem.name}`,
+                                detail: auditErr.message,
+                                leadName: leadItem.name
+                            });
+                        }
+                    }));
                 }
             }
 

@@ -933,6 +933,28 @@ function getNextLegalSendTime(targetDate, timezone = 'America/Los_Angeles') {
 }
 
 /**
+ * Computes the relative delay in hours between two consecutive sequence steps.
+ * Handles both relative and cumulative step delays safely, ensuring:
+ * - Step 2 (Double SMS): minimum 2 minutes
+ * - Step 3+ (Relances): minimum 20 hours to prevent same-day / immediate rapid firing
+ */
+function calculateStepIntervalHours(currStepNumber, currDelayHours, prevDelayHours) {
+    let deltaHours = currDelayHours;
+    if (prevDelayHours !== undefined && prevDelayHours !== null && currDelayHours > prevDelayHours) {
+        deltaHours = currDelayHours - prevDelayHours;
+    }
+    // Step 2 (Double SMS): minimum 2 minutes
+    if (currStepNumber === 2 && deltaHours < 0.033) {
+        deltaHours = 0.033;
+    }
+    // Step 3+ (Relances / follow-ups): minimum 20 hours to prevent same-day rapid firing
+    if (currStepNumber >= 3 && deltaHours < 20) {
+        deltaHours = 24;
+    }
+    return deltaHours;
+}
+
+/**
  * Loads or initializes Sequence Settings from Firestore
  */
 async function getSequenceSettings() {
@@ -967,6 +989,27 @@ async function saveSequenceSettings(settings) {
         updatedAt: new Date().toISOString()
     };
     await db.collection('settings').doc('sms_sequence_config').set(toSave, { merge: true });
+
+    // Sync dryRun across all ACTIVE sequence instances so upcoming steps respect the global switch
+    if (settings.dryRun !== undefined) {
+        const newDryRun = Boolean(settings.dryRun);
+        try {
+            const activeInstancesSnap = await db.collection('sequence_instances')
+                .where('status', '==', 'ACTIVE')
+                .get();
+            if (!activeInstancesSnap.empty) {
+                const batch = db.batch();
+                activeInstancesSnap.docs.forEach(docSnap => {
+                    batch.update(docSnap.ref, { dryRun: newDryRun, updatedAt: new Date().toISOString() });
+                });
+                await batch.commit();
+                console.log(`[Sequences] Synchronized dryRun=${newDryRun} across ${activeInstancesSnap.size} active instances.`);
+            }
+        } catch (errSync) {
+            console.warn("[Sequences] Error synchronizing dryRun across active instances:", errSync.message);
+        }
+    }
+
     return toSave;
 }
 
@@ -1132,18 +1175,35 @@ function resolveDemoUrl(lead = {}) {
 /**
  * Detects and extracts a legitimate human first name from lead fields.
  * Returns null if the name is missing, equals the company name, or matches corporate keywords.
+ * NEVER allows a company name, legal form, or stop-word (like "the") to be treated as a human name!
  */
 function extractHumanFirstName(lead = {}) {
+    if (!lead || typeof lead !== 'object') return null;
+
     const biz = String(lead.company || lead.business_name || '').trim().toLowerCase();
     
-    // Potential name candidates in order of priority
+    // Explicit person name candidates in order of priority
     const candidates = [
         lead.first_name,
+        lead.firstName,
         lead.contact_name,
+        lead.contactName,
         lead.manager_name,
+        lead.managerName,
+        lead.dm_name,
+        lead.dmName,
         lead.contactPerson,
+        lead.contact_person,
+        lead.owner_name,
+        lead.ownerName,
         lead.name
     ];
+
+    // Corporate keywords that must NEVER be treated as a human person's name
+    const bizKeywords = /\b(inc|ltd|llc|corp|co|clinique|clinic|centre|center|spa|salon|garage|plomberie|toiture|rénovation|renovation|services|service|boutique|groupe|group|auto|esthetique|esthétique|chiro|dentaire|dentist|restaurant|bar|cafe|café|hôtel|hotel|motel|lavage|gym|studio|avocat|notaire|entrepôt|entrepot|tutorat|tutoring|school|academy|learning|wellness|nails|laser|solutions|consulting|marketing|agency|agence|management|transport|logistics|plumbing|roofing|construction|realty|realtor|electric|painting|landscaping|cleaning|security|physio|therapy|medical|dental|optical|florist|bakery|catering)\b/i;
+
+    // Articles, prepositions, and generic stop-words
+    const stopWords = /^(the|le|la|les|l'|un|une|des|a|an|du|de|d'|and|et|at|in|on|of|for|pour|par)$/i;
 
     for (const cand of candidates) {
         if (!cand || typeof cand !== 'string') continue;
@@ -1151,22 +1211,37 @@ function extractHumanFirstName(lead = {}) {
         if (!trimmed) continue;
         const lower = trimmed.toLowerCase();
 
-        // If candidate name matches or contains the company name, reject
+        // If candidate matches or is contained inside the company/business name, reject
         if (biz && (lower === biz || biz.startsWith(lower) || biz.endsWith(lower) || biz.includes(lower))) {
             continue;
         }
 
-        // Reject if candidate contains corporate/business naming keywords
-        const bizKeywords = /\b(inc|ltd|llc|corp|co|clinique|clinic|centre|center|spa|salon|garage|plomberie|toiture|rénovation|renovation|services|boutique|groupe|group|auto|esthetique|esthétique|chiro|dentaire|restaurant|bar|cafe|café|hôtel|hotel|motel|lavage|gym|studio|avocat|notaire|entrepôt|entrepot)\b/i;
+        // If candidate contains corporate/business naming keywords, reject
         if (bizKeywords.test(lower)) {
             continue;
         }
 
-        // It looks like a real person's name! Extract first name if multiple words (e.g. "Stéphane Gagnon" -> "Stéphane")
-        const firstName = trimmed.split(/\s+/)[0].replace(/[^a-zA-ZÀ-ÿ-]/g, '');
-        if (firstName.length >= 2) {
-            return firstName.charAt(0).toUpperCase() + firstName.slice(1);
+        // Extract first word
+        const firstWord = trimmed.split(/\s+/)[0].replace(/[^a-zA-ZÀ-ÿ-]/g, '');
+        if (!firstWord || firstWord.length < 2) continue;
+
+        // Reject if first word is a stop-word (e.g. "the", "le", "la")
+        if (stopWords.test(firstWord.toLowerCase())) {
+            continue;
         }
+
+        // Reject if first word itself matches corporate keywords
+        if (bizKeywords.test(firstWord.toLowerCase())) {
+            continue;
+        }
+
+        // Also check if first word is part of the company name
+        if (biz && biz.includes(firstWord.toLowerCase())) {
+            continue;
+        }
+
+        // Clean & capitalize properly (e.g. "stéphane" -> "Stéphane")
+        return firstWord.charAt(0).toUpperCase() + firstWord.slice(1);
     }
 
     return null;
@@ -1237,6 +1312,55 @@ function interpolateTemplate(template, lead = {}, isFr = true) {
     return text;
 }
 
+const VALID_SEQUENCE_CATEGORIES = new Set([
+    'missing_gmb_website',
+    'directory_only',
+    'no_website',
+    'outdated_website',
+    'modern_no_ai',
+    'social_only'
+]);
+
+/**
+ * Resolves the accurate pain-point category for a lead, ignoring industry names in lead.category
+ * and enforcing strict consistency with lead.website presence.
+ */
+function resolveLeadPainCategory(lead = {}) {
+    const hasWeb = Boolean(lead.website && String(lead.website).trim() !== '');
+    const isDir = Boolean(lead.has_directory_only || lead.is_directory_website);
+
+    const candidates = [
+        lead.leadCategory,
+        lead.auditProfile,
+        lead.sequenceCategory,
+        lead.category
+    ];
+
+    for (const c of candidates) {
+        if (!c) continue;
+        const norm = String(c).toLowerCase().trim();
+        if (VALID_SEQUENCE_CATEGORIES.has(norm)) {
+            if (!hasWeb && (norm === 'modern_no_ai' || norm === 'outdated_website')) {
+                return 'no_website';
+            }
+            if (hasWeb && !isDir && norm === 'no_website') {
+                return 'modern_no_ai';
+            }
+            return norm;
+        }
+    }
+
+    const signals = Array.isArray(lead.pain_signals) ? lead.pain_signals.map(s => String(s).toUpperCase()) : [];
+    if (isDir || signals.includes('DIRECTORY_ONLY')) return 'directory_only';
+    if (signals.includes('MISSING_GMB_WEBSITE')) return 'missing_gmb_website';
+    if (signals.includes('SOCIAL_ONLY')) return 'social_only';
+    if (!hasWeb || signals.includes('NO_WEBSITE')) return 'no_website';
+    if (signals.includes('SLOW_SPEED') || signals.includes('OUTDATED_DESIGN') || signals.includes('NOT_MOBILE_FRIENDLY') || signals.includes('NO_SSL')) {
+        return 'outdated_website';
+    }
+    return 'modern_no_ai';
+}
+
 /**
  * Binds and triggers a Sequence for a Lead
  */
@@ -1252,6 +1376,53 @@ async function triggerLeadSequence({ leadId, sequenceId, dryRunOverride, bypassP
     if (!leadSnap.exists) throw new Error("Lead introuvable");
 
     const lead = leadSnap.data();
+
+    // 0.0 Deduplication Protection: Prevent concurrent active sequences on the same lead or phone
+    if (!forceLive) {
+        if (lead.sequenceStatus === 'ACTIVE' && lead.sequenceInstanceId) {
+            const existingInstSnap = await db.collection('sequence_instances').doc(lead.sequenceInstanceId).get();
+            if (existingInstSnap.exists && existingInstSnap.data().status === 'ACTIVE') {
+                console.log(`[Sequences] ⚠️ Lead ${leadId} (${lead.business_name || lead.name}) already has active instance ${lead.sequenceInstanceId}. Duplicate enrollment blocked.`);
+                return {
+                    skipped: true,
+                    reason: 'Une séquence active est déjà en cours pour ce prospect.',
+                    instanceId: lead.sequenceInstanceId
+                };
+            }
+        }
+
+        if (lead.phone) {
+            const activePhoneSnap = await db.collection('sequence_instances')
+                .where('phone', '==', lead.phone)
+                .where('status', '==', 'ACTIVE')
+                .limit(1)
+                .get();
+            if (!activePhoneSnap.empty) {
+                const activeId = activePhoneSnap.docs[0].id;
+                console.log(`[Sequences] ⚠️ Phone ${lead.phone} already has active instance ${activeId}. Duplicate enrollment blocked.`);
+                return {
+                    skipped: true,
+                    reason: 'Une séquence active est déjà en cours pour ce numéro de téléphone.',
+                    instanceId: activeId
+                };
+            }
+        }
+    } else {
+        // If forceLive is requested (manual user restart), supersede any older active instances to avoid duplicate concurrent workers
+        if (lead.phone) {
+            const activeOld = await db.collection('sequence_instances')
+                .where('phone', '==', lead.phone)
+                .where('status', '==', 'ACTIVE')
+                .get();
+            for (const oldDoc of activeOld.docs) {
+                console.log(`[Sequences] Halting older active instance ${oldDoc.id} due to forceLive restart.`);
+                await oldDoc.ref.update({
+                    status: 'SUPERSEDED',
+                    updatedAt: new Date().toISOString()
+                });
+            }
+        }
+    }
 
     // 0. Master Switch Check: Are automated SMS sequences globally enabled?
     const globalSettings = await getSequenceSettings();
@@ -1289,6 +1460,7 @@ async function triggerLeadSequence({ leadId, sequenceId, dryRunOverride, bypassP
     }
 
     // 2.1 CASL / LCAP Compliance Protection (Canadian Destinations)
+    // Only block if an explicit anti-solicitation restriction was detected on the business website (INELIGIBLE).
     const { isCanadianDestination } = require('./telnyx-service');
     const isCanadian = isCanadianDestination(lead.phone, lead);
     if (isCanadian && !dryRunOverride && !canBypassPause) {
@@ -1297,14 +1469,6 @@ async function triggerLeadSequence({ leadId, sequenceId, dryRunOverride, bypassP
             return {
                 skipped: true,
                 reason: `Conformité LCAP / CASL : ${lead.casl?.notes || 'Sollicitation commerciale interdite par l\'entreprise sur son site web.'}`
-            };
-        }
-        if (lead.casl?.status === 'REVIEW') {
-            console.log(`[Sequences] ⚠️ BLOCKED (CASL REVIEW): Lead ${leadId} (${lead.business_name || lead.name}): Publication bien en vue non confirmée.`);
-            return {
-                skipped: true,
-                reviewRequired: true,
-                reason: `Conformité LCAP / CASL : Le numéro n'a pas été détecté sur le site officiel de l'entreprise. Vérification manuelle requise avant envoi automatique.`
             };
         }
     }
@@ -1348,11 +1512,24 @@ async function triggerLeadSequence({ leadId, sequenceId, dryRunOverride, bypassP
 
     // Load Sequence Config
     const sequences = await getSequences();
-    let targetSeq = sequences.find(s => s.id === sequenceId);
+    const resolvedPainCat = resolveLeadPainCategory(lead);
 
-    // Auto-match by lead category and country if sequenceId not explicitly provided
+    // If sequenceId was passed as a category name or if it contradicts website presence, normalize it
+    let normalizedSeqId = sequenceId;
+    if (normalizedSeqId && VALID_SEQUENCE_CATEGORIES.has(normalizedSeqId)) {
+        normalizedSeqId = `seq_${normalizedSeqId}`;
+    }
+    if (normalizedSeqId === `seq_modern_no_ai` && resolvedPainCat === 'no_website') {
+        normalizedSeqId = 'seq_no_website';
+    } else if (normalizedSeqId === `seq_no_website` && resolvedPainCat !== 'no_website') {
+        normalizedSeqId = `seq_${resolvedPainCat}`;
+    }
+
+    let targetSeq = sequences.find(s => s.id === normalizedSeqId);
+
+    // Auto-match by lead pain category and country if sequenceId not explicitly matched
     if (!targetSeq) {
-        const leadCat = lead.category || lead.leadCategory || (lead.has_directory_only ? 'directory_only' : (lead.website ? 'outdated_website' : 'no_website'));
+        const leadCat = resolvedPainCat;
         const leadCountry = resolveLeadCountry(lead);
 
         // 1. Exact match on category AND targetCountry
@@ -1363,13 +1540,13 @@ async function triggerLeadSequence({ leadId, sequenceId, dryRunOverride, bypassP
         if (!targetSeq) {
             targetSeq = sequences.find(s => s.active !== false && s.targetCategory === leadCat && (!s.targetCountry || s.targetCountry === 'ALL'));
         }
-        // 3. Fallback to any sequence matching country
-        if (!targetSeq && leadCountry !== 'ALL') {
-            targetSeq = sequences.find(s => s.active !== false && s.targetCountry === leadCountry);
-        }
-        // 4. Fallback to category or first sequence
+        // 3. Fallback to any sequence matching the exact pain category
         if (!targetSeq) {
-            targetSeq = sequences.find(s => s.active !== false && s.targetCategory === leadCat) || sequences.find(s => s.active !== false) || sequences[0];
+            targetSeq = sequences.find(s => s.active !== false && s.targetCategory === leadCat) || sequences.find(s => s.targetCategory === leadCat);
+        }
+        // 4. Final fallback
+        if (!targetSeq) {
+            targetSeq = sequences.find(s => s.active !== false) || sequences[0];
         }
     }
 
@@ -1387,21 +1564,31 @@ async function triggerLeadSequence({ leadId, sequenceId, dryRunOverride, bypassP
         timezone: lead.timezone || lead.businessTimezone
     });
 
-    // Schedule all steps
+    // Schedule all steps with sequential cascading delays
     const now = new Date();
-    const scheduledSteps = (targetSeq.steps || []).map((step, idx) => {
-        let baseDate = new Date(now.getTime() + (step.delayHours * 3600000));
-        let legalSendDate = getNextLegalSendTime(baseDate, timezone);
-        return {
-            stepNumber: step.stepNumber || (idx + 1),
+    let rollingBaseDate = new Date(now);
+    const scheduledSteps = [];
+
+    for (let idx = 0; idx < (targetSeq.steps || []).length; idx++) {
+        const step = targetSeq.steps[idx];
+        const stepNum = step.stepNumber || (idx + 1);
+        const prevStep = idx > 0 ? targetSeq.steps[idx - 1] : null;
+        const deltaHours = calculateStepIntervalHours(stepNum, step.delayHours, prevStep ? prevStep.delayHours : undefined);
+
+        rollingBaseDate = new Date(rollingBaseDate.getTime() + (deltaHours * 3600000));
+        const legalSendDate = getNextLegalSendTime(rollingBaseDate, timezone);
+        rollingBaseDate = new Date(legalSendDate); // cascade from legal time of this step
+
+        scheduledSteps.push({
+            stepNumber: stepNum,
             delayHours: step.delayHours,
             template: step.template,
             template_en: step.template_en || null,
             scheduledFor: legalSendDate,
             status: idx === 0 ? 'PENDING' : 'SCHEDULED',
             sentAt: null
-        };
-    });
+        });
+    }
 
     const isFrancophone = isLeadFrancophone(lead);
     const instanceId = `seq_${leadId}_${Date.now()}`;
@@ -1429,9 +1616,12 @@ async function triggerLeadSequence({ leadId, sequenceId, dryRunOverride, bypassP
 
     await db.collection('sequence_instances').doc(instanceId).set(instanceData);
 
-    // Update Lead Doc with active sequence link
+    // Update Lead Doc with active sequence link & normalized status
     const firstStepScheduledFor = scheduledSteps[0]?.scheduledFor || null;
-    await leadRef.update({
+    const curLeadStatusNorm = String(lead.status || 'NEW').toUpperCase().trim();
+    const shouldPromoteToApproved = ['NEW', 'AUDITED', ''].includes(curLeadStatusNorm);
+
+    const leadUpdatePayload = {
         activeSequenceId: targetSeq.id,
         sequenceName: targetSeq.name,
         sequenceInstanceId: instanceId,
@@ -1439,11 +1629,17 @@ async function triggerLeadSequence({ leadId, sequenceId, dryRunOverride, bypassP
         sequenceCategory: targetSeq.targetCategory,
         timezone,
         isManualLiveTest: Boolean(forceLive || (bypassPause && !isDryRun)),
+        smsSequenceStep: 0,
         nextStepDue: firstStepScheduledFor,
         nextStepNumber: 1,
         totalSequenceSteps: scheduledSteps.length,
-        updatedAt: now.toISOString()
-    });
+        updatedAt: now.toISOString(),
+        updated_at: now.toISOString()
+    };
+    if (shouldPromoteToApproved) {
+        leadUpdatePayload.status = 'APPROVED';
+    }
+    await leadRef.update(leadUpdatePayload);
 
     console.log(`[Sequences] Triggered "${targetSeq.name}" on Lead ${leadId} (${lead.phone}) | Dry-Run: ${isDryRun} | BypassPause: ${instanceData.bypassPause} | TZ: ${timezone}`);
 
@@ -1457,10 +1653,20 @@ async function triggerLeadSequence({ leadId, sequenceId, dryRunOverride, bypassP
         phone: lead.phone
     });
 
-    // If step 1 is scheduled within next 15 minutes OR if manual live test / bypassPause, execute immediately!
+    // Only execute immediately if:
+    // 1) The first step is explicitly forced by a manual live test (forceLive)
+    // 2) OR if scheduled for right now AND within legal hours in the recipient's timezone
     const firstStep = scheduledSteps[0];
-    if (firstStep && (firstStep.delayHours <= 0.25 || bypassPause || forceLive)) {
-        await executeInstanceStep(instanceId, 1);
+    if (firstStep) {
+        const firstStepDueTime = new Date(firstStep.scheduledFor).getTime();
+        const isDueNow = firstStepDueTime <= (now.getTime() + 60000);
+        const isLegalNow = isWithinLegalWindow(now, timezone);
+
+        if (forceLive || (isDueNow && isLegalNow)) {
+            await executeInstanceStep(instanceId, 1);
+        } else {
+            console.log(`[Sequences] Step 1 deferred to legal window: ${firstStep.scheduledFor} (Local TZ: ${timezone})`);
+        }
     }
 
     return {
@@ -1496,34 +1702,68 @@ async function executeInstanceStep(instanceId, stepNumber) {
     if (!leadSnap.exists) return;
     const lead = leadSnap.data();
 
-    // Kill switch: Check if prospect has replied, booked or opted out
-    if (lead.smsOptOut || lead.smsStatus === 'Replied' || lead.status === 'Replied' || lead.status === 'Meeting Scheduled') {
-        console.log(`[Sequences] Kill-switch triggered for Lead ${inst.leadId}. Halting sequence.`);
+    // Kill switch: Check if prospect has replied, booked, opted out, or was moved to a terminal CRM status
+    const normLeadStatus = String(lead.status || '').toUpperCase().trim();
+    const isKillStatus = [
+        'REPLIED',
+        'INTERESTED',
+        'MEETING_SCHEDULED',
+        'MEETING SCHEDULED',
+        'CLIENT',
+        'REJECTED',
+        'ARCHIVED',
+        'EXCLUDED / FRANCHISE',
+        'EXCLUDED_FRANCHISE',
+        'UNSUBSCRIBED'
+    ].includes(normLeadStatus);
+
+    if (lead.smsOptOut || lead.doNotContact || lead.smsStatus === 'Replied' || isKillStatus) {
+        const stopReason = (normLeadStatus === 'MEETING_SCHEDULED' || normLeadStatus === 'MEETING SCHEDULED')
+            ? 'STOPPED_MEETING'
+            : ((lead.smsStatus === 'Replied' || normLeadStatus === 'REPLIED' || normLeadStatus === 'INTERESTED')
+                ? 'STOPPED_REPLIED'
+                : 'STOPPED_MANUAL');
+
+        console.log(`[Sequences] Kill-switch triggered for Lead ${inst.leadId} (Status: ${lead.status}, Reason: ${stopReason}). Halting sequence.`);
         aiActivityService.log({
             category: 'sms',
             type: 'seq_stopped',
             level: 'warning',
             title: `Séquence arrêtée (Kill-Switch)`,
-            detail: `Le prospect "${lead.business_name || lead.name}" (${lead.phone}) a répondu ou s'est désabonné. Séquence immédiatement interrompue.`,
+            detail: `Le prospect "${lead.business_name || lead.name}" (${lead.phone}) a changé de statut (${lead.status}) ou répondu. Séquence immédiatement interrompue.`,
             leadName: lead.business_name || lead.name,
             phone: lead.phone
         });
+        const stopIso = new Date().toISOString();
         await instRef.update({
-            status: 'STOPPED_REPLIED',
-            stoppedAt: new Date().toISOString()
+            status: stopReason,
+            stoppedAt: stopIso,
+            updatedAt: stopIso
         });
-        await leadRef.update({ sequenceStatus: 'STOPPED_REPLIED' });
+        await leadRef.update({
+            sequenceStatus: stopReason,
+            nextStepDue: null,
+            nextStepNumber: null,
+            updatedAt: stopIso
+        });
         return;
     }
 
     // Landline Protection Check
     if (lead.phone_type === 'landline' || lead.sms_eligible === false) {
         console.log(`[Sequences] Step blocked: Lead ${inst.leadId} is a landline.`);
+        const stopIso = new Date().toISOString();
         await instRef.update({
             status: 'STOPPED_LANDLINE',
-            stoppedAt: new Date().toISOString()
+            stoppedAt: stopIso,
+            updatedAt: stopIso
         });
-        await leadRef.update({ sequenceStatus: 'BLOCKED_LANDLINE' });
+        await leadRef.update({
+            sequenceStatus: 'BLOCKED_LANDLINE',
+            nextStepDue: null,
+            nextStepNumber: null,
+            updatedAt: stopIso
+        });
         return;
     }
 
@@ -1543,11 +1783,19 @@ async function executeInstanceStep(instanceId, stepNumber) {
     const chosenTemplate = (isFr || !step.template_en) ? step.template : step.template_en;
     const messageBody = interpolateTemplate(chosenTemplate, lead, isFr);
 
-    console.log(`[Sequences] Executing Step ${stepNumber} for ${lead.phone} (Lang: ${isFr ? 'FR' : 'EN'}) | Dry-Run: ${inst.dryRun}`);
+    const globalSettings = await getSequenceSettings();
+    // Effective dryRun: forceLive or bypassPause overrides dryRun; otherwise respect global dryRun setting
+    const isDryRunEffective = (inst.forceLive) ? false : (globalSettings.dryRun !== false);
+    const isSequenceCompleted = stepNumber >= inst.totalSteps;
+    const preserveAdvancedStatus = ['INTERESTED', 'MEETING_SCHEDULED', 'CLIENT', 'REJECTED', 'ARCHIVED'].includes(normLeadStatus);
+    const nextCrmStatus = preserveAdvancedStatus
+        ? lead.status
+        : (isSequenceCompleted ? 'COLD_NURTURE' : 'CONTACTED');
 
-    if (inst.dryRun) {
+    console.log(`[Sequences] Executing Step ${stepNumber}/${inst.totalSteps} for ${lead.phone} (Lang: ${isFr ? 'FR' : 'EN'}) | Dry-Run Effective: ${isDryRunEffective} | Next CRM Status: ${nextCrmStatus}`);
+
+    if (isDryRunEffective) {
         // --- DRY RUN MODE (SIMULATION) ---
-        // Log to simulated logs without touching Twilio
         await db.collection('sms_simulation_logs').add({
             instanceId,
             leadId: inst.leadId,
@@ -1559,34 +1807,54 @@ async function executeInstanceStep(instanceId, stepNumber) {
         });
 
         // Update step status in instance
+        const sentTime = new Date();
+        const sentIso = sentTime.toISOString();
         inst.steps[stepIndex].status = 'SIMULATED';
-        inst.steps[stepIndex].sentAt = new Date().toISOString();
+        inst.steps[stepIndex].sentAt = sentIso;
         inst.steps[stepIndex].executedBody = messageBody;
 
         const nextStepIdx = stepNumber; // index of next step in 0-based array
-        const nextStepObj = inst.steps[nextStepIdx];
-        const nextDue = (nextStepObj && stepNumber < inst.totalSteps) ? nextStepObj.scheduledFor : null;
+        let nextDue = null;
+        if (!isSequenceCompleted && nextStepIdx < inst.totalSteps && inst.steps[nextStepIdx]) {
+            const nextStepObj = inst.steps[nextStepIdx];
+            const nextStepNum = nextStepObj.stepNumber || (nextStepIdx + 1);
+            const deltaHours = calculateStepIntervalHours(nextStepNum, nextStepObj.delayHours, step.delayHours);
+
+            const baseNextDate = new Date(sentTime.getTime() + (deltaHours * 3600000));
+            nextDue = getNextLegalSendTime(baseNextDate, inst.timezone);
+            nextStepObj.scheduledFor = nextDue;
+            nextStepObj.status = 'SCHEDULED';
+        }
 
         await instRef.update({
-            currentStep: stepNumber < inst.totalSteps ? stepNumber + 1 : stepNumber,
-            status: stepNumber >= inst.totalSteps ? 'COMPLETED' : 'ACTIVE',
+            currentStep: !isSequenceCompleted ? stepNumber + 1 : stepNumber,
+            status: isSequenceCompleted ? 'COMPLETED' : 'ACTIVE',
             steps: inst.steps,
-            updatedAt: new Date().toISOString()
+            updatedAt: sentIso
         });
 
-        await leadRef.update({
-            lastSimulatedSms: new Date().toISOString(),
+        const dryLeadPatch = {
+            status: nextCrmStatus,
+            sequenceStatus: isSequenceCompleted ? 'COMPLETED' : 'ACTIVE',
+            lastSimulatedSms: sentIso,
+            lastContactDate: sentIso,
             smsSequenceStep: stepNumber,
             smsStatus: 'Simulated',
-            nextStepDue: nextDue,
-            nextStepNumber: stepNumber < inst.totalSteps ? stepNumber + 1 : null
-        });
+            nextStepDue: isSequenceCompleted ? null : nextDue,
+            nextStepNumber: isSequenceCompleted ? null : (stepNumber + 1),
+            updatedAt: sentIso,
+            updated_at: sentIso
+        };
+        if (isSequenceCompleted && !preserveAdvancedStatus) {
+            dryLeadPatch.stalledStatus = 'COLD_NURTURE_SCHEDULED';
+        }
+        await leadRef.update(dryLeadPatch);
 
         aiActivityService.log({
             category: 'sms',
             type: 'sms_simulated',
             level: 'warning',
-            title: `SMS Étape ${stepNumber} SIMULÉ (Dry-Run)`,
+            title: `SMS Étape ${stepNumber}/${inst.totalSteps} SIMULÉ (Dry-Run) → Statut : ${nextCrmStatus}`,
             detail: `Destinataire : ${lead.phone} ("${lead.business_name || lead.name}")\n💬 Message : "${messageBody}"`,
             leadName: lead.business_name || lead.name,
             phone: lead.phone,
@@ -1594,7 +1862,19 @@ async function executeInstanceStep(instanceId, stepNumber) {
         });
 
     } else {
-        // --- REAL PRODUCTION MODE (TWILIO DISPATCH) ---
+        // --- REAL PRODUCTION MODE (TWILIO / TELNYX DISPATCH) ---
+        // STRICT LEGAL HOURS GUARDRAIL: Never send real SMS outside legal window unless explicitly forced by manual live test
+        const now = new Date();
+        if (!inst.forceLive && !isWithinLegalWindow(now, inst.timezone)) {
+            console.warn(`[Sequences Guardrail] Blocked out-of-hours SMS to ${lead.phone} (TZ: ${inst.timezone}, Time: ${now.toISOString()}). Rescheduling to next legal window.`);
+            const nextLegal = getNextLegalSendTime(now, inst.timezone);
+            step.scheduledFor = nextLegal;
+            step.status = 'SCHEDULED';
+            await instRef.update({ steps: inst.steps });
+            await leadRef.update({ nextStepDue: nextLegal }).catch(() => {});
+            return;
+        }
+
         try {
             const sendResult = await twilioService.sendSms({
                 to: lead.phone,
@@ -1608,20 +1888,11 @@ async function executeInstanceStep(instanceId, stepNumber) {
                 category: 'sms',
                 type: 'sms_sent',
                 level: 'success',
-                title: `SMS Étape ${stepNumber} ENVOYÉ (${providerLabel})`,
+                title: `SMS Étape ${stepNumber}/${inst.totalSteps} ENVOYÉ (${providerLabel})`,
                 detail: `Délivré avec succès vers ${lead.phone} ("${lead.business_name || lead.name}") via ${providerLabel}\n💬 Message : "${messageBody}"`,
                 leadName: lead.business_name || lead.name,
                 phone: lead.phone,
                 metadata: { stepNumber, sid: sendResult.messageSid, provider: sendResult.provider, isDryRun: false, smsBody: messageBody, phone: lead.phone, recipientPhone: lead.phone }
-            });
-
-            // Update CRM Lead status to Contacted
-            await leadRef.update({
-                status: 'Contacted',
-                smsStatus: 'Sent',
-                lastSmsSent: new Date().toISOString(),
-                lastContactDate: new Date().toISOString(),
-                smsSequenceStep: stepNumber
             });
 
             // Synchronize with conversation thread
@@ -1631,11 +1902,14 @@ async function executeInstanceStep(instanceId, stepNumber) {
             const convSnap = await convRef.get();
             let history = convSnap.exists ? (convSnap.data().messages || []) : [];
 
+            const sentTime = new Date();
+            const sentIso = sentTime.toISOString();
+
             history.push({
                 role: 'assistant',
                 author: 'sequence',
                 content: messageBody,
-                timestamp: new Date().toISOString(),
+                timestamp: sentIso,
                 sequenceStep: stepNumber
             });
 
@@ -1647,32 +1921,52 @@ async function executeInstanceStep(instanceId, stepNumber) {
                 companyName: lead.company || lead.business_name || null,
                 leadId: inst.leadId,
                 aiEnabled: true,
-                updatedAt: new Date().toISOString(),
+                updatedAt: sentIso,
                 messages: history.slice(-50)
             }, { merge: true });
 
             // Update step status in instance
             inst.steps[stepIndex].status = 'SENT';
-            inst.steps[stepIndex].sentAt = new Date().toISOString();
+            inst.steps[stepIndex].sentAt = sentIso;
             inst.steps[stepIndex].messageSid = sendResult.messageSid;
+            inst.steps[stepIndex].executedBody = messageBody;
 
             const nextStepIdx = stepNumber;
-            const nextStepObj = inst.steps[nextStepIdx];
-            const nextDue = (nextStepObj && stepNumber < inst.totalSteps) ? nextStepObj.scheduledFor : null;
+            let nextDue = null;
+            if (!isSequenceCompleted && nextStepIdx < inst.totalSteps && inst.steps[nextStepIdx]) {
+                const nextStepObj = inst.steps[nextStepIdx];
+                const nextStepNum = nextStepObj.stepNumber || (nextStepIdx + 1);
+                const deltaHours = calculateStepIntervalHours(nextStepNum, nextStepObj.delayHours, step.delayHours);
+
+                const baseNextDate = new Date(sentTime.getTime() + (deltaHours * 3600000));
+                nextDue = getNextLegalSendTime(baseNextDate, inst.timezone);
+                nextStepObj.scheduledFor = nextDue;
+                nextStepObj.status = 'SCHEDULED';
+            }
 
             await instRef.update({
-                currentStep: stepNumber < inst.totalSteps ? stepNumber + 1 : stepNumber,
-                status: stepNumber >= inst.totalSteps ? 'COMPLETED' : 'ACTIVE',
+                currentStep: !isSequenceCompleted ? stepNumber + 1 : stepNumber,
+                status: isSequenceCompleted ? 'COMPLETED' : 'ACTIVE',
                 steps: inst.steps,
-                updatedAt: new Date().toISOString()
+                updatedAt: sentIso
             });
 
-            await leadRef.update({
+            const liveLeadPatch = {
+                status: nextCrmStatus,
+                sequenceStatus: isSequenceCompleted ? 'COMPLETED' : 'ACTIVE',
                 smsSequenceStep: stepNumber,
                 smsStatus: 'Sent',
-                nextStepDue: nextDue,
-                nextStepNumber: stepNumber < inst.totalSteps ? stepNumber + 1 : null
-            });
+                lastSmsSent: sentIso,
+                lastContactDate: sentIso,
+                nextStepDue: isSequenceCompleted ? null : nextDue,
+                nextStepNumber: isSequenceCompleted ? null : (stepNumber + 1),
+                updatedAt: sentIso,
+                updated_at: sentIso
+            };
+            if (isSequenceCompleted && !preserveAdvancedStatus) {
+                liveLeadPatch.stalledStatus = 'COLD_NURTURE_SCHEDULED';
+            }
+            await leadRef.update(liveLeadPatch);
 
         } catch (sendErr) {
             console.error(`[Sequences] Step ${stepNumber} Twilio send failed:`, sendErr.message);
@@ -1683,10 +1977,83 @@ async function executeInstanceStep(instanceId, stepNumber) {
     }
 }
 
+let isProcessingDueSequenceSteps = false;
+
+/**
+ * Enrolls approved mobile leads that were previously left without an active sequence
+ */
+async function enrollApprovedUnsequencedLeads(maxToEnroll = 15) {
+    try {
+        const settings = await getSequenceSettings();
+        if (settings.autoSendEnabled === false) {
+            return { enrolledCount: 0, paused: true };
+        }
+
+        const snap = await db.collection('leads')
+            .where('status', '==', 'APPROVED')
+            .limit(100)
+            .get();
+
+        if (snap.empty) return { enrolledCount: 0 };
+
+        let enrolledCount = 0;
+        for (const docSnap of snap.docs) {
+            if (enrolledCount >= maxToEnroll) break;
+            const d = docSnap.data();
+
+            // Only auto-enroll verified mobile leads (or repair un-started sequences whose category mismatched)
+            if (d.phone_type !== 'mobile' || d.sms_eligible === false) continue;
+            if (d.isFranchise || d.category === 'franchise' || d.leadCategory === 'franchise') continue;
+            if (d.smsOptOut || d.doNotContact || d.casl?.status === 'INELIGIBLE') continue;
+            if (!d.phone && !d.phone_number) continue;
+
+            const correctCat = resolveLeadPainCategory(d);
+            const hasUnstartedMismatchedSeq = (
+                d.sequenceStatus === 'ACTIVE' &&
+                Number(d.smsSequenceStep || 0) === 0 &&
+                d.sequenceCategory &&
+                d.sequenceCategory !== correctCat
+            );
+
+            if ((d.sequenceStatus || d.sequenceInstanceId) && !hasUnstartedMismatchedSeq) continue;
+
+            try {
+                if (hasUnstartedMismatchedSeq && d.sequenceInstanceId) {
+                    await db.collection('sequence_instances').doc(d.sequenceInstanceId).update({
+                        status: 'SUPERSEDED',
+                        updatedAt: new Date().toISOString()
+                    }).catch(() => {});
+                    await docSnap.ref.update({
+                        sequenceStatus: null,
+                        sequenceInstanceId: null
+                    });
+                }
+                const res = await triggerSequenceForLead(docSnap.id, correctCat);
+                if (res && res.success) {
+                    enrolledCount++;
+                }
+            } catch (e) {
+                console.warn(`[Sequences Auto-Enroll] Could not enroll lead ${docSnap.id}:`, e.message);
+            }
+        }
+        return { enrolledCount };
+    } catch (err) {
+        console.warn("[Sequences Auto-Enroll] Error:", err.message);
+        return { enrolledCount: 0, error: err.message };
+    }
+}
+
 /**
  * Cron / Worker: Checks all pending scheduled steps across active sequence instances
  */
 async function processDueSequenceSteps() {
+    if (isProcessingDueSequenceSteps) {
+        return { skipped: true, reason: 'Already processing' };
+    }
+    isProcessingDueSequenceSteps = true;
+    let processedCount = 0;
+    let rescheduledCount = 0;
+
     try {
         const settings = await getSequenceSettings();
         const isGlobalPaused = settings.autoSendEnabled === false;
@@ -1696,7 +2063,7 @@ async function processDueSequenceSteps() {
             .where('status', '==', 'ACTIVE')
             .get();
 
-        if (snap.empty) return;
+        if (snap.empty) return { processedCount: 0, rescheduledCount: 0 };
 
         for (const doc of snap.docs) {
             const inst = doc.data();
@@ -1706,14 +2073,40 @@ async function processDueSequenceSteps() {
                 continue;
             }
 
-            const currStep = inst.steps[inst.currentStep - 1];
+            const currStepIdx = (inst.currentStep || 1) - 1;
+            const currStep = inst.steps[currStepIdx];
 
-            if (currStep && currStep.status === 'SCHEDULED' || currStep?.status === 'PENDING') {
+            if (currStep && (currStep.status === 'SCHEDULED' || currStep.status === 'PENDING')) {
+                // Safeguard: Ensure minimum required delay since previous step sentAt has elapsed
+                if (currStepIdx > 0) {
+                    const prevStep = inst.steps[currStepIdx - 1];
+                    if (prevStep && prevStep.sentAt) {
+                        const prevSentMs = new Date(prevStep.sentAt).getTime();
+                        const currStepNum = currStep.stepNumber || (currStepIdx + 1);
+                        const requiredDeltaHours = calculateStepIntervalHours(currStepNum, currStep.delayHours, prevStep.delayHours);
+                        const minAllowedMs = prevSentMs + (requiredDeltaHours * 3600000);
+
+                        if (now.getTime() < minAllowedMs) {
+                            const newSched = getNextLegalSendTime(new Date(minAllowedMs), inst.timezone);
+                            console.log(`[Sequences Guardrail] Delaying Step ${currStepNum} for ${inst.phone} (${inst.companyName || ''}): Minimum interval of ${requiredDeltaHours}h after Step ${currStepIdx} not yet elapsed. Rescheduled to ${newSched}`);
+                            currStep.scheduledFor = newSched;
+                            await doc.ref.update({ steps: inst.steps });
+                            if (inst.leadId) {
+                                await db.collection('leads').doc(inst.leadId).update({ nextStepDue: newSched }).catch(() => {});
+                                await db.collection('crm_leads').doc(inst.leadId).update({ nextStepDue: newSched }).catch(() => {});
+                            }
+                            rescheduledCount++;
+                            continue;
+                        }
+                    }
+                }
+
                 const scheduledTime = new Date(currStep.scheduledFor);
                 if (scheduledTime <= now) {
                     // Check if right now is legal send window in recipient timezone
                     if (isWithinLegalWindow(now, inst.timezone)) {
                         await executeInstanceStep(doc.id, inst.currentStep);
+                        processedCount++;
                     } else {
                         // Reschedule to next legal window
                         const nextLegal = getNextLegalSendTime(now, inst.timezone);
@@ -1723,13 +2116,21 @@ async function processDueSequenceSteps() {
                             await db.collection('leads').doc(inst.leadId).update({
                                 nextStepDue: nextLegal
                             }).catch(() => {});
+                            await db.collection('crm_leads').doc(inst.leadId).update({
+                                nextStepDue: nextLegal
+                            }).catch(() => {});
                         }
+                        rescheduledCount++;
                     }
                 }
             }
         }
+        return { processedCount, rescheduledCount };
     } catch (err) {
         console.error("[Sequences Engine] Error processing scheduled steps:", err.message);
+        return { processedCount, rescheduledCount, error: err.message };
+    } finally {
+        isProcessingDueSequenceSteps = false;
     }
 }
 
@@ -1937,48 +2338,67 @@ async function cancelSequenceOnReply(target, reason = 'STOPPED_REPLIED') {
             return updatePayload;
         };
 
-        // 3. Update Lead in leads or crm_leads
+        // 3. Update Lead in leads and/or crm_leads (syncing across both collections)
+        const updatedDocKeys = new Set();
+
         if (leadId) {
             const lRef = db.collection('leads').doc(leadId);
             const lSnap = await lRef.get();
             if (lSnap.exists) {
                 const patch = applyLeadStatusUpdate(lSnap.data());
                 await lRef.update(patch);
+                updatedDocKeys.add(`leads_${leadId}`);
                 console.log(`[Sequences] Updated lead ${leadId} status to ${patch.status || lSnap.data()?.status} and sequenceStatus to ${patch.sequenceStatus || lSnap.data()?.sequenceStatus}`);
-            } else {
-                const crmRef = db.collection('crm_leads').doc(leadId);
-                const crmSnap = await crmRef.get();
-                if (crmSnap.exists) {
-                    const patch = applyLeadStatusUpdate(crmSnap.data());
-                    await crmRef.update(patch);
-                    console.log(`[Sequences] Updated crm_lead ${leadId} status to ${patch.status || crmSnap.data()?.status} and sequenceStatus to ${patch.sequenceStatus || crmSnap.data()?.sequenceStatus}`);
+            }
+            const crmRef = db.collection('crm_leads').doc(leadId);
+            const crmSnap = await crmRef.get();
+            if (crmSnap.exists) {
+                const patch = applyLeadStatusUpdate(crmSnap.data());
+                await crmRef.update(patch);
+                updatedDocKeys.add(`crm_${leadId}`);
+                console.log(`[Sequences] Updated crm_lead ${leadId} status to ${patch.status || crmSnap.data()?.status} and sequenceStatus to ${patch.sequenceStatus || crmSnap.data()?.sequenceStatus}`);
+            }
+        }
+
+        // Always also update matching docs across leads and crm_leads by phone variations!
+        if (phoneVariations.length > 0) {
+            let huntSnap1 = await db.collection('leads')
+                .where('phone', 'in', phoneVariations)
+                .limit(10)
+                .get();
+            for (const d of huntSnap1.docs) {
+                if (!updatedDocKeys.has(`leads_${d.id}`)) {
+                    const patch = applyLeadStatusUpdate(d.data());
+                    await d.ref.update(patch);
+                    updatedDocKeys.add(`leads_${d.id}`);
+                    console.log(`[Sequences] Updated lead ${d.id} by phone ${formattedPhone} to status ${patch.status || d.data()?.status}`);
                 }
             }
-        } else if (phoneVariations.length > 0) {
-            let huntSnap = await db.collection('leads')
-                .where('phone', 'in', phoneVariations)
-                .limit(5)
+
+            let huntSnap2 = await db.collection('leads')
+                .where('phone_number', 'in', phoneVariations)
+                .limit(10)
                 .get();
-            if (huntSnap.empty) {
-                huntSnap = await db.collection('leads')
-                    .where('phone_number', 'in', phoneVariations)
-                    .limit(5)
-                    .get();
-            }
-            for (const d of huntSnap.docs) {
-                const patch = applyLeadStatusUpdate(d.data());
-                await d.ref.update(patch);
-                console.log(`[Sequences] Updated lead ${d.id} by phone ${formattedPhone} to status ${patch.status || d.data()?.status}`);
+            for (const d of huntSnap2.docs) {
+                if (!updatedDocKeys.has(`leads_${d.id}`)) {
+                    const patch = applyLeadStatusUpdate(d.data());
+                    await d.ref.update(patch);
+                    updatedDocKeys.add(`leads_${d.id}`);
+                    console.log(`[Sequences] Updated lead ${d.id} by phone_number ${formattedPhone} to status ${patch.status || d.data()?.status}`);
+                }
             }
 
             const crmSnap = await db.collection('crm_leads')
                 .where('phone', 'in', phoneVariations)
-                .limit(5)
+                .limit(10)
                 .get();
             for (const d of crmSnap.docs) {
-                const patch = applyLeadStatusUpdate(d.data());
-                await d.ref.update(patch);
-                console.log(`[Sequences] Updated crm_lead ${d.id} by phone ${formattedPhone} to status ${patch.status || d.data()?.status}`);
+                if (!updatedDocKeys.has(`crm_${d.id}`)) {
+                    const patch = applyLeadStatusUpdate(d.data());
+                    await d.ref.update(patch);
+                    updatedDocKeys.add(`crm_${d.id}`);
+                    console.log(`[Sequences] Updated crm_lead ${d.id} by phone ${formattedPhone} to status ${patch.status || d.data()?.status}`);
+                }
             }
         }
     } catch (err) {
@@ -2155,7 +2575,7 @@ async function getLeadSequenceTimeline(leadId) {
     }
 
     // No active instance yet: Generate PREVIEW prospective timeline
-    const leadCat = lead.category || lead.leadCategory || (lead.has_directory_only ? 'directory_only' : (lead.website ? 'outdated_website' : 'no_website'));
+    const leadCat = resolveLeadPainCategory(lead);
     const leadCountry = resolveLeadCountry(lead);
     let targetSeq;
     if (leadCountry !== 'ALL') {
@@ -2169,14 +2589,21 @@ async function getLeadSequenceTimeline(leadId) {
     }
 
     const now = new Date();
+    let rollingBaseDate = new Date(now);
     const previewSteps = (targetSeq.steps || []).map((step, idx) => {
-        const baseDate = new Date(now.getTime() + (step.delayHours * 3600000));
-        const legalSendDate = getNextLegalSendTime(baseDate, timezone);
-        const purpose = STEP_PURPOSES[idx] || { label: `Étape ${step.stepNumber}`, color: 'var(--gold)' };
+        const stepNum = step.stepNumber || (idx + 1);
+        const prevStep = idx > 0 ? targetSeq.steps[idx - 1] : null;
+        const deltaHours = calculateStepIntervalHours(stepNum, step.delayHours, prevStep ? prevStep.delayHours : undefined);
+
+        rollingBaseDate = new Date(rollingBaseDate.getTime() + (deltaHours * 3600000));
+        const legalSendDate = getNextLegalSendTime(rollingBaseDate, timezone);
+        rollingBaseDate = new Date(legalSendDate);
+
+        const purpose = STEP_PURPOSES[idx] || { label: `Étape ${stepNum}`, color: 'var(--gold)' };
         const rawTemplate = (isFr || !step.template_en) ? step.template : step.template_en;
         const interpolated = interpolateTemplate(rawTemplate, lead, isFr);
         return {
-            stepNumber: step.stepNumber || (idx + 1),
+            stepNumber: stepNum,
             delayHours: step.delayHours,
             purpose: purpose.label,
             purposeColor: purpose.color,
@@ -2212,6 +2639,7 @@ module.exports = {
     CANADIAN_CITIES_TIMEZONE_MAP,
     isWithinLegalWindow,
     getNextLegalSendTime,
+    calculateStepIntervalHours,
     getSequenceSettings,
     getSettings: getSequenceSettings,
     saveSequenceSettings,
@@ -2222,6 +2650,7 @@ module.exports = {
     stopLeadSequence,
     executeInstanceStep,
     processDueSequenceSteps,
+    enrollApprovedUnsequencedLeads,
     notifyAdminOnProspectAction,
     cancelSequenceOnReply,
     isLeadFrancophone,
@@ -2229,5 +2658,6 @@ module.exports = {
     extractHumanFirstName,
     interpolateTemplate,
     getLeadSequenceTimeline,
-    resolveLeadCountry
+    resolveLeadCountry,
+    resolveLeadPainCategory
 };
