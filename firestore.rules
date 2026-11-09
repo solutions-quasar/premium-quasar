@@ -32,6 +32,13 @@ service cloud.firestore {
     match /ai_projects/{projectId} {
       allow read, write: if isStaff();
     }
+    // Client Messaging Platform: a portal client can read its own project's conversations.
+    // Writes go through the backend (/api/mp). Channels (mp_channels) hold provider tokens and
+    // stay staff-only via the default rule below.
+    match /ai_projects/{projectId}/mp_conversations/{convId} {
+      allow read: if isStaff() || (isClient() && request.auth.token.projectId == projectId);
+      allow write: if isStaff();
+    }
     match /ai_invitations/{token} {
       allow read, write: if isStaff();
     }
