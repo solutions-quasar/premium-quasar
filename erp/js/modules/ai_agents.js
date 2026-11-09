@@ -168,7 +168,13 @@ window.selectProject = async (id, json) => {
             </div>
             <div class="text-sm text-muted">Client: ${currentProject.clientName}</div>
         </div>
-        <div>
+        <div style="display:flex; align-items:center; gap:6px;">
+             <button class="btn" id="ai-tab-agents" onclick="showProjectTab('agents')" title="Agents IA">
+                <span class="material-icons" style="font-size:1.1rem; vertical-align:text-bottom;">smart_toy</span> Agents
+             </button>
+             <button class="btn" id="ai-tab-messaging" onclick="showProjectTab('messaging')" title="Messagerie Meta + SMS de ce client">
+                <span class="material-icons" style="font-size:1.1rem; vertical-align:text-bottom;">forum</span> Messagerie
+             </button>
              <button class="btn btn-primary" onclick="openAgentModal()">
                 <span class="material-icons" style="font-size:1.2rem; vertical-align:text-bottom; margin-right:5px;">add</span>
                 New Agent
@@ -176,7 +182,34 @@ window.selectProject = async (id, json) => {
             <button class="icon-btn text-muted" title="Project Settings" onclick="openProjectSettings()"><span class="material-icons">settings</span></button>
         </div>
     `;
-    renderAgentList(id);
+    window.showProjectTab('agents');
+};
+
+// Project tabs: AI agents (existing) or the client Messaging Platform inbox
+window.showProjectTab = async (tab) => {
+    if (!activeProjectId) return;
+    ['agents', 'messaging'].forEach(t => {
+        const b = document.getElementById(`ai-tab-${t}`);
+        if (b) {
+            b.style.background = t === tab ? 'rgba(223, 165, 58, 0.15)' : 'transparent';
+            b.style.border = `1px solid ${t === tab ? 'var(--gold)' : 'var(--border)'}`;
+        }
+    });
+    if (tab !== 'messaging') return renderAgentList(activeProjectId);
+
+    const contentEl = document.getElementById('ai-agent-content');
+    contentEl.innerHTML = '<div class="text-center text-muted">Chargement de la messagerie…</div>';
+    try {
+        const projectId = activeProjectId;
+        const snap = await getDocs(query(collection(db, "ai_agents"), where("projectId", "==", projectId)));
+        if (projectId !== activeProjectId) return; // project changed while loading
+        const agents = snap.docs.map(d => ({ id: d.id, name: d.data().name || d.id }));
+        const { renderProjectMessaging } = await import('./mp_inbox.js');
+        renderProjectMessaging(contentEl, { projectId, apiBase: API_BASE, getToken: getAuthToken, agents, isStaff: true });
+    } catch (e) {
+        console.error('[Messaging] Load error:', e);
+        contentEl.innerHTML = `<div class="text-danger">Impossible de charger la messagerie : ${e.message}</div>`;
+    }
 };
 
 // --- AGENT LOGIC ---
@@ -1433,7 +1466,18 @@ window.openAgentModal = (agentJson = null) => {
                                 </div>
 
                                 <hr style="border-top:1px solid rgba(255,255,255,0.05); margin: 1.5rem 0;">
-                                <div class="text-sm font-bold mb-3 text-gold">Meta Integrations (Facebook & Instagram)</div>
+                                ${(() => {
+                                    // Legacy Meta fields are only used by the private Quasar inbox; client projects use Messagerie › Canaux.
+                                    const usesLegacyMeta = !!(agent?.facebookPageId || agent?.facebookAccessToken || agent?.instagramAccountId || agent?.instagramAccessToken);
+                                    return usesLegacyMeta ? '' : `
+                                <div id="ag-meta-hint" class="text-sm text-muted" style="margin-bottom:1rem;">
+                                    <span class="material-icons" style="font-size:1rem; vertical-align:text-bottom; color:var(--gold);">forum</span>
+                                    Messenger, Instagram, WhatsApp et SMS se configurent dans l'onglet <strong>Messagerie › Canaux</strong> du projet.
+                                    <a href="#" style="color:var(--text-muted); text-decoration:underline; margin-left:6px;" onclick="event.preventDefault(); document.getElementById('ag-legacy-meta').style.display='block'; this.remove();">Afficher l'intégration Meta Quasar</a>
+                                </div>`;
+                                })()}
+                                <div id="ag-legacy-meta" style="display:${(agent?.facebookPageId || agent?.facebookAccessToken || agent?.instagramAccountId || agent?.instagramAccessToken) ? 'block' : 'none'};">
+                                <div class="text-sm font-bold mb-3 text-gold">Meta Integrations (Facebook & Instagram) — boîte Quasar</div>
                                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:15px;">
                                     <div class="form-group">
                                         <label class="form-label">Facebook Page ID</label>
@@ -1453,6 +1497,7 @@ window.openAgentModal = (agentJson = null) => {
                                         <label class="form-label">Instagram Access Token</label>
                                         <input type="password" id="ag-ig-token" class="form-input" value="${agent?.instagramAccessToken ? '••••••••••••••••' : ''}" placeholder="${agent?.instagramAccessToken ? '•••••••• Connected' : 'Enter New Token...'}">
                                     </div>
+                                </div>
                                 </div>
                             </div>
 
