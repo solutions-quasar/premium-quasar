@@ -24,9 +24,45 @@ export async function initAiAgents() {
     const container = document.getElementById('view-ai-agents');
 
     container.innerHTML = `
-        <div style="display:flex; height: 100%; gap: 20px;">
+        <style>
+            /* Responsive layout driven by the space the module really gets (ERP sidebar open or not):
+               side by side when wide, stacked on tablets and phones. */
+            .aia-root { container-type:inline-size; container-name:aia; height:100%; }
+            .aia-layout { display:flex; height:100%; gap:20px; min-width:0; }
+            .aia-projects { width:300px; flex-shrink:0; display:flex; flex-direction:column; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; height:calc(100vh - 140px); }
+            .aia-main { flex:1; min-width:0; display:flex; flex-direction:column; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; height:calc(100vh - 140px); container-type:inline-size; container-name:aiamain; }
+            #ai-agent-header { padding:1.5rem; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+            .aia-title { min-width:0; flex:1 1 220px; }
+            .aia-title .text-h { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+            .aia-tabs { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+            .aia-tabs .btn { display:inline-flex; flex-direction:row; align-items:center; gap:6px; white-space:nowrap; }
+            #ai-agent-content { flex:1; padding:2rem; overflow-y:auto; min-width:0; }
+            @container aia (max-width: 1150px) {
+                .aia-projects { width:230px; }
+                .aia-layout { gap:14px; }
+            }
+            @container aia (max-width: 900px) {
+                .aia-layout { flex-direction:column; height:auto; }
+                .aia-projects { width:auto; height:auto; max-height:230px; }
+                .aia-projects > div:first-child { padding:.9rem 1rem !important; }
+                .aia-main { height:auto; min-height:calc(100vh - 140px); }
+            }
+            /* Narrow main panel: one row of tabs that scrolls sideways instead of wrapping into a stack */
+            @container aiamain (max-width: 900px) {
+                #ai-agent-header { padding:1rem; }
+                .aia-tabs { width:100%; flex-wrap:nowrap; overflow-x:auto; padding-bottom:4px; -webkit-overflow-scrolling:touch; scrollbar-width:thin; }
+                .aia-tabs .btn, .aia-tabs .icon-btn { flex-shrink:0; }
+                #ai-agent-content { padding:1rem; }
+            }
+            @container aiamain (max-width: 520px) {
+                #ai-agent-content { padding:.75rem; }
+                .aia-tabs .btn { padding:8px 12px; font-size:.78rem; }
+            }
+        </style>
+        <div class="aia-root">
+        <div class="aia-layout">
             <!-- Left Panel: Projects -->
-            <div style="width: 300px; display:flex; flex-direction:column; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; height: calc(100vh - 140px);">
+            <div class="aia-projects">
                 <div style="padding: 1.5rem; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
                     <span class="text-h" style="font-size:1.1rem; margin:0;">Projects</span>
                     <button class="icon-btn text-gold" onclick="openProjectModal()"><span class="material-icons">add</span></button>
@@ -37,21 +73,23 @@ export async function initAiAgents() {
             </div>
 
             <!-- Right Panel: Agents -->
-            <div style="flex:1; display:flex; flex-direction:column; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; height: calc(100vh - 140px);">
-                <div id="ai-agent-header" style="padding: 1.5rem; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+            <div class="aia-main">
+                <div id="ai-agent-header">
                     <div>
                         <div class="text-h" style="margin:0;">Select a Project</div>
                         <div class="text-sm text-muted">Manage your AI workforce</div>
                     </div>
                 </div>
                 
-                <div id="ai-agent-content" style="flex:1; padding: 2rem; overflow-y:auto;">
+                <div id="ai-agent-content">
                     <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:var(--text-muted);">
                         <span class="material-icons" style="font-size:4rem; margin-bottom:1rem; opacity:0.5;">smart_toy</span>
                         <div>Select or create a project to view agents</div>
                     </div>
                 </div>
             </div>
+        </div>
+
         </div>
 
         <!-- Modals Container -->
@@ -175,14 +213,14 @@ window.selectProject = async (id, json) => {
 
     const header = document.getElementById('ai-agent-header');
     header.innerHTML = `
-        <div>
-            <div style="display:flex; align-items:center; gap:10px;">
+        <div class="aia-title">
+            <div style="display:flex; align-items:center; gap:10px; min-width:0;">
                 <div class="text-h" style="margin:0;">${currentProject.name}</div>
-                ${connStatus}
+                <span style="flex-shrink:0;">${connStatus}</span>
             </div>
             <div class="text-sm text-muted">Client: ${currentProject.clientName}</div>
         </div>
-        <div style="display:flex; align-items:center; gap:6px;">
+        <div class="aia-tabs">
              <button class="btn" id="ai-tab-agents" onclick="showProjectTab('agents')" title="Agents IA">
                 <span class="material-icons" style="font-size:1.1rem; vertical-align:text-bottom;">smart_toy</span> Agents
              </button>
@@ -191,6 +229,9 @@ window.selectProject = async (id, json) => {
              </button>
              <button class="btn" id="ai-tab-billing" onclick="showProjectTab('billing')" title="${mpL('Abonnement du client et catalogue de l\'offre', 'Client subscription and offer catalog')}">
                 <span class="material-icons" style="font-size:1.1rem; vertical-align:text-bottom;">workspace_premium</span> ${mpL('Forfait', 'Plan')}
+             </button>
+             <button class="btn" id="ai-tab-voice" onclick="showProjectTab('voice')" title="${mpL('Numéro de téléphone, alertes et appels de l\'agent vocal', 'Voice agent phone number, alerts and calls')}">
+                <span class="material-icons" style="font-size:1.1rem; vertical-align:text-bottom;">support_agent</span> ${mpL('Téléphone', 'Phone')}
              </button>
              <button class="btn btn-primary" onclick="openAgentModal()">
                 <span class="material-icons" style="font-size:1.2rem; vertical-align:text-bottom; margin-right:5px;">add</span>
@@ -205,7 +246,7 @@ window.selectProject = async (id, json) => {
 // Final prompt of an agent on the client Messaging Platform (platform rules + agent + tools + channel)
 window.agent_showPromptPreview = async (agentId) => {
     if (!activeProjectId || !agentId) return;
-    const { showPromptPreview } = await import('./mp_inbox.js?v=20261110');
+    const { showPromptPreview } = await import('./mp_inbox.js?v=20261111');
     showPromptPreview({ apiBase: API_BASE, getToken: getAuthToken, projectId: activeProjectId, agentId, channel: 'sms' });
 };
 
@@ -221,7 +262,7 @@ window.agent_openPromptGenerator = async (agentId) => {
     }
     if (!initialBrief.businessName && currentProject?.clientName) initialBrief.businessName = currentProject.name || '';
     if (!initialBrief.agentName) initialBrief.agentName = document.getElementById('ag-name')?.value || '';
-    const { openPromptGenerator } = await import('./mp_inbox.js?v=20261110');
+    const { openPromptGenerator } = await import('./mp_inbox.js?v=20261111');
     openPromptGenerator({
         apiBase: API_BASE, getToken: getAuthToken, projectId: activeProjectId, agentId, initialBrief,
         onUse: (text) => {
@@ -236,18 +277,29 @@ let currentProjectTab = 'agents';
 window.showProjectTab = async (tab, subTab = null) => {
     if (!activeProjectId) return;
     currentProjectTab = tab;
-    ['agents', 'messaging', 'billing'].forEach(t => {
+    ['agents', 'messaging', 'billing', 'voice'].forEach(t => {
         const b = document.getElementById(`ai-tab-${t}`);
         if (b) {
             b.style.background = t === tab ? 'rgba(223, 165, 58, 0.15)' : 'transparent';
             b.style.border = `1px solid ${t === tab ? 'var(--gold)' : 'var(--border)'}`;
         }
     });
+    if (tab === 'voice') {
+        const contentEl = document.getElementById('ai-agent-content');
+        contentEl.innerHTML = '<div id="vc-project"></div>';
+        try {
+            const { renderVoice } = await import('./voice_ui.js?v=20261111');
+            renderVoice(contentEl.querySelector('#vc-project'), { projectId: activeProjectId, apiBase: API_BASE, getToken: getAuthToken, isStaff: true });
+        } catch (e) {
+            contentEl.innerHTML = `<div class="text-danger">${e.message}</div>`;
+        }
+        return;
+    }
     if (tab === 'billing') {
         const contentEl = document.getElementById('ai-agent-content');
         contentEl.innerHTML = '<div id="bl-project"></div><div style="height:28px;"></div><div id="bl-catalog"></div>';
         try {
-            const { renderProjectBilling, renderCatalogEditor } = await import('./billing_ui.js?v=20261110');
+            const { renderProjectBilling, renderCatalogEditor } = await import('./billing_ui.js?v=20261111');
             renderProjectBilling(contentEl.querySelector('#bl-project'), { projectId: activeProjectId, apiBase: API_BASE, getToken: getAuthToken, isStaff: true });
             renderCatalogEditor(contentEl.querySelector('#bl-catalog'), { apiBase: API_BASE, getToken: getAuthToken });
         } catch (e) {
@@ -264,7 +316,7 @@ window.showProjectTab = async (tab, subTab = null) => {
         const snap = await getDocs(query(collection(db, "ai_agents"), where("projectId", "==", projectId)));
         if (projectId !== activeProjectId) return; // project changed while loading
         const agents = snap.docs.map(d => ({ id: d.id, name: d.data().name || d.id }));
-        const { renderProjectMessaging } = await import('./mp_inbox.js?v=20261110');
+        const { renderProjectMessaging } = await import('./mp_inbox.js?v=20261111');
         renderProjectMessaging(contentEl, { projectId, apiBase: API_BASE, getToken: getAuthToken, agents, isStaff: true, initialTab: subTab || 'inbox' });
     } catch (e) {
         console.error('[Messaging] Load error:', e);

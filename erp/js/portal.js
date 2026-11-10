@@ -219,7 +219,7 @@ const mountMessages = async () => {
     const el = document.getElementById('tab-messages');
     if (!el || !currentProjectId) return;
     try {
-        const { renderProjectMessaging } = await import('./modules/mp_inbox.js?v=20261110');
+        const { renderProjectMessaging } = await import('./modules/mp_inbox.js?v=20261111');
         renderProjectMessaging(el, {
             projectId: currentProjectId,
             apiBase,
@@ -255,7 +255,7 @@ const mountBilling = async () => {
     const el = document.getElementById('billing-root');
     if (!el || !currentProjectId) return;
     try {
-        const { renderProjectBilling } = await import('./modules/billing_ui.js?v=20261110');
+        const { renderProjectBilling } = await import('./modules/billing_ui.js?v=20261111');
         renderProjectBilling(el, { projectId: currentProjectId, apiBase, getToken: () => auth.currentUser.getIdToken(), isStaff: false });
     } catch (e) {
         console.error('[Portal] Billing load error:', e);
@@ -269,11 +269,19 @@ const mountConnect = async () => {
     if (!el || !currentProjectId) return;
     connectMounted = true;
     try {
-        const { renderChannelConnect } = await import('./modules/mp_connect.js?v=20261110');
+        const { renderChannelConnect } = await import('./modules/mp_connect.js?v=20261111');
         renderChannelConnect(el, { projectId: currentProjectId, apiBase, getToken: () => auth.currentUser.getIdToken() });
     } catch (e) {
         connectMounted = false;
         console.error('[Portal] Connect load error:', e);
+    }
+    // Phone assistant (voice agent): number, alerts, booking hours, recent calls
+    const voiceEl = document.getElementById('voice-root');
+    if (voiceEl) {
+        try {
+            const { renderVoice } = await import('./modules/voice_ui.js?v=20261111');
+            renderVoice(voiceEl, { projectId: currentProjectId, apiBase, getToken: () => auth.currentUser.getIdToken(), isStaff: false });
+        } catch (e) { console.error('[Portal] Voice load error:', e); }
     }
 };
 

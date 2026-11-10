@@ -36,6 +36,9 @@
     ].join('\n');
     document.head.appendChild(style);
 
+    // English name / description when the site is in English and the ERP has one
+    var tr = function (o, k) { var en = o[k + "En"]; return lang() === "en" && en ? en : o[k]; };
+
     function render() {
         if (!data) return;
         var b = data.base;
@@ -47,9 +50,9 @@
             '</div>' +
             '<div class="pr-grid">' +
                 '<div class="pr-card main">' +
-                    '<div class="uppercase text-gold" style="font-size:.8rem;">' + esc(b.name) + '</div>' +
+                    '<div class="uppercase text-gold" style="font-size:.8rem;">' + esc(tr(b, "name")) + '</div>' +
                     '<div style="margin-top:.5rem;"><span class="pr-price">' + money(b.monthly) + '</span> <span class="pr-muted">' + L('/ mois', '/ month') + '</span></div>' +
-                    '<p class="pr-muted" style="margin-top:.75rem;">' + esc(b.description) + '</p>' +
+                    '<p class="pr-muted" style="margin-top:.75rem;">' + esc(tr(b, "description")) + '</p>' +
                     '<ul class="pr-list">' +
                         '<li>✓ ' + L(b.includedConversations + ' conversations IA incluses chaque mois', b.includedConversations + ' AI conversations included every month') + '</li>' +
                         '<li>✓ ' + L('Messenger, Instagram, WhatsApp et courriel dans une seule boîte', 'Messenger, Instagram, WhatsApp and email in one inbox') + '</li>' +
@@ -66,7 +69,8 @@
                 '<div class="pr-card">' +
                     '<div class="uppercase text-gold" style="font-size:.8rem; margin-bottom:.5rem;">' + L('Options', 'Add-ons') + '</div>' +
                     data.options.map(function (o) {
-                        return '<div class="pr-opt"><div><div style="font-weight:700;">' + esc(o.name) + '</div><div class="pr-muted" style="font-size:.9rem;">' + esc(o.description) + '</div></div><strong>+' + money(o.monthly) + L('/mois', '/mo') + '</strong></div>';
+                        var minutes = o.includedMinutes ? '<div class="pr-muted" style="font-size:.85rem; margin-top:2px;">' + L(o.includedMinutes + ' minutes d\'appel incluses / mois, puis ' + money(data.minuteOverageUnitPrice, 2) + ' la minute', o.includedMinutes + ' call minutes included / month, then ' + money(data.minuteOverageUnitPrice, 2) + ' per minute') + '</div>' : '';
+                        return '<div class="pr-opt"><div><div style="font-weight:700;">' + esc(tr(o, "name")) + '</div><div class="pr-muted" style="font-size:.9rem;">' + esc(tr(o, "description")) + '</div>' + minutes + '</div><strong>+' + money(o.monthly) + L('/mois', '/mo') + '</strong></div>';
                     }).join('') +
                 '</div>' : '') +
             '</div>' +

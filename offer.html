@@ -37,7 +37,7 @@
             a.classList.toggle('on', a.dataset.lang === window.MP_LANG);
             a.addEventListener('click', (e) => { e.preventDefault(); params.set('lang', a.dataset.lang); location.search = params.toString(); });
         });
-        const { renderProposal } = await import('/erp/js/modules/billing_ui.js?v=20261110');
+        const { renderProposal } = await import('/erp/js/modules/billing_ui.js?v=20261111');
         renderProposal(document.getElementById('offer'), { apiBase: '', proposalId: params.get('p') || '' });
     </script>
 </body>

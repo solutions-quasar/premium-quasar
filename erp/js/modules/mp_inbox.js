@@ -107,6 +107,9 @@ const CHANNELS = {
         }
     }
 };
+// Phone calls answered by the voice assistant: logged in the inbox (summary per call), not a channel you connect here
+const CALL = { get label() { return L('Appel', 'Call'); }, icon: 'call', color: '#a855f7' };
+const chMeta = (type) => CHANNELS[type] || (type === 'voice' ? CALL : CHANNELS.sms);
 
 const PUBLIC_BASE = 'https://quasar-erp-b26d5.web.app';
 
@@ -140,7 +143,7 @@ const fmtTime = (iso) => {
 };
 // Coloured "WhatsApp / Messenger / …" label so the channel is obvious at a glance
 const channelPill = (type) => {
-    const ch = CHANNELS[type] || CHANNELS.sms;
+    const ch = chMeta(type);
     return `<span class="mp-ch-pill" style="color:${ch.color}; background:${ch.color}1a; border-color:${ch.color}55;"><span class="material-icons">${ch.icon}</span>${ch.label}</span>`;
 };
 const initials = (name) => String(name || '?').replace(/[^\p{L}\p{N} ]/gu, '').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '#';
@@ -967,12 +970,12 @@ app.get('/api/quasar-token', requireLogin, async (req, res) => {
         const el = container.querySelector('#mp-filters');
         if (!el) return;
         const counts = state.conversations.reduce((a, c) => { a[c.channel] = (a[c.channel] || 0) + 1; return a; }, {});
-        const types = Object.keys(CHANNELS).filter(t => counts[t]);
+        const types = [...Object.keys(CHANNELS), 'voice'].filter(t => counts[t]);
         if (!types.length) { el.style.display = 'none'; return; }
         el.style.display = '';
         el.innerHTML = [
             `<button data-f="all" class="${state.filter === 'all' ? 'on' : ''}">${L('Tous', 'All')} · ${state.conversations.length}</button>`,
-            ...types.map(t => `<button data-f="${t}" class="${state.filter === t ? 'on' : ''}" style="${state.filter === t ? `border-color:${CHANNELS[t].color}; color:${CHANNELS[t].color}; background:${CHANNELS[t].color}1a;` : ''}"><span class="material-icons" style="color:${CHANNELS[t].color};">${CHANNELS[t].icon}</span>${CHANNELS[t].label} · ${counts[t]}</button>`),
+            ...types.map(t => { const m = chMeta(t); return `<button data-f="${t}" class="${state.filter === t ? 'on' : ''}" style="${state.filter === t ? `border-color:${m.color}; color:${m.color}; background:${m.color}1a;` : ''}"><span class="material-icons" style="color:${m.color};">${m.icon}</span>${m.label} · ${counts[t]}</button>`; }),
             `<button data-f="unread" class="${state.filter === 'unread' ? 'on' : ''}">${L('Non lus', 'Unread')}</button>`
         ].join('');
         el.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { state.filter = b.dataset.f; renderFilters(); renderConvList(); }));
@@ -998,7 +1001,7 @@ app.get('/api/quasar-token', requireLogin, async (req, res) => {
             return;
         }
         list.innerHTML = items.map(c => {
-            const ch = CHANNELS[c.channel] || CHANNELS.sms;
+            const ch = chMeta(c.channel);
             const name = c.contactName || c.contactId;
             return `
                 <div class="mp-conv ${c.id === state.activeConvId ? 'active' : ''}" data-id="${esc(c.id)}">
@@ -1011,7 +1014,7 @@ app.get('/api/quasar-token', requireLogin, async (req, res) => {
                         <div style="display:flex; gap:6px; align-items:center; margin-top:3px;">
                             ${channelPill(c.channel)}
                             <div class="mp-muted" style="flex:1; font-size:.8rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; ${c.unread ? 'color:var(--text-main,#fff);' : ''}">${c.lastAuthor === 'ai' ? '🤖 ' : (c.lastAuthor === 'human' ? L('Vous : ', 'You: ') : '')}${esc(c.lastMessage || '')}</div>
-                            ${(c.aiEnabled === false || c.ai?.channel === false) ? `<span class="mp-chip off" title="${L('Réponse IA désactivée', 'AI reply off')}">${L('IA off', 'AI off')}</span>` : ''}
+                            ${c.channel !== 'voice' && (c.aiEnabled === false || c.ai?.channel === false) ? `<span class="mp-chip off" title="${L('Réponse IA désactivée', 'AI reply off')}">${L('IA off', 'AI off')}</span>` : ''}
                             ${c.unread ? '<span style="width:8px; height:8px; border-radius:50%; background:var(--gold); flex-shrink:0;"></span>' : ''}
                         </div>
                     </div>
@@ -1043,7 +1046,8 @@ app.get('/api/quasar-token', requireLogin, async (req, res) => {
         const openTip = thread.querySelector('.mp-tip')?.dataset.for || null;
         const prevBox = thread.querySelector('#mp-msgs');
         const wasAtBottom = !prevBox || prevBox.scrollHeight - prevBox.scrollTop - prevBox.clientHeight < 40;
-        const ch = CHANNELS[conv.channel] || CHANNELS.sms;
+        const ch = chMeta(conv.channel);
+        const isCall = conv.channel === 'voice';
         const name = conv.contactName || conv.contactId;
         // Effective AI state: the channel (agent + switch) first, then this contact
         const aiChannelOn = conv.ai ? conv.ai.channel !== false : true;
@@ -1083,7 +1087,8 @@ app.get('/api/quasar-token', requireLogin, async (req, res) => {
                     <div style="display:flex; align-items:center; gap:6px; margin-top:2px; min-width:0;">${channelPill(conv.channel)}<span class="mp-muted" style="font-size:.72rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(conv.contactId)}</span></div>
                 </div>
                 ${conv.optedOut ? `<span class="mp-chip warn"><span class="material-icons">block</span>${L('Désabonné (STOP)', 'Unsubscribed (STOP)')}</span>` : ''}
-                <div style="display:flex; align-items:center; gap:8px;">
+                ${isCall ? `<a class="btn btn-sm" href="tel:${esc(conv.contactId)}" style="display:inline-flex; align-items:center; gap:6px; text-decoration:none; border:1px solid ${ch.color}; color:${ch.color};"><span class="material-icons" style="font-size:1rem;">call</span>${L('Rappeler', 'Call back')}</a>` : ''}
+                <div style="display:${isCall ? 'none' : 'flex'}; align-items:center; gap:8px;">
                     <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:.8rem;">
                         <span class="mp-muted">${L('Réponse IA', 'AI reply')}</span>
                         <span class="mp-switch"><input type="checkbox" id="mp-ai-toggle" ${conv.aiEnabled !== false && aiChannelOn ? 'checked' : ''} ${conv.optedOut || !aiChannelOn ? 'disabled' : ''}><span></span></span>
@@ -1091,12 +1096,17 @@ app.get('/api/quasar-token', requireLogin, async (req, res) => {
                     ${tip(L('Activé : votre assistant IA répond automatiquement aux nouveaux messages de ce contact. Désactivé : vous répondez vous-même. Vous pouvez reprendre la main à tout moment.', 'On: your AI assistant automatically replies to new messages from this contact. Off: you reply yourself. You can take over at any time.'))}
                 </div>
             </div>
+            ${isCall ? `
+            <div style="display:flex; align-items:center; gap:8px; padding:8px 16px; font-size:.78rem; border-bottom:1px solid var(--border); background:${ch.color}12; color:${ch.color};">
+                <span class="material-icons" style="font-size:1rem;">support_agent</span>
+                <span style="flex:1;">${L('Appels répondus par votre assistant téléphonique : un résumé par appel.', 'Calls answered by your phone assistant: one summary per call.')}</span>
+            </div>` : `
             <div style="display:flex; align-items:center; gap:8px; padding:8px 16px; font-size:.78rem; border-bottom:1px solid var(--border); background:${aiOn ? 'rgba(62,207,142,.07)' : 'rgba(245,165,36,.08)'}; color:${aiOn ? '#3ecf8e' : '#f5a524'};">
                 <span class="material-icons" style="font-size:1rem;">${aiOn ? 'smart_toy' : 'person'}</span>
                 <span style="flex:1;">${aiOn ? L('L\'assistant IA répond automatiquement à ce contact.', 'The AI assistant replies to this contact automatically.') : `<strong>${L('IA désactivée', 'AI is off')}</strong> · ${esc(aiReason)}`}</span>
-            </div>
+            </div>`}
             <div id="mp-msgs" style="flex:1; overflow-y:auto; padding:14px 18px;">${msgs || `<div class="mp-muted" style="font-size:.85rem;">${L('Aucun message.', 'No messages.')}</div>`}</div>
-            <div data-tip-host style="padding:10px 12px; border-top:1px solid var(--border); display:flex; gap:8px; align-items:flex-end;">
+            <div data-tip-host style="padding:10px 12px; border-top:1px solid var(--border); display:${isCall ? 'none' : 'flex'}; gap:8px; align-items:flex-end;">
                 ${replyHelp ? `<div style="align-self:center;">${tip(replyHelp)}</div>` : ''}
                 <textarea id="mp-reply" class="form-input" rows="2" style="flex:1; resize:none;" placeholder="${conv.optedOut ? L('Ce contact s\'est désabonné', 'This contact has unsubscribed') : `${L('Répondre via', 'Reply via')} ${ch.label}…`}" ${conv.optedOut ? 'disabled' : ''}></textarea>
                 <button id="mp-send" class="btn btn-primary" style="height:44px;" ${conv.optedOut ? 'disabled' : ''} title="${L('Envoyer', 'Send')}"><span class="material-icons" style="vertical-align:middle;">send</span></button>
