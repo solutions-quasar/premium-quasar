@@ -11,6 +11,7 @@ if (!stripe) {
     console.warn("⚠️ STRIPE_SECRET_KEY is missing in .env! Payments will be disabled.");
 }
 const { tools, handlers, dynamicHandler } = require('./vapi-tools');
+const voiceModule = require('./voice');
 const googleAuth = require('./google-auth');
 const { saveCredential, verifyConnection, getApp } = require('./firebase-manager');
 const { discoverSchema } = require('./schema-discovery');
@@ -1788,15 +1789,16 @@ app.post('/api/vapi/create-agent', verifyToken, async (req, res) => {
         // This is a minimal configuration. Vapi allows much more.
         const assistantConfig = {
             name: name,
-            transcriber: { provider: "deepgram" },
             model: {
                 provider: "openai",
-                model: model || "gpt-3.5-turbo",
+                model: model || "gpt-4.1-mini",
                 messages: [
                     { role: "system", content: prompt || "You are a helpful assistant." }
                 ]
             },
-            voice: { provider: "11labs", voiceId: "burt" }, // Default Voice
+            // Voice agents default to English (voice, transcription and greeting); change per agent in Vapi if needed
+            transcriber: { provider: "deepgram", language: "en" },
+            voice: { provider: "11labs", voiceId: "burt" },
             firstMessage: "Hello, how can I help you today?"
         };
 
@@ -1882,7 +1884,9 @@ app.patch('/api/vapi/update-agent/:id', verifyToken, async (req, res) => {
                 messages: newMessages,
                 tools: functionsToEnable.length > 0 ? functionsToEnable : undefined
             },
-            serverUrl: callbackUrl
+            serverUrl: callbackUrl,
+            // Vapi sends this secret in X-Vapi-Secret on every webhook; /api/vapi/callback rejects calls without it
+            server: { url: callbackUrl, ...(process.env.VAPI_SECRET ? { headers: { 'x-vapi-secret': process.env.VAPI_SECRET } } : {}) }
         };
 
         const response = await axios.patch(`https://api.vapi.ai/assistant/${id}`, updatePayload, {
@@ -1981,7 +1985,9 @@ app.post('/api/vapi/callback', async (req, res) => {
 
         // --- 0. BULLETPROOF SECURITY: Vapi Secret Check ---
         const vapiSecret = req.headers['x-vapi-secret'];
-        if (process.env.VAPI_SECRET && vapiSecret !== process.env.VAPI_SECRET) {
+        if (!process.env.VAPI_SECRET) {
+            console.error('[Security Check] VAPI_SECRET is not set: Vapi webhooks are not authenticated.');
+        } else if (vapiSecret !== process.env.VAPI_SECRET) {
             console.warn(`[Security Check] BLOCKED: Missing or invalid X-Vapi-Secret from Project ${projectId}`);
             return res.status(401).json({ error: "Unauthorized. Invalid handshake." });
         }
@@ -1992,79 +1998,36 @@ app.post('/api/vapi/callback', async (req, res) => {
         // Vapi sends 'assistant-request' before starting the call.
         if (payload.message?.type === 'assistant-request') {
             const callerNumber = payload.message?.call?.customer?.number || payload.call?.customer?.number || payload.customer?.number || payload.call?.customerNumber;
-            const auth = await voiceAuth.verifyCaller(callerNumber, projectId);
-
-            if (!auth.authorized) {
-                // If caller is not an internal team member, check if there is an active public concierge agent
-                const publicAgentsSnap = await db.collection('ai_agents')
-                    .where('projectId', '==', projectId)
-                    .where('active', '==', true)
-                    .limit(1)
-                    .get();
-
-                if (!publicAgentsSnap.empty && publicAgentsSnap.docs[0].data().vapiAssistantId) {
-                    const pubId = publicAgentsSnap.docs[0].data().vapiAssistantId;
-                    console.log(`[Vapi Security] Public caller ${callerNumber} routed to public agent: ${pubId}`);
-                    return res.json({ assistantId: pubId });
+            // Short transient assistant that says one sentence and ends the call
+            const lineUnavailable = (text) => res.json({
+                assistant: {
+                    name: "Line unavailable",
+                    model: { provider: "openai", model: "gpt-4o-mini", messages: [{ role: "system", content: "Say goodbye politely and end the call." }] },
+                    voice: { provider: "11labs", voiceId: "burt" },
+                    firstMessage: text,
+                    endCallFunctionEnabled: true,
+                    maxDurationSeconds: 15
                 }
-
-                console.warn(`[Vapi Security] Blocking incoming call from ${callerNumber}: ${auth.reason}`);
-                // Return a "Hanging Up" assistant configuration
-                return res.json({
-                    assistant: {
-                        name: "Security Guard",
-                        model: {
-                            provider: "openai",
-                            model: "gpt-4o-mini",
-                            messages: [{ role: "system", content: "Hang up immediately." }]
-                        },
-                        firstMessage: "Désolé, votre numéro n'est pas autorisé à contacter cet agent. Accès refusé.",
-                        endCallOnAssistantGreetingPossible: true,
-                        voice: { provider: "11labs", voiceId: "burt" }
-                    }
-                });
-            }
-            // If authorized, we MUST tell Vapi which assistant to connect to, 
-            // since the phone number no longer has a hardcoded assistant attached.
+            });
             try {
-                // Find the active voice agent for this project in the CENTRAL management database
-                const agentsSnapshot = await db.collection('ai_agents')
-                    .where('projectId', '==', projectId)
-                    .where('active', '==', true)
-                    .limit(1)
-                    .get();
-
-                if (!agentsSnapshot.empty) {
-                    const agentData = agentsSnapshot.docs[0].data();
-                    if (agentData.vapiAssistantId) {
-                        console.log(`[Vapi Routing] Connecting call to Assistant: ${agentData.vapiAssistantId}`);
-                        return res.json({
-                            assistantId: agentData.vapiAssistantId
-                        });
-                    }
+                // Billing: a subscribed client must have the voice option on
+                const access = await voiceModule.voiceAllowed(projectId);
+                if (!access.allowed) {
+                    console.warn(`[Vapi Routing] Voice not active for project ${projectId} (${access.reason}). Call declined.`);
+                    return lineUnavailable("Sorry, this line is not available right now. Please call back later.");
                 }
-
-                // Fallback: If no specific active agent is found, try to find ANY agent for this project with a Vapi ID.
-                const anyAgentSnapshot = await db.collection('ai_agents')
-                    .where('projectId', '==', projectId)
-                    .limit(5)
-                    .get();
-
-                if (!anyAgentSnapshot.empty) {
-                    // Loop to find the first one that has a Vapi ID
-                    for (const adoc of anyAgentSnapshot.docs) {
-                        const fallbackData = adoc.data();
-                        if (fallbackData.vapiAssistantId) {
-                            console.log(`[Vapi Routing] Connecting call to Assistant: ${fallbackData.vapiAssistantId}`);
-                            return res.json({
-                                assistantId: fallbackData.vapiAssistantId
-                            });
-                        }
-                    }
+                // The project's voice agent (the active one first)
+                const agent = await voiceModule.findVoiceAgent(projectId);
+                if (!agent) {
+                    console.warn(`[Vapi Routing] No voice assistant for project ${projectId}.`);
+                    return lineUnavailable("Sorry, no assistant is available on this line. Please call back later.");
                 }
-                console.warn(`[Vapi Routing] No Vapi Assistant ID found for project ${projectId}. Call will likely fail.`);
-                return res.status(500).json({ error: "No voice assistant configured for this project." });
-
+                // A switched-off agent only answers the project's own team (internal use)
+                if (agent.active === false && !(await voiceAuth.verifyCaller(callerNumber, projectId)).authorized) {
+                    return lineUnavailable("Sorry, this line is not available right now. Please call back later.");
+                }
+                console.log(`[Vapi Routing] Project ${projectId}: call connected to ${agent.vapiAssistantId}`);
+                return res.json({ assistantId: agent.vapiAssistantId });
             } catch (dbError) {
                 console.error(`[Vapi Routing] Error fetching assistant ID:`, dbError);
                 return res.status(500).json({ error: "Internal error routing the call." });
@@ -2088,14 +2051,36 @@ app.post('/api/vapi/callback', async (req, res) => {
             const callerNumber = payload.message?.call?.customer?.number || payload.call?.customer?.number || payload.customer?.number || payload.call?.customerNumber;
             if (callerNumber) console.log(`[Vapi] Detected Caller ID for tool call: ${callerNumber}`);
 
+            // The call must come from a voice assistant that belongs to this project: the projectId in the
+            // URL alone is not trusted (it decides which client database the tools read and write).
+            const vapiCall = payload.message?.call || payload.call || {};
+            const callId = vapiCall.id || null;
+            const vapiAssistantId = vapiCall.assistantId || payload.message?.assistant?.id || payload.assistant?.id || null;
+            let callAgent = null;
+            if (vapiAssistantId) {
+                const agentQuery = await db.collection('ai_agents').where('vapiAssistantId', '==', vapiAssistantId).limit(1).get();
+                if (!agentQuery.empty) callAgent = agentQuery.docs[0].data();
+            }
+            // Quasar's own (house) assistants are managed directly in Vapi and are not ERP agents
+            if (callAgent ? callAgent.projectId !== projectId : !voiceModule.isHouse(projectId)) {
+                console.warn(`[Security] Tool calls refused: assistant ${vapiAssistantId || 'unknown'} does not belong to project ${projectId}`);
+                return res.json({ results: toolCalls.map(c => ({ toolCallId: c.id, result: JSON.stringify({ error: "Access denied." }) })) });
+            }
+            const voiceAccess = await voiceModule.voiceAllowed(projectId);
+            if (!voiceAccess.allowed) {
+                return res.json({ results: toolCalls.map(c => ({ toolCallId: c.id, result: JSON.stringify({ error: "The phone assistant is not active for this business." }) })) });
+            }
+
             for (const call of toolCalls) {
                 const fnName = call.function.name;
                 let args = call.function.arguments;
-                if (typeof args === 'string') args = JSON.parse(args);
+                if (typeof args === 'string') { try { args = JSON.parse(args); } catch (_) { args = {}; } }
+                args = args || {};
 
-                // Inject Caller Number for verification tools
+                // Inject Caller Number and call id for verification tools (never trust values sent by the model)
                 if (fnName === 'verify_voice_pin') {
                     args.phoneNumber = callerNumber;
+                    args.callId = callId;
                 }
 
                 // --- STRICT SECURITY CHECK ---
@@ -2111,9 +2096,20 @@ app.post('/api/vapi/callback', async (req, res) => {
                         });
                         continue;
                     }
+                    // Caller ID can be spoofed: every sensitive tool also needs the team member's PIN,
+                    // verified earlier in this same call.
+                    if (fnName !== 'verify_voice_pin' && !(await voiceAuth.isPinVerified(callId, projectId, authStatus.user.id))) {
+                        results.push({
+                            toolCallId: call.id,
+                            result: JSON.stringify({ error: authStatus.hasPin
+                                ? "PIN required. Ask the caller for their voice PIN and call verify_voice_pin first."
+                                : "This team member has no voice PIN. Set one in the ERP (Team) to use this feature by phone." })
+                        });
+                        continue;
+                    }
                 }
 
-                console.log(`[Vapi] Tool Call: ${fnName}`, args);
+                console.log(`[Vapi] Tool Call: ${fnName}`, args.pin != null ? { ...args, pin: '***' } : args);
 
                 let result;
 
@@ -2122,21 +2118,11 @@ app.post('/api/vapi/callback', async (req, res) => {
                 // Vapi sends 'assistantId' in the call.assistantId field but sometimes at payload root.
                 // We'll search for the agent using the Vapi ID if available, or assume the user wants strictness.
 
-                // Ideally, Vapi webhook should include the assistantId.
-                const vapiAssistantId = payload.assistant ? payload.assistant.id : (payload.call ? payload.call.assistantId : null);
+                // Tools switched off for this agent in the ERP stay off (callAgent was resolved above).
                 let isAllowed = true;
-
-                if (vapiAssistantId) {
-                    // Find Agent by Vapi ID to check permissions
-                    const agentQuery = await db.collection('ai_agents').where('vapiAssistantId', '==', vapiAssistantId).limit(1).get();
-                    if (!agentQuery.empty) {
-                        const agentData = agentQuery.docs[0].data();
-                        // If tools config exists, check if this specific tool is enabled
-                        if (agentData.tools && agentData.tools[fnName] === false) {
-                            isAllowed = false;
-                            console.warn(`[Security] Blocked disabled tool: ${fnName}`);
-                        }
-                    }
+                if (callAgent?.tools && callAgent.tools[fnName] === false) {
+                    isAllowed = false;
+                    console.warn(`[Security] Blocked disabled tool: ${fnName}`);
                 }
 
                 if (!isAllowed) {
@@ -2168,6 +2154,12 @@ app.post('/api/vapi/callback', async (req, res) => {
 
         // --- 3. END OF CALL REPORT & AUTOMATIC SMS SUMMARY ---
         if (payload.message?.type === 'end-of-call-report') {
+            // Client projects: call log, Messages inbox, alerts to the client, minutes for billing. Never to Quasar.
+            if (!voiceModule.isHouse(projectId)) {
+                try { await voiceModule.recordCall(projectId, payload.message); }
+                catch (e) { console.error('[Vapi End-of-Call] Client call log failed:', e.message); }
+                return res.json({ success: true, processed: 'end-of-call-report' });
+            }
             const summary = payload.message.summary || payload.message.analysis?.summary || '';
             const callerNumber = payload.message?.call?.customer?.number || payload.call?.customer?.number || payload.customer?.number || 'Numéro masqué';
             const endedReason = payload.message?.endedReason || payload.message?.call?.endedReason || '';
@@ -2214,7 +2206,7 @@ app.post('/api/vapi/callback', async (req, res) => {
                                     { label: 'Date & Heure', value: new Date().toLocaleString('fr-CA', { timeZone: 'America/Moncton' }) }
                                 ],
                                 snippet: cleanSummary,
-                                ctaUrl: 'https://quasar-erp-b26d5.web.app/#coldcall',
+                                ctaUrl: 'https://solutionsquasar.ca/erp/#coldcall',
                                 ctaText: 'Consulter dans le Journal Vocal'
                             });
                         } catch (emailErr) {
@@ -4151,7 +4143,7 @@ app.post(['/api/webhook/twilio/sms', '/api/twilio/sms', '/api/twilio/inbound', '
         const fallbackMsg = isEnErr
             ? "Solutions Quasar Inc.: Thank you for your message. Our team will get back to you shortly."
             : "Solutions Quasar Inc. : Merci pour votre message. Notre équipe vous répondra rapidement.";
-        
+
         const errTwiml = new twilio.twiml.MessagingResponse();
         errTwiml.message(fallbackMsg);
         res.type('text/xml').send(errTwiml.toString());
@@ -5044,6 +5036,7 @@ app.post('/api/stalled-recovery/process-due', verifyToken, async (req, res) => {
 // --- CLIENT MESSAGING PLATFORM (separate from the Quasar inbox above) ---
 require('./messaging-platform').mountMessagingPlatform(app, { verifyToken, processAiChat });
 require('./billing').mountBilling(app, { verifyToken });
+voiceModule.mountVoice(app, { verifyToken });
 
 if (require.main === module) {
     app.listen(PORT, () => {

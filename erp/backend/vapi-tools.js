@@ -4,6 +4,7 @@ const googleAuth = require('./google-auth');
 const voiceAuth = require('./voice-auth');
 const calendarReminderService = require('./calendar-reminder-service');
 const twilioService = require('./twilio-service');
+const voice = require('./voice');
 
 // --- TOOL DEFINITIONS (Schemas) ---
 const tools = [
@@ -67,13 +68,13 @@ const tools = [
         type: "function",
         function: {
             name: "get_available_slots",
-            description: "Consulte en temps réel les disponibilités du Google Calendar de Solutions Quasar pour un court appel découverte (15-30 min). / Checks real-time open calendar slots.",
+            description: "Checks the business calendar in real time and returns open appointment times. Call it before offering times to the caller.",
             parameters: {
                 type: "object",
                 properties: {
                     daysAhead: {
                         type: "number",
-                        description: "Nombre de jours à examiner (défaut: 5). / Days ahead to look for openings."
+                        description: "Number of days ahead to look for openings (default 5)."
                     }
                 }
             }
@@ -83,29 +84,29 @@ const tools = [
         type: "function",
         function: {
             name: "book_appointment",
-            description: "Réserve fermement le rendez-vous dans Google Calendar avec création automatique de lien Google Meet, enregistrement dans l'ERP Quasar et alerte SMS immédiate. / Firmly books discovery meeting in Google Calendar.",
+            description: "Books the appointment in the business calendar at one of the times returned by get_available_slots, and alerts the business.",
             parameters: {
                 type: "object",
                 properties: {
                     prospectName: {
                         type: "string",
-                        description: "Prénom et nom du prospect. / Prospect full name."
+                        description: "Caller's full name."
                     },
                     prospectPhone: {
                         type: "string",
-                        description: "Numéro de téléphone de rappel et de confirmation SMS du prospect. / Phone number for SMS."
+                        description: "Caller's callback phone number."
                     },
                     prospectEmail: {
                         type: "string",
-                        description: "Adresse courriel du prospect pour l'invitation Google Calendar. / Prospect email."
+                        description: "Caller's email address, to send the calendar invitation (optional)."
                     },
                     appointmentTime: {
                         type: "string",
-                        description: "Date et heure exacte au format ISO 8601 (ex: 2026-10-22T14:00:00.000Z) choisie parmi les créneaux disponibles. / Selected ISO 8601 timestamp."
+                        description: "Exact start time in ISO 8601 (e.g. 2026-10-22T14:00:00.000Z), taken from get_available_slots."
                     },
                     notes: {
                         type: "string",
-                        description: "Détails ou sujet du projet (refonte de site, SEO, agent IA, CRM sur mesure). / Project notes."
+                        description: "Reason for the appointment and useful details."
                     }
                 },
                 required: ["prospectName", "appointmentTime"]
@@ -116,21 +117,21 @@ const tools = [
         type: "function",
         function: {
             name: "send_call_note_sms",
-            description: "Envoie immédiatement une note ou un mémo prioritaire par SMS au directeur de Solutions Quasar (Benjamin) sur son téléphone portable (+1 506 233-7006). / Sends instant SMS alert to Quasar director.",
+            description: "Sends a message from the caller to the business right away (text and/or email). Use it when the caller wants to leave a message or be called back.",
             parameters: {
                 type: "object",
                 properties: {
                     summary: {
                         type: "string",
-                        description: "Résumé concis de la demande ou note à transmettre. / Concise summary of the call or caller request."
+                        description: "Short summary of what the caller needs."
                     },
                     callerName: {
                         type: "string",
-                        description: "Nom de la personne qui appelle. / Caller name."
+                        description: "Caller's name."
                     },
                     callerPhone: {
                         type: "string",
-                        description: "Numéro de rappel de la personne. / Caller callback number."
+                        description: "Caller's callback number."
                     }
                 },
                 required: ["summary"]
@@ -152,7 +153,7 @@ async function logToolExecution(toolName, args, result, projectId, requestId) {
             action: toolName,
             requestId: requestId || 'unknown',
             projectId: projectId,
-            data: args,
+            data: (args && args.pin != null) ? { ...args, pin: '***' } : args, // never store the PIN
             result: result.success ? 'Success' : 'Error',
             message: result.message || result.error || null
         });
@@ -170,29 +171,11 @@ const handlers = {
     verify_voice_pin: async (args, projectId, requestId) => {
         let result;
         try {
-            const { pin, phoneNumber } = args;
+            const { pin, phoneNumber, callId } = args;
             if (!pin) result = { success: false, error: "PIN is required." };
             else if (!phoneNumber) result = { success: false, error: "System Error: Caller ID not detected. Cannot verify PIN." };
-            else {
-                const app = await getApp(projectId);
-                const db = app.firestore();
-                const userQuery = await db.collection('team').where('voicePhone', '==', phoneNumber).limit(1).get();
-
-                if (userQuery.empty) {
-                    result = { success: false, error: "Identité non reconnue pour ce numéro." };
-                } else {
-                    const userData = userQuery.docs[0].data();
-                    if (userData.voicePin === pin) {
-                        result = {
-                            success: true,
-                            message: `PIN vérifié avec succès. Bienvenue, ${userData.name || 'Utilisateur'}.`,
-                            authorized: true
-                        };
-                    } else {
-                        result = { success: false, error: "PIN incorrect. Veuillez réessayer." };
-                    }
-                }
-            }
+            // Same phone matching as the caller check, limited attempts, result remembered for this call only
+            else result = await voiceAuth.verifyPin(callId, projectId, phoneNumber, pin);
         } catch (e) {
             console.error("PIN Verification Error:", e);
             result = { success: false, error: "Internal error during verification." };
@@ -297,6 +280,13 @@ const handlers = {
      */
     get_available_slots: async (args, projectId, requestId) => {
         let result;
+        // Client projects use their own Google Calendar and hours (voice module); Quasar keeps its own below
+        if (!voice.isHouse(projectId)) {
+            try { result = await voice.clientSlots(projectId, args.daysAhead); }
+            catch (e) { console.error("[Vapi Handler get_available_slots Error]", e.message); result = { success: false, error: e.message }; }
+            await logToolExecution('get_available_slots', args, result, projectId, requestId);
+            return result;
+        }
         try {
             const daysAhead = args.daysAhead || 5;
             const slots = await calendarReminderService.getAvailableSlots(daysAhead);
@@ -323,6 +313,12 @@ const handlers = {
      */
     book_appointment: async (args, projectId, requestId) => {
         let result;
+        if (!voice.isHouse(projectId)) {
+            try { result = await voice.clientBook(projectId, args); }
+            catch (e) { console.error("[Vapi Handler book_appointment Error]", e.message); result = { success: false, error: e.message }; }
+            await logToolExecution('book_appointment', args, result, projectId, requestId);
+            return result;
+        }
         try {
             const { leadId, prospectName, prospectPhone, prospectEmail, appointmentTime, notes } = args;
             const phone = prospectPhone || args.phoneNumber || '';
@@ -354,6 +350,13 @@ const handlers = {
      */
     send_call_note_sms: async (args, projectId, requestId) => {
         let result;
+        // Client projects: the note goes to the client's alert phone / email, never to Quasar
+        if (!voice.isHouse(projectId)) {
+            try { result = await voice.clientCallNote(projectId, args); }
+            catch (e) { console.error("[Vapi Handler send_call_note_sms Error]", e.message); result = { success: false, error: e.message }; }
+            await logToolExecution('send_call_note_sms', args, result, projectId, requestId);
+            return result;
+        }
         try {
             const { summary, callerName, callerPhone } = args;
             const targetPhone = process.env.ADMIN_PHONE || '+15062337006';

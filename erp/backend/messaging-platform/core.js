@@ -489,6 +489,7 @@ async function syncAllEmailChannels() {
 }
 
 module.exports = {
+    appendMessage, // also used by the voice module to log phone calls (channel "voice")
     startOutbound,
     listWhatsAppTemplates,
     createWhatsAppTemplate,

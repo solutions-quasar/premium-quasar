@@ -291,6 +291,10 @@
             .portal-drawer .nav-badge { font-size: .85rem; padding: 2px 10px; }
             .portal-drawer .drawer-bottom { border-top: 0; padding-top: 0; }
             .portal-drawer .drawer-bottom .nav-link { background: transparent; color: #ef4444; border-color: rgba(239,68,68,.35); }
+            /* Full-width pages: 12px side margins, the inbox fills the screen above the burger */
+            .main-container { padding-left: 12px !important; padding-right: 12px !important; padding-top: calc(12px + env(safe-area-inset-top, 0px)) !important; padding-bottom: calc(76px + var(--safe-bottom)) !important; max-width: none; }
+            #tab-messages { height: calc(100dvh - 12px - env(safe-area-inset-top, 0px) - 76px - var(--safe-bottom)) !important; min-height: 0 !important; }
+            .portal-card { padding-left: 14px; padding-right: 14px; }
         }
         /* Desktop (≥1024px): the side menu stays open as a fixed sidebar; no burger, no overlay */
         @media (min-width: 1024px) {
@@ -442,6 +446,9 @@
 
                 <!-- Messaging channels: self-service connection (mp_connect.js) -->
                 <div class="portal-card" id="mp-connect" style="margin-bottom:1.5rem;"></div>
+
+                <!-- Phone assistant: number, alerts, booking hours, recent calls (voice_ui.js) -->
+                <div id="voice-root" style="margin-bottom:1.5rem;"></div>
 
                 <div class="portal-card">
                     <div class="int-row">

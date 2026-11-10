@@ -10,7 +10,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<'
 const money = (n) => new Intl.NumberFormat(isEn() ? 'en-CA' : 'fr-CA', { style: 'currency', currency: 'CAD' }).format(Number(n || 0));
 const date = (iso) => iso ? new Date(iso).toLocaleDateString(isEn() ? 'en-CA' : 'fr-CA', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
 
-const STYLES = `
+export const STYLES = `
 .bl { display:flex; flex-direction:column; gap:14px; max-width:860px; }
 .bl-card { background:var(--bg-card, #121418); border:1px solid var(--border, #2d3139); border-radius:16px; padding:16px; }
 .bl-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
@@ -81,10 +81,11 @@ function totals(offer, chosen) {
     const monthly = offer.base.monthly + opts.reduce((n, o) => n + o.monthly, 0) + offer.customItems.filter(i => i.type === 'monthly').reduce((n, i) => n + i.amount, 0);
     const once = offer.setupFee + offer.customItems.filter(i => i.type === 'once').reduce((n, i) => n + i.amount, 0);
     const included = offer.base.includedConversations + opts.reduce((n, o) => n + (o.extraConversations || 0), 0);
+    const minutes = opts.reduce((n, o) => n + (o.includedMinutes || 0), 0);
     const pct = offer.discount?.percent || 0;
     // Stripe applies the coupon to the whole first invoice (subscription + one-time fees)
     const off = (n) => Math.round(n * (100 - pct)) / 100;
-    return { monthly, once, included, pct, discounted: off(monthly), first: off(monthly + once) };
+    return { monthly, once, included, minutes, pct, discounted: off(monthly), first: off(monthly + once) };
 }
 
 function offerHtml(offer, chosen, { cta, staffExtra = '' } = {}) {
@@ -93,6 +94,8 @@ function offerHtml(offer, chosen, { cta, staffExtra = '' } = {}) {
     const discountLabel = d.percent ? (d.months ? L(`-${d.percent} % pendant ${d.months} mois`, `-${d.percent}% for ${d.months} months`) : L(`-${d.percent} % en permanence`, `-${d.percent}% ongoing`)) : '';
     const included = offer.options.filter(o => o.mode === 'included');
     const optional = offer.options.filter(o => o.mode === 'optional');
+    // "300 phone minutes included, then $0.40/min" under any option that includes minutes
+    const minutesLine = (o) => o.includedMinutes ? `<br><span class="bl-dim">${L(`${o.includedMinutes} minutes d'appel incluses / mois, puis ${money(offer.minuteOverageUnitPrice ?? 0)} la minute`, `${o.includedMinutes} call minutes included / month, then ${money(offer.minuteOverageUnitPrice ?? 0)} per minute`)}</span>` : '';
     return `
         ${offer.note ? `<div class="bl-note info" style="white-space:pre-wrap;">${esc(offer.note)}</div>` : ''}
         <div class="bl-card">
@@ -101,7 +104,7 @@ function offerHtml(offer, chosen, { cta, staffExtra = '' } = {}) {
             <div style="margin-top:10px;"><span class="bl-big">${money(offer.base.monthly)}</span> <span class="bl-dim">/ ${L('mois', 'month')}</span></div>
             <div class="bl-dim">${L(`${offer.base.includedConversations} conversations IA incluses, puis ${money(offer.overageUnitPrice)} par conversation`, `${offer.base.includedConversations} AI conversations included, then ${money(offer.overageUnitPrice)} per conversation`)}</div>
             ${included.length || offer.customItems.length ? `<div style="margin-top:12px;">${[
-                ...included.map(o => `<div class="bl-total"><span>✓ ${esc(o.name)}</span><strong>${o.monthly ? `+${money(o.monthly)}` : L('Inclus', 'Included')}</strong></div>`),
+                ...included.map(o => `<div class="bl-total"><span>✓ ${esc(o.name)}${minutesLine(o)}</span><strong>${o.monthly ? `+${money(o.monthly)}` : L('Inclus', 'Included')}</strong></div>`),
                 ...offer.customItems.map(i => `<div class="bl-total"><span>✓ ${esc(i.name)}${i.description ? `<br><span class="bl-dim">${esc(i.description)}</span>` : ''}</span><strong style="white-space:nowrap;">${money(i.amount)}${i.type === 'monthly' ? `/${L('mois', 'mo')}` : ` (${L('une fois', 'once')})`}</strong></div>`)
             ].join('')}</div>` : ''}
         </div>
@@ -111,7 +114,7 @@ function offerHtml(offer, chosen, { cta, staffExtra = '' } = {}) {
             ${optional.map(o => `
                 <label class="bl-opt" style="cursor:pointer;">
                     <span class="bl-switch"><input type="checkbox" data-pick="${esc(o.key)}" ${chosen.has(o.key) ? 'checked' : ''}><span></span></span>
-                    <span style="flex:1; min-width:0;"><strong>${esc(o.name)}</strong><br><span class="bl-dim">${esc(o.description)}</span></span>
+                    <span style="flex:1; min-width:0;"><strong>${esc(o.name)}</strong><br><span class="bl-dim">${esc(o.description)}</span>${minutesLine(o)}</span>
                     <strong style="white-space:nowrap;">+${money(o.monthly)}</strong>
                 </label>`).join('')}
         </div>` : ''}
@@ -215,13 +218,23 @@ export function renderProjectBilling(container, opts) {
                 <div style="margin:10px 0 6px;"><span class="bl-big">${u.used}</span> <span class="bl-dim">/ ${u.included} ${L('conversations IA', 'AI conversations')}</span></div>
                 <div class="bl-bar"><div style="width:${pct}%; background:${barColor};"></div></div>
                 <div class="bl-dim" style="margin-top:8px;">${s.periodEnd ? `${L('Remise à zéro le', 'Resets on')} ${date(s.periodEnd)}. ` : ''}${u.overage ? `<span style="color:#ef4444; font-weight:600;">${L(`${u.overage} conversations au-delà du quota : environ ${money(u.overageEstimate)} sur la prochaine facture.`, `${u.overage} conversations over the quota: about ${money(u.overageEstimate)} on the next invoice.`)}</span>` : pct >= 80 ? `<span style="color:#f5a524; font-weight:600;">${L('Vous approchez de votre quota.', 'You are close to your quota.')}</span>` : ''}</div>
+                ${u.voice ? (() => {
+                    const v = u.voice;
+                    const vp = v.included ? Math.min(100, Math.round(v.used / v.included * 100)) : 100;
+                    const vc = v.used > v.included ? '#ef4444' : vp >= 80 ? '#f5a524' : '#3ecf8e';
+                    return `
+                        <div class="bl-row" data-tip-host style="margin-top:16px;"><div class="bl-title" style="flex:1; font-size:.95rem;">${L('Minutes d\'appel', 'Call minutes')}</div>${tip(L(`Chaque appel compte à la minute supérieure. Au-delà de ${v.included} minutes, chaque minute coûte ${money(o.minuteOverageUnitPrice ?? 0)}, ajouté à la facture suivante.`, `Each call counts to the next full minute. Beyond ${v.included} minutes, each minute costs ${money(o.minuteOverageUnitPrice ?? 0)}, added to the next invoice.`))}</div>
+                        <div style="margin:8px 0 6px;"><span class="bl-big" style="font-size:1.4rem;">${v.used}</span> <span class="bl-dim">/ ${v.included} ${L('minutes', 'minutes')}</span></div>
+                        <div class="bl-bar"><div style="width:${vp}%; background:${vc};"></div></div>
+                        ${v.overage ? `<div class="bl-dim" style="margin-top:8px;"><span style="color:#ef4444; font-weight:600;">${L(`${v.overage} minutes au-delà : environ ${money(v.overageEstimate)} sur la prochaine facture.`, `${v.overage} minutes over: about ${money(v.overageEstimate)} on the next invoice.`)}</span></div>` : ''}`;
+                })() : ''}
             </div>
             ${optional.length ? `
             <div class="bl-card">
                 <div class="bl-row" data-tip-host style="margin-bottom:6px;"><div class="bl-title" style="flex:1;">${L('Options', 'Add-ons')}</div>${tip(L('Ajoutez ou retirez une option à tout moment. Le montant est ajusté au prorata sur votre prochaine facture.', 'Add or remove an add-on at any time. The amount is prorated on your next invoice.'))}</div>
                 ${optional.map(x => `
                     <div class="bl-opt">
-                        <span style="flex:1; min-width:0;"><strong>${esc(x.name)}</strong><br><span class="bl-dim">${esc(x.description)} · ${money(x.monthly)}/${L('mois', 'mo')}</span></span>
+                        <span style="flex:1; min-width:0;"><strong>${esc(x.name)}</strong><br><span class="bl-dim">${esc(x.description)} · ${money(x.monthly)}/${L('mois', 'mo')}${x.includedMinutes ? ` · ${L(`${x.includedMinutes} min incluses`, `${x.includedMinutes} min included`)}` : ''}</span></span>
                         <label class="bl-switch"><input type="checkbox" data-opt="${esc(x.key)}" ${s.options.includes(x.key) ? 'checked' : ''}><span></span></label>
                     </div>`).join('')}
             </div>` : ''}
@@ -320,6 +333,7 @@ export function renderProjectBilling(container, opts) {
                         ${f(L('Conversations IA incluses / mois', 'AI conversations included / month'), 'base.includedConversations', o.base.includedConversations, 'number', '1')}
                         ${f(L('Frais d\'installation ($)', 'Setup fee ($)'), 'setupFee', o.setupFee, 'number', '0.01')}
                         ${f(L('Prix par conversation en dépassement ($)', 'Price per overage conversation ($)'), 'overageUnitPrice', o.overageUnitPrice, 'number', '0.01')}
+                        ${f(L('Prix par minute d\'appel en dépassement ($)', 'Price per overage call minute ($)'), 'minuteOverageUnitPrice', o.minuteOverageUnitPrice ?? 0.4, 'number', '0.01')}
                     </div>
                     <label class="bl-field" style="margin-top:10px;">${L('Description', 'Description')}<textarea class="bl-input" name="base.description" rows="2">${esc(o.base.description)}</textarea></label>
                 </div>
@@ -331,6 +345,7 @@ export function renderProjectBilling(container, opts) {
                                 <label class="bl-field">${L('Nom', 'Name')}<input class="bl-input" name="name" value="${esc(opt.name)}"></label>
                                 <label class="bl-field">${L('Prix mensuel ($, 0 = offert)', 'Monthly price ($, 0 = free)')}<input class="bl-input" name="monthly" type="number" step="0.01" value="${esc(opt.monthly)}"></label>
                                 <label class="bl-field">${L('Pour ce client', 'For this client')}${modeSel(opt)}</label>
+                                ${opt.includedMinutes || opt.key === 'voice' ? `<label class="bl-field">${L('Minutes d\'appel incluses / mois', 'Call minutes included / month')}<input class="bl-input" name="minutes" type="number" step="1" value="${esc(opt.includedMinutes || 0)}"></label>` : `<input type="hidden" name="minutes" value="${esc(opt.includedMinutes || 0)}">`}
                                 <input type="hidden" name="description" value="${esc(opt.description)}"><input type="hidden" name="extra" value="${esc(opt.extraConversations || 0)}">
                             </div>
                         </div>`).join('') || `<div class="bl-dim">${L('Aucune option dans la grille.', 'No add-on in the price list.')}</div>`}
@@ -367,10 +382,11 @@ export function renderProjectBilling(container, opts) {
             const v = (n) => form.querySelector(`[name="${n}"]`).value;
             const payload = {
                 base: { name: v('base.name'), description: v('base.description'), monthly: v('base.monthly'), includedConversations: v('base.includedConversations') },
-                setupFee: v('setupFee'), overageUnitPrice: v('overageUnitPrice'),
+                setupFee: v('setupFee'), overageUnitPrice: v('overageUnitPrice'), minuteOverageUnitPrice: v('minuteOverageUnitPrice'),
                 options: [...form.querySelectorAll('[data-option]')].map(r => ({
                     key: r.dataset.option, name: r.querySelector('[name=name]').value, monthly: r.querySelector('[name=monthly]').value,
-                    mode: r.querySelector('[name=mode]').value, description: r.querySelector('[name=description]').value, extraConversations: r.querySelector('[name=extra]').value
+                    mode: r.querySelector('[name=mode]').value, description: r.querySelector('[name=description]').value, extraConversations: r.querySelector('[name=extra]').value,
+                    includedMinutes: r.querySelector('[name=minutes]').value
                 })),
                 customItems: [...form.querySelectorAll('[data-item]')].map(r => ({
                     id: r.querySelector('[name=id]').value, name: r.querySelector('[name=name]').value, description: r.querySelector('[name=description]').value,
@@ -452,8 +468,10 @@ export function renderCatalogEditor(container, opts) {
                         ${field(L('Nom', 'Name'), 'base.name', cat.base.name)}
                         ${field(L('Prix mensuel ($)', 'Monthly price ($)'), 'base.monthly', cat.base.monthly, 'number', '0.01')}
                         ${field(L('Conversations IA incluses / mois', 'AI conversations included / month'), 'base.includedConversations', cat.base.includedConversations, 'number', '1')}
+                        ${field(L('Nom en anglais (site EN)', 'English name (EN website)'), 'base.nameEn', cat.base.nameEn || '')}
                     </div>
                     <label class="bl-field" style="margin-top:10px;">${L('Description', 'Description')}<textarea class="bl-input" name="base.description" rows="2">${esc(cat.base.description)}</textarea></label>
+                    <label class="bl-field" style="margin-top:10px;">${L('Description en anglais (site EN)', 'English description (EN website)')}<textarea class="bl-input" name="base.descriptionEn" rows="2">${esc(cat.base.descriptionEn || '')}</textarea></label>
                 </div>
                 <div class="bl-card">
                     <div class="bl-title" style="margin-bottom:10px;">${L('Installation et dépassement', 'Setup and overage')}</div>
@@ -461,6 +479,7 @@ export function renderCatalogEditor(container, opts) {
                         ${field(L('Frais d\'installation : nom', 'Setup fee: name'), 'setupFee.name', cat.setupFee.name)}
                         ${field(L('Frais d\'installation ($, 0 = aucun)', 'Setup fee ($, 0 = none)'), 'setupFee.amount', cat.setupFee.amount, 'number', '0.01')}
                         ${field(L('Prix par conversation au-delà du quota ($)', 'Price per conversation over quota ($)'), 'overage.unitPrice', cat.overage.unitPrice, 'number', '0.01')}
+                        ${field(L('Prix par minute d\'appel au-delà des minutes incluses ($)', 'Price per call minute over the included minutes ($)'), 'minuteOverage.unitPrice', cat.minuteOverage?.unitPrice ?? 0.4, 'number', '0.01')}
                     </div>
                     <label class="bl-row" style="margin-top:12px; cursor:pointer;"><span class="bl-switch"><input type="checkbox" name="automaticTax" ${cat.automaticTax ? 'checked' : ''}><span></span></span><span class="bl-dim">${L('Taxes automatiques Stripe Tax (à activer d\'abord dans Stripe)', 'Automatic taxes with Stripe Tax (turn it on in Stripe first)')}</span></label>
                 </div>
@@ -475,7 +494,7 @@ export function renderCatalogEditor(container, opts) {
             </form>`;
         const form = body.querySelector('#bc-form');
         body.querySelector('#bc-add').addEventListener('click', () => {
-            body.querySelector('#bc-options').insertAdjacentHTML('beforeend', optionRow({ key: '', name: '', description: '', monthly: 0, extraConversations: 0 }));
+            body.querySelector('#bc-options').insertAdjacentHTML('beforeend', optionRow({ key: '', name: '', description: '', monthly: 0, extraConversations: 0, includedMinutes: 0 }));
         });
         body.querySelector('#bc-options').addEventListener('click', (e) => { if (e.target.closest('[data-remove]')) e.target.closest('[data-option]').remove(); });
         form.addEventListener('submit', async (e) => {
@@ -484,12 +503,14 @@ export function renderCatalogEditor(container, opts) {
             const v = (n) => form.querySelector(`[name="${n}"]`).value;
             const payload = {
                 automaticTax: form.querySelector('[name=automaticTax]').checked,
-                base: { name: v('base.name'), description: v('base.description'), monthly: v('base.monthly'), includedConversations: v('base.includedConversations') },
+                base: { name: v('base.name'), description: v('base.description'), nameEn: v('base.nameEn'), descriptionEn: v('base.descriptionEn'), monthly: v('base.monthly'), includedConversations: v('base.includedConversations') },
                 setupFee: { name: v('setupFee.name'), amount: v('setupFee.amount') },
                 overage: { unitPrice: v('overage.unitPrice') },
+                minuteOverage: { unitPrice: v('minuteOverage.unitPrice') },
                 options: [...form.querySelectorAll('[data-option]')].map(r => ({
                     key: r.querySelector('[name=key]').value, name: r.querySelector('[name=name]').value, description: r.querySelector('[name=description]').value,
-                    monthly: r.querySelector('[name=monthly]').value, extraConversations: r.querySelector('[name=extra]').value
+                    nameEn: r.querySelector('[name=nameEn]').value, descriptionEn: r.querySelector('[name=descriptionEn]').value,
+                    monthly: r.querySelector('[name=monthly]').value, extraConversations: r.querySelector('[name=extra]').value, includedMinutes: r.querySelector('[name=minutes]').value
                 }))
             };
             const btns = form.querySelectorAll('button[type=submit]');
@@ -514,7 +535,10 @@ export function renderCatalogEditor(container, opts) {
                     <label class="bl-field">${L('Nom', 'Name')}<input class="bl-input" name="name" value="${esc(o.name)}"></label>
                     <label class="bl-field">${L('Prix mensuel ($)', 'Monthly price ($)')}<input class="bl-input" name="monthly" type="number" step="0.01" value="${esc(o.monthly)}"></label>
                     <label class="bl-field">${L('Conversations en plus', 'Extra conversations')}<input class="bl-input" name="extra" type="number" step="1" value="${esc(o.extraConversations || 0)}"></label>
+                    <label class="bl-field">${L('Minutes d\'appel incluses', 'Call minutes included')}<input class="bl-input" name="minutes" type="number" step="1" value="${esc(o.includedMinutes || 0)}"></label>
                     <label class="bl-field" style="grid-column:1/-1;">${L('Description', 'Description')}<input class="bl-input" name="description" value="${esc(o.description)}"></label>
+                    <label class="bl-field">${L('Nom en anglais', 'English name')}<input class="bl-input" name="nameEn" value="${esc(o.nameEn || '')}"></label>
+                    <label class="bl-field" style="grid-column:span 2;">${L('Description en anglais', 'English description')}<input class="bl-input" name="descriptionEn" value="${esc(o.descriptionEn || '')}"></label>
                 </div>
                 <button type="button" class="bl-btn ghost" data-remove style="min-height:40px;" title="${L('Retirer', 'Remove')}"><span class="material-icons">delete_outline</span></button>
             </div>`;

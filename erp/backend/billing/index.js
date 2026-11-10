@@ -7,7 +7,10 @@
  * Stripe stays the source of truth for subscriptions and invoices; Firestore keeps:
  *   billing_settings/catalog                    the offer (prices, quotas) + Stripe product / price ids
  *   ai_projects/{id}.billing                     { customerId, subscriptionId, status, options, periodStart, periodEnd }
- *   ai_projects/{id}/billing_usage/{periodKey}   { conversations, overage }
+ *   ai_projects/{id}/billing_usage/{periodKey}   { conversations, overage, voiceMinutes, voiceOverageMinutes }
+ *
+ * Voice: options with includedMinutes > 0 (the "voice" add-on) include phone minutes; minutes beyond are
+ * billed per minute on a second meter (quasar_voice_minute), reported by the voice module after each call.
  *
  * Routes (mounted under /api/billing):
  *   GET  /catalog                         staff   offer + sync state
@@ -25,6 +28,7 @@ const { FieldValue } = require('firebase-admin/firestore');
 const stripe = process.env.STRIPE_SECRET_KEY ? require('stripe')(process.env.STRIPE_SECRET_KEY) : null;
 const CATALOG_REF = () => db.collection('billing_settings').doc('catalog');
 const METER_EVENT = 'quasar_ai_conversation';
+const VOICE_METER_EVENT = 'quasar_voice_minute';
 const PUBLIC_BASE = process.env.PUBLIC_APP_URL || 'https://solutionsquasar.ca';
 
 const DEFAULT_CATALOG = {
@@ -33,23 +37,29 @@ const DEFAULT_CATALOG = {
     base: {
         name: 'Agent IA Quasar',
         description: 'Assistant IA sur vos canaux (Messenger, Instagram, WhatsApp, courriel), boîte de réception unifiée et portail client.',
-        monthly: 199,
+        nameEn: 'Quasar AI Agent',
+        descriptionEn: 'AI assistant on your channels (Messenger, Instagram, WhatsApp, email), unified inbox and client portal.',
+        monthly: 349,
         includedConversations: 1000
     },
     setupFee: {
         name: 'Installation et configuration',
         description: 'Configuration de l\'assistant, connexion des canaux et mise en route.',
-        amount: 499
+        amount: 999
     },
     overage: {
         name: 'Conversations IA supplémentaires',
         unitPrice: 0.15
     },
+    minuteOverage: {
+        name: 'Minutes d\'appel supplémentaires',
+        unitPrice: 0.40
+    },
     options: [
-        { key: 'voice', name: 'Agent vocal (téléphone)', description: 'L\'assistant répond aux appels et prend les messages.', monthly: 149, extraConversations: 0 },
-        { key: 'booking', name: 'Prise de rendez-vous', description: 'Réservation automatique dans Google Agenda.', monthly: 49, extraConversations: 0 },
-        { key: 'sms', name: 'Numéro texto dédié (SMS)', description: 'Un numéro local pour vos textos, enregistré auprès des opérateurs.', monthly: 29, extraConversations: 0 },
-        { key: 'quota', name: '+1 000 conversations IA', description: 'Quota mensuel supplémentaire, à prix réduit.', monthly: 99, extraConversations: 1000 }
+        { key: 'voice', name: 'Agent vocal (téléphone)', description: 'L\'assistant répond à vos appels, prend les rendez-vous et vous envoie un résumé.', nameEn: 'Voice agent (phone)', descriptionEn: 'The assistant answers your calls, books appointments and sends you a summary.', monthly: 249, extraConversations: 0, includedMinutes: 300 },
+        { key: 'booking', name: 'Prise de rendez-vous', description: 'Réservation automatique dans votre Google Agenda.', nameEn: 'Appointment booking', descriptionEn: 'Automatic booking in your Google Calendar.', monthly: 79, extraConversations: 0, includedMinutes: 0 },
+        { key: 'sms', name: 'Numéro texto dédié (SMS)', description: 'Un numéro local pour vos textos, enregistré auprès des opérateurs.', nameEn: 'Dedicated text number (SMS)', descriptionEn: 'A local number for your texts, registered with the carriers.', monthly: 39, extraConversations: 0, includedMinutes: 0 },
+        { key: 'quota', name: '+1 000 conversations IA', description: 'Quota mensuel supplémentaire, à prix réduit.', nameEn: '+1,000 AI conversations', descriptionEn: 'Extra monthly quota at a lower price.', monthly: 99, extraConversations: 1000, includedMinutes: 0 }
     ],
     stripe: {}
 };
@@ -64,7 +74,7 @@ async function getCatalog() {
     const snap = await CATALOG_REF().get();
     if (!snap.exists) return { ...DEFAULT_CATALOG, isDefault: true };
     const c = snap.data();
-    return { ...DEFAULT_CATALOG, ...c, base: { ...DEFAULT_CATALOG.base, ...c.base }, setupFee: { ...DEFAULT_CATALOG.setupFee, ...c.setupFee }, overage: { ...DEFAULT_CATALOG.overage, ...c.overage }, stripe: c.stripe || {} };
+    return { ...DEFAULT_CATALOG, ...c, base: { ...DEFAULT_CATALOG.base, ...c.base }, setupFee: { ...DEFAULT_CATALOG.setupFee, ...c.setupFee }, overage: { ...DEFAULT_CATALOG.overage, ...c.overage }, minuteOverage: { ...DEFAULT_CATALOG.minuteOverage, ...c.minuteOverage }, stripe: c.stripe || {} };
 }
 
 function cleanCatalog(input, previous) {
@@ -72,15 +82,17 @@ function cleanCatalog(input, previous) {
     const str = (v, max = 300) => String(v || '').trim().slice(0, max);
     const options = (Array.isArray(input.options) ? input.options : []).map(o => ({
         key: str(o.key, 40).toLowerCase().replace(/[^a-z0-9_]/g, '_') || `opt_${Math.random().toString(36).slice(2, 7)}`,
-        name: str(o.name, 120), description: str(o.description), monthly: num(o.monthly), extraConversations: Math.round(num(o.extraConversations))
+        name: str(o.name, 120), description: str(o.description), nameEn: str(o.nameEn, 120), descriptionEn: str(o.descriptionEn),
+        monthly: num(o.monthly), extraConversations: Math.round(num(o.extraConversations)), includedMinutes: Math.round(num(o.includedMinutes))
     })).filter(o => o.name);
     if (new Set(options.map(o => o.key)).size !== options.length) throw new Error('Deux options ont la même clé.');
     return {
         currency: 'cad',
         automaticTax: !!input.automaticTax,
-        base: { name: str(input.base?.name, 120) || DEFAULT_CATALOG.base.name, description: str(input.base?.description), monthly: num(input.base?.monthly), includedConversations: Math.round(num(input.base?.includedConversations)) },
+        base: { name: str(input.base?.name, 120) || DEFAULT_CATALOG.base.name, description: str(input.base?.description), nameEn: str(input.base?.nameEn, 120), descriptionEn: str(input.base?.descriptionEn), monthly: num(input.base?.monthly), includedConversations: Math.round(num(input.base?.includedConversations)) },
         setupFee: { name: str(input.setupFee?.name, 120) || DEFAULT_CATALOG.setupFee.name, description: str(input.setupFee?.description), amount: num(input.setupFee?.amount) },
         overage: { name: str(input.overage?.name, 120) || DEFAULT_CATALOG.overage.name, unitPrice: num(input.overage?.unitPrice) },
+        minuteOverage: { name: str(input.minuteOverage?.name, 120) || DEFAULT_CATALOG.minuteOverage.name, unitPrice: input.minuteOverage?.unitPrice == null ? (previous.minuteOverage?.unitPrice ?? DEFAULT_CATALOG.minuteOverage.unitPrice) : num(input.minuteOverage.unitPrice) },
         options,
         stripe: previous.stripe || {}
     };
@@ -105,6 +117,17 @@ async function syncCatalog() {
         ids.meterId = existing?.id || (await stripe.billing.meters.create({
             display_name: 'Conversations IA supplémentaires',
             event_name: METER_EVENT,
+            default_aggregation: { formula: 'sum' },
+            customer_mapping: { type: 'by_id', event_payload_key: 'stripe_customer_id' },
+            value_settings: { event_payload_key: 'value' }
+        })).id;
+    }
+
+    if (!ids.voiceMeterId) {
+        const existing = (await stripe.billing.meters.list({ limit: 100 })).data.find(m => m.event_name === VOICE_METER_EVENT && m.status === 'active');
+        ids.voiceMeterId = existing?.id || (await stripe.billing.meters.create({
+            display_name: 'Minutes d\'appel supplémentaires',
+            event_name: VOICE_METER_EVENT,
             default_aggregation: { formula: 'sum' },
             customer_mapping: { type: 'by_id', event_payload_key: 'stripe_customer_id' },
             value_settings: { event_payload_key: 'value' }
@@ -147,6 +170,12 @@ async function syncCatalog() {
     ids.overagePrice = await upsertPrice(ids.overagePrice, ids.overageProduct,
         { unit_amount_decimal: unitDecimal, recurring: { interval: 'month', usage_type: 'metered', meter: ids.meterId }, tax_behavior: 'exclusive' },
         (p) => p.unit_amount_decimal === unitDecimal && p.recurring?.usage_type === 'metered' && p.recurring?.meter === ids.meterId);
+
+    ids.minuteProduct = await upsertProduct(ids.minuteProduct, { name: cat.minuteOverage.name, description: `${cat.minuteOverage.unitPrice} $ par minute au-delà des minutes incluses.`, key: 'voice_minutes' });
+    const minuteDecimal = String(Math.round(cat.minuteOverage.unitPrice * 100 * 10000) / 10000);
+    ids.minutePrice = await upsertPrice(ids.minutePrice, ids.minuteProduct,
+        { unit_amount_decimal: minuteDecimal, recurring: { interval: 'month', usage_type: 'metered', meter: ids.voiceMeterId }, tax_behavior: 'exclusive' },
+        (p) => p.unit_amount_decimal === minuteDecimal && p.recurring?.usage_type === 'metered' && p.recurring?.meter === ids.voiceMeterId);
 
     for (const o of cat.options) {
         const cur = ids.options[o.key] || {};
@@ -235,7 +264,8 @@ function defaultOffer(catalog) {
         base: { name: catalog.base.name, description: catalog.base.description, monthly: catalog.base.monthly, includedConversations: catalog.base.includedConversations },
         setupFee: catalog.setupFee.amount,
         overageUnitPrice: catalog.overage.unitPrice,
-        options: catalog.options.map(o => ({ key: o.key, name: o.name, description: o.description, monthly: o.monthly, extraConversations: o.extraConversations || 0, mode: 'optional' })),
+        minuteOverageUnitPrice: catalog.minuteOverage.unitPrice,
+        options: catalog.options.map(o => ({ key: o.key, name: o.name, description: o.description, monthly: o.monthly, extraConversations: o.extraConversations || 0, includedMinutes: o.includedMinutes || 0, mode: 'optional' })),
         customItems: [],
         discount: { percent: 0, months: 0 },
         note: '',
@@ -251,9 +281,12 @@ function cleanOffer(input, catalog) {
         base: { name: str(input.base?.name, 120) || catalog.base.name, description: str(input.base?.description, 500), monthly: num(input.base?.monthly), includedConversations: Math.round(num(input.base?.includedConversations)) },
         setupFee: num(input.setupFee),
         overageUnitPrice: num(input.overageUnitPrice),
+        minuteOverageUnitPrice: input.minuteOverageUnitPrice == null ? catalog.minuteOverage.unitPrice : num(input.minuteOverageUnitPrice),
         options: (Array.isArray(input.options) ? input.options : []).filter(o => known.has(o.key)).map(o => ({
             key: o.key, name: str(o.name, 120), description: str(o.description), monthly: num(o.monthly),
-            extraConversations: Math.round(num(o.extraConversations)), mode: OPTION_MODES.includes(o.mode) ? o.mode : 'optional'
+            extraConversations: Math.round(num(o.extraConversations)),
+            includedMinutes: Math.round(num(o.includedMinutes ?? catalog.options.find(c => c.key === o.key)?.includedMinutes)),
+            mode: OPTION_MODES.includes(o.mode) ? o.mode : 'optional'
         })),
         customItems: (Array.isArray(input.customItems) ? input.customItems : []).map(i => ({
             id: str(i.id, 30) || newId().slice(0, 8), name: str(i.name, 120), description: str(i.description), amount: num(i.amount),
@@ -264,7 +297,14 @@ function cleanOffer(input, catalog) {
     };
 }
 
-const offerOf = (project, catalog) => project.billingOffer ? { ...defaultOffer(catalog), ...project.billingOffer, isDefault: false } : defaultOffer(catalog);
+const offerOf = (project, catalog) => {
+    if (!project.billingOffer) return defaultOffer(catalog);
+    const o = { ...defaultOffer(catalog), ...project.billingOffer, isDefault: false };
+    // Offers saved before phone minutes existed: take the missing values from the catalog
+    if (o.minuteOverageUnitPrice == null) o.minuteOverageUnitPrice = catalog.minuteOverage.unitPrice;
+    o.options = (o.options || []).map(x => x.includedMinutes == null ? { ...x, includedMinutes: catalog.options.find(c => c.key === x.key)?.includedMinutes || 0 } : x);
+    return o;
+};
 
 async function saveOffer(projectId, input, user) {
     const [project, catalog] = await Promise.all([getProject(projectId), getCatalog()]);
@@ -281,6 +321,10 @@ async function saveOffer(projectId, input, user) {
 const activeOptions = (offer, chosen = []) => offer.options.filter(o => o.mode === 'included' || (o.mode === 'optional' && chosen.includes(o.key)));
 const includedFor = (offer, options) => (offer.base.includedConversations || 0)
     + offer.options.filter(o => options.includes(o.key) || o.mode === 'included').reduce((n, o) => n + (o.extraConversations || 0), 0);
+/** Phone minutes included per month: options with minutes that are included or chosen. */
+const includedMinutesFor = (offer, options) => offer.options.filter(o => o.mode !== 'hidden' && (o.mode === 'included' || options.includes(o.key))).reduce((n, o) => n + (o.includedMinutes || 0), 0);
+/** The offer contains a voice option the client has or can add. */
+const offersVoice = (offer) => offer.options.some(o => o.mode !== 'hidden' && (o.includedMinutes || 0) > 0);
 const monthlyFor = (offer, options) => (offer.base.monthly || 0)
     + offer.options.filter(o => o.mode !== 'hidden' && (o.mode === 'included' || options.includes(o.key))).reduce((n, o) => n + o.monthly, 0)
     + offer.customItems.filter(i => i.type === 'monthly').reduce((n, i) => n + i.amount, 0);
@@ -289,8 +333,8 @@ const periodKeyOf = (billing) => billing?.periodStart ? billing.periodStart.slic
 
 /** What the client (or the public proposal page) may see of an offer. */
 const publicOffer = (offer) => ({
-    base: offer.base, setupFee: offer.setupFee, overageUnitPrice: offer.overageUnitPrice,
-    options: offer.options.filter(o => o.mode !== 'hidden').map(({ key, name, description, monthly, extraConversations, mode }) => ({ key, name, description, monthly, extraConversations, mode })),
+    base: offer.base, setupFee: offer.setupFee, overageUnitPrice: offer.overageUnitPrice, minuteOverageUnitPrice: offer.minuteOverageUnitPrice,
+    options: offer.options.filter(o => o.mode !== 'hidden').map(({ key, name, description, monthly, extraConversations, includedMinutes, mode }) => ({ key, name, description, monthly, extraConversations, includedMinutes: includedMinutes || 0, mode })),
     customItems: offer.customItems, discount: offer.discount, note: offer.note
 });
 
@@ -307,6 +351,9 @@ async function projectSummary(projectId, { staff = false } = {}) {
     const { sub, billing } = await syncProjectSubscription(project, catalog);
     const usageSnap = await db.collection('ai_projects').doc(projectId).collection('billing_usage').doc(periodKeyOf(billing)).get();
     const used = usageSnap.exists ? usageSnap.data().conversations || 0 : 0;
+    const minutesUsed = usageSnap.exists ? usageSnap.data().voiceMinutes || 0 : 0;
+    const minutesIncluded = includedMinutesFor(offer, billing.options);
+    const minutesOver = Math.max(0, minutesUsed - minutesIncluded);
     const included = includedFor(offer, billing.options);
     const overage = Math.max(0, used - included);
 
@@ -336,7 +383,10 @@ async function projectSummary(projectId, { staff = false } = {}) {
             status: billing.status, options: billing.options, periodStart: billing.periodStart, periodEnd: billing.periodEnd,
             cancelAtPeriodEnd: billing.cancelAtPeriodEnd, monthly: monthly ?? monthlyFor(offer, billing.options)
         } : null,
-        usage: { used, included, overage, overageEstimate: Math.round(overage * offer.overageUnitPrice * 100) / 100, periodKey: periodKeyOf(billing) },
+        usage: {
+            used, included, overage, overageEstimate: Math.round(overage * offer.overageUnitPrice * 100) / 100, periodKey: periodKeyOf(billing),
+            voice: (minutesIncluded > 0 || minutesUsed > 0) ? { used: minutesUsed, included: minutesIncluded, overage: minutesOver, overageEstimate: Math.round(minutesOver * offer.minuteOverageUnitPrice * 100) / 100 } : null
+        },
         upcoming,
         invoices
     };
@@ -354,6 +404,22 @@ async function overagePriceFor(catalog, unitPrice) {
     });
     cache[decimal] = price.id;
     await CATALOG_REF().set({ stripe: { overagePrices: cache } }, { merge: true });
+    return price.id;
+}
+
+/** Metered per-minute price for a unit amount (voice overage). */
+async function minutePriceFor(catalog, unitPrice) {
+    const decimal = String(Math.round(unitPrice * 100 * 10000) / 10000);
+    const ids = catalog.stripe || {};
+    if (!ids.minuteProduct || !ids.voiceMeterId) throw new Error('Le catalogue doit être republié dans Stripe (minutes d\'appel).');
+    const cache = { ...(ids.minutePrices || {}) };
+    if (cache[decimal]) return cache[decimal];
+    const price = await stripe.prices.create({
+        product: ids.minuteProduct, currency: catalog.currency, unit_amount_decimal: decimal,
+        recurring: { interval: 'month', usage_type: 'metered', meter: ids.voiceMeterId }, tax_behavior: 'exclusive'
+    });
+    cache[decimal] = price.id;
+    await CATALOG_REF().set({ stripe: { minutePrices: cache } }, { merge: true });
     return price.id;
 }
 
@@ -389,6 +455,8 @@ async function createCheckout(projectId, { options = [], withSetup = true, retur
         ...activeOptions(offer, options).filter(o => ids.options?.[o.key]?.product).map(o => line(ids.options[o.key].product, o.monthly)),
         ...offer.customItems.map(i => lineNamed(i.name, i.description, i.amount, i.type === 'monthly')),
         { price: await overagePriceFor(catalog, offer.overageUnitPrice) },
+        // Per-minute voice overage, whenever the offer has a voice option (nothing is charged without usage)
+        ...(offersVoice(offer) ? [{ price: await minutePriceFor(catalog, offer.minuteOverageUnitPrice) }] : []),
         ...(withSetup && offer.setupFee > 0 ? [ids.setupProduct ? line(ids.setupProduct, offer.setupFee, false) : lineNamed(catalog.setupFee.name, '', offer.setupFee, false)] : [])
     ];
     const coupon = await couponFor(projectId, offer);
@@ -423,9 +491,12 @@ async function setOption(projectId, key, enabled) {
     if (!sub || !['active', 'trialing', 'past_due'].includes(sub.status)) throw new Error('Aucun abonnement actif pour ce projet.');
     const item = sub.items.data.find(i => i.price.product === product);
     if (enabled === !!item) return { changed: false };
+    const addItem = { price_data: { currency: catalog.currency, product, unit_amount: cents(opt.monthly), recurring: { interval: 'month' }, tax_behavior: 'exclusive' }, quantity: 1 };
+    // Turning voice on for a subscription that has no per-minute item yet: add it too
+    const needsMinutes = enabled && (opt.includedMinutes || 0) > 0 && !sub.items.data.some(i => i.price.recurring?.meter && i.price.recurring.meter === catalog.stripe?.voiceMeterId);
     await stripe.subscriptions.update(sub.id, {
         items: enabled
-            ? [{ price_data: { currency: catalog.currency, product, unit_amount: cents(opt.monthly), recurring: { interval: 'month' }, tax_behavior: 'exclusive' }, quantity: 1 }]
+            ? [addItem, ...(needsMinutes ? [{ price: await minutePriceFor(catalog, offer.minuteOverageUnitPrice) }] : [])]
             : [{ id: item.id, deleted: true }],
         proration_behavior: 'create_prorations'
     });
@@ -449,9 +520,9 @@ async function publicCatalog() {
     const c = await getCatalog();
     return {
         currency: c.currency,
-        base: { name: c.base.name, description: c.base.description, monthly: c.base.monthly, includedConversations: c.base.includedConversations },
-        setupFee: c.setupFee.amount, overageUnitPrice: c.overage.unitPrice,
-        options: c.options.map(({ key, name, description, monthly, extraConversations }) => ({ key, name, description, monthly, extraConversations }))
+        base: { name: c.base.name, description: c.base.description, nameEn: c.base.nameEn || '', descriptionEn: c.base.descriptionEn || '', monthly: c.base.monthly, includedConversations: c.base.includedConversations },
+        setupFee: c.setupFee.amount, overageUnitPrice: c.overage.unitPrice, minuteOverageUnitPrice: c.minuteOverage.unitPrice,
+        options: c.options.map(({ key, name, description, nameEn, descriptionEn, monthly, extraConversations, includedMinutes }) => ({ key, name, description, nameEn: nameEn || '', descriptionEn: descriptionEn || '', monthly, extraConversations, includedMinutes: includedMinutes || 0 }))
     };
 }
 
@@ -511,6 +582,61 @@ async function recordAiConversation(projectId, convId) {
     }
 }
 
+/**
+ * Phone minutes of one call (rounded up), counted once per call. Past the included minutes of the
+ * client's offer, the extra minutes go to the Stripe voice meter.
+ */
+async function recordVoiceMinutes(projectId, callId, seconds) {
+    try {
+        const minutes = Math.max(1, Math.ceil(Number(seconds) / 60));
+        const projectRef = db.collection('ai_projects').doc(projectId);
+        const project = (await projectRef.get()).data() || {};
+        let billing = project.billing || {};
+        if (stripe && billing.subscriptionId && billing.periodEnd && Date.now() > Date.parse(billing.periodEnd)) {
+            billing = (await syncProjectSubscription({ id: projectId, ...project }, await getCatalog())).billing;
+        }
+        const periodKey = periodKeyOf(billing);
+        const usageRef = projectRef.collection('billing_usage').doc(periodKey);
+        const callRef = projectRef.collection('voice_calls').doc(String(callId));
+        const totals = await db.runTransaction(async (tx) => {
+            const [call, usage] = await Promise.all([tx.get(callRef), tx.get(usageRef)]);
+            if (call.exists && call.data().billedPeriod) return null;
+            const before = usage.exists ? usage.data().voiceMinutes || 0 : 0;
+            tx.set(usageRef, { voiceMinutes: before + minutes, updatedAt: nowIso() }, { merge: true });
+            tx.set(callRef, { billedPeriod: periodKey, billedMinutes: minutes }, { merge: true });
+            return { before, after: before + minutes };
+        });
+        if (!totals || !stripe || !billing.customerId || !['active', 'trialing', 'past_due'].includes(billing.status)) return;
+        const offer = offerOf({ id: projectId, ...project }, await getCatalog());
+        const included = includedMinutesFor(offer, billing.options || []);
+        const over = Math.max(0, totals.after - Math.max(included, totals.before));
+        if (!over) return;
+        await stripe.billing.meterEvents.create({
+            event_name: VOICE_METER_EVENT,
+            identifier: `${projectId}_${callId}`,
+            payload: { stripe_customer_id: billing.customerId, value: String(over) }
+        });
+        await usageRef.set({ voiceOverageMinutes: FieldValue.increment(over) }, { merge: true });
+    } catch (e) {
+        console.warn('[Billing] Voice minutes not recorded:', e.message);
+    }
+}
+
+/**
+ * May this project take calls? Projects without a subscription are managed by hand (allowed).
+ * A subscribed client needs an active subscription that includes a voice option.
+ */
+async function voiceStatus(projectId) {
+    const project = { id: projectId, ...((await db.collection('ai_projects').doc(projectId).get()).data() || {}) };
+    const billing = project.billing || {};
+    if (!billing.subscriptionId) return { allowed: true, reason: 'not_subscribed' };
+    if (!['active', 'trialing', 'past_due'].includes(billing.status)) return { allowed: false, reason: 'subscription_inactive' };
+    const offer = offerOf(project, await getCatalog());
+    return includedMinutesFor(offer, billing.options || []) > 0 || (billing.options || []).includes('voice')
+        ? { allowed: true }
+        : { allowed: false, reason: 'voice_option_off' };
+}
+
 // ---------- Router ----------
 
 function mountBilling(app, { verifyToken }) {
@@ -564,4 +690,4 @@ function mountBilling(app, { verifyToken }) {
     console.log('[Billing] Routes mounted on /api/billing');
 }
 
-module.exports = { mountBilling, recordAiConversation, getCatalog, DEFAULT_CATALOG };
+module.exports = { mountBilling, recordAiConversation, recordVoiceMinutes, voiceStatus, getCatalog, DEFAULT_CATALOG };

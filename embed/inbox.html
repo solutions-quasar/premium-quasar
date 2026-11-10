@@ -59,7 +59,7 @@
             document.documentElement.lang = window.MP_LANG || 'en';
             applyTheme(d.theme);
             const projectId = JSON.parse(atob(token.slice(4).split('.')[0].replace(/-/g, '+').replace(/_/g, '/'))).p;
-            const { renderProjectMessaging } = await import('/erp/js/modules/mp_inbox.js?v=20261110');
+            const { renderProjectMessaging } = await import('/erp/js/modules/mp_inbox.js?v=20261111');
             renderProjectMessaging(document.getElementById('app'), { projectId, apiBase: '', getToken, agents: [], isStaff: false });
         });
 
