@@ -110,13 +110,30 @@ async function renderTransactionList(collectionName, elementId, amountClass) {
 }
 
 window.deleteTransaction = async (coll, id) => {
+    if (window.showConfirmModal) {
+        return window.showConfirmModal({
+            title: t('cf_delete_confirm') || 'Confirmation',
+            message: t('cf_delete_confirm'),
+            confirmText: 'Supprimer',
+            cancelText: 'Annuler',
+            onConfirm: async () => {
+                try {
+                    await deleteDoc(doc(db, coll, id));
+                    if (window.showToast) window.showToast(t('cf_delete_success'), "success");
+                    loadAllTransactions();
+                } catch (e) {
+                    if (window.showToast) window.showToast(t('cf_delete_error') + ": " + e.message, "error");
+                }
+            }
+        });
+    }
     if (!await erpConfirm(t('cf_delete_confirm'))) return;
     try {
         await deleteDoc(doc(db, coll, id));
         if (window.showToast) window.showToast(t('cf_delete_success'), "success");
         loadAllTransactions();
     } catch (e) {
-        alert(t('cf_delete_error') + ": " + e.message);
+        if (window.showToast) window.showToast(t('cf_delete_error') + ": " + e.message, "error");
     }
 };
 
@@ -156,7 +173,7 @@ window.saveCfRevenue = async () => {
     const isRecurring = document.getElementById('cf-rev-recurring').checked;
 
     if (!description || !amount) {
-        alert("Please fill in description and amount");
+        if (window.showToast) window.showToast("Please fill in description and amount", "warning");
         return;
     }
 
@@ -177,7 +194,7 @@ window.saveCfRevenue = async () => {
 
     } catch (e) {
         console.error(e);
-        alert("Error saving revenue: " + e.message);
+        if (window.showToast) window.showToast("Error saving revenue: " + e.message, "error");
     }
 };
 
@@ -228,7 +245,7 @@ window.saveCfExpense = async () => {
     const isRecurring = document.getElementById('cf-exp-recurring').checked;
 
     if (!description || !amount) {
-        alert("Please fill in description and amount");
+        if (window.showToast) window.showToast("Please fill in description and amount", "warning");
         return;
     }
 
@@ -250,6 +267,6 @@ window.saveCfExpense = async () => {
 
     } catch (e) {
         console.error(e);
-        alert("Error saving expense: " + e.message);
+        if (window.showToast) window.showToast("Error saving expense: " + e.message, "error");
     }
 };

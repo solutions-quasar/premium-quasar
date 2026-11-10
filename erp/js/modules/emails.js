@@ -283,7 +283,23 @@ window.saveTemplate = async () => {
 };
 
 window.deleteTemplate = async (id) => {
-    if (!confirm(t('emails_delete_confirm'))) return;
+    if (window.showConfirmModal) {
+        return window.showConfirmModal({
+            title: t('emails_delete_confirm') || 'Confirmation',
+            message: t('emails_delete_confirm'),
+            confirmText: 'Supprimer',
+            cancelText: 'Annuler',
+            onConfirm: async () => {
+                try {
+                    await deleteDoc(doc(db, "email_templates", id));
+                    window.showToast("Template deleted", "success");
+                    initEmails();
+                } catch (e) {
+                    window.showToast(e.message, "error");
+                }
+            }
+        });
+    }
     try {
         await deleteDoc(doc(db, "email_templates", id));
         window.showToast("Template deleted", "success");

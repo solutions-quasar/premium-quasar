@@ -866,6 +866,17 @@ async function handleIncomingSms({ from, body, messageSid, channel, provider, wh
         return reply;
     }
 
+    // 1b-bis. HELP / INFO keyword (10DLC requirement: must return the registered help message, never an AI reply)
+    if (/^(help|info|aide)[\.\!\?]?$/i.test(text)) {
+        console.log(`[Omnichannel Inbound] HELP requested by ${formattedFrom} on ${effectiveChannel}`);
+        const isFr = isPhoneFrancophone(formattedFrom);
+        const reply = isFr
+            ? "Solutions Quasar : Pour de l'aide, écrivez à info@solutionsquasar.ca ou visitez https://solutionsquasar.ca. Rép. STOP pour cesser. Des frais de messagerie peuvent s'appliquer."
+            : "Solutions Quasar: For assistance, please email info@solutionsquasar.ca or visit https://solutionsquasar.ca. Reply STOP to cancel. Msg & data rates may apply.";
+        await recordInboundOnly();
+        return reply;
+    }
+
     // 1c. Security / Anti-Spam Filter: Cyrillic / Eastern European scripts
     if (isCyrillicSpam(text)) {
         console.warn(`[Omnichannel Anti-Spam] Cyrillic characters detected from ${formattedFrom}. Silently rejecting message.`);

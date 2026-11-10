@@ -2,32 +2,57 @@ import { db, auth } from './firebase-config.js';
 import { collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence, browserSessionPersistence, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
-const API_BASE = window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1')
-    ? 'http://localhost:5000'
-    : '';
+const IS_LOCALHOST = window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1');
+const LOCAL_API_BASE = 'http://localhost:5000';
+const PROD_API_BASE = 'https://quasar-erp-b26d5.web.app';
+const API_BASE = IS_LOCALHOST ? LOCAL_API_BASE : '';
+let localBackendUnavailable = false;
+
+export async function erpApiFetch(path, options = {}) {
+    if (!IS_LOCALHOST) {
+        return fetch(path, options);
+    }
+    if (!localBackendUnavailable) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 1800);
+            const resp = await fetch(`${LOCAL_API_BASE}${path}`, {
+                ...options,
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            return resp;
+        } catch (_) {
+            localBackendUnavailable = true;
+        }
+    }
+    return fetch(`${PROD_API_BASE}${path}`, options);
+}
+window.erpApiFetch = erpApiFetch;
 
 // Imports with versioning removed for stability in this step
 // Imports with versioning removed for stability in this step
 // Imports
-import { initDashboard } from './modules/dashboard.js';
+import { initDashboard } from './modules/dashboard.js?v=2';
 import { initCRM, addClient } from './modules/crm.js';
-import { initCalendar } from './modules/calendar.js?v=35';
-import { initSales } from './modules/sales.js';
-import { initLeads, cleanupLeadsRealtime } from './modules/leads.js?v=65';
-import { initSms } from './modules/sms.js';
-import { initLeadHunter } from './modules/leadhunter.js?v=42';
-import { initColdCall } from './modules/coldcall.js';
+import { initCalendar } from './modules/calendar.js?v=36';
+import { initSales } from './modules/sales.js?v=2';
+import { initLeads, cleanupLeadsRealtime } from './modules/leads.js?v=72';
+import { initSms } from './modules/sms.js?v=97';
+import { initLeadHunter } from './modules/leadhunter.js?v=43';
+import { initColdCall } from './modules/coldcall.js?v=2';
 import { initFollowup } from './modules/followup.js';
-import { initAccount } from './modules/account.js';
-import { initTeam } from './modules/team.js';
+import { initAccount } from './modules/account.js?v=3';
+import { initTeam } from './modules/team.js?v=2';
 import { initAiAgents } from './modules/ai_agents.js';
-import { initEmails } from './modules/emails.js';
-import { initCashflow } from './modules/cashflow.js';
-import { initAutomations } from './modules/automations.js';
-import { initDemos } from './modules/demos.js';
-import { openSequencesConfigModal, initProspectionView } from './modules/sequences.js?v=63';
-import { openAuditConfigModal } from './modules/audit.js?v=46';
-import { applyTranslations, setLanguage, t } from './services/translationService.js';
+import { initEmails } from './modules/emails.js?v=2';
+import { initCashflow } from './modules/cashflow.js?v=2';
+import { initAutomations } from './modules/automations.js?v=3';
+import { initDemos } from './modules/demos.js?v=2';
+import { initWorkspace, cleanupWorkspaceRealtime } from './modules/workspace.js?v=84';
+import { openSequencesConfigModal, initProspectionView } from './modules/sequences.js?v=66';
+import { openAuditConfigModal } from './modules/audit.js?v=48';
+import { applyTranslations, setLanguage, t, getCurrentLanguage } from './services/translationService.js?v=73';
 import { initProspectionAlertService } from './services/prospectionAlertService.js?v=66';
 
 // --- UTILS ---
@@ -89,7 +114,7 @@ function initAuth() {
                 await signInWithEmailAndPassword(auth, email, password);
             } catch (error) {
                 console.error("Login Error:", error.message);
-                alert('Authentication Failed: ' + error.message);
+                window.showToast('Échec de connexion : ' + error.message, 'error');
                 btn.innerText = originalText;
                 btn.disabled = false;
             }
@@ -127,6 +152,14 @@ async function startApp() {
             const token = await user.getIdToken();
             localStorage.setItem('authToken', token);
 
+            // Populate sidebar user profile dynamically
+            const dispName = user.displayName || localStorage.getItem('erp_user_display_name') || (user.email ? user.email.split('@')[0] : 'Admin');
+            const initials = dispName.split(/\s+/).map(w => w[0]).join('').substring(0, 2).toUpperCase() || 'QU';
+            const nameEl = document.querySelector('.drawer-footer .user-name');
+            const avatarEl = document.querySelector('.drawer-footer .user-avatar');
+            if (nameEl) { nameEl.removeAttribute('data-i18n'); nameEl.textContent = dispName; }
+            if (avatarEl) avatarEl.textContent = initials;
+
             hideSplash();
             if (loginView) loginView.classList.remove('active');
 
@@ -157,6 +190,7 @@ const routes = {
     '': initDashboard,
     '#dashboard': initDashboard,
     '#crm': initCRM,
+    '#workspace': initWorkspace,
     '#calendar': initCalendar,
     '#sales': initSales,
     '#prospection': initProspectionView,
@@ -174,6 +208,64 @@ const routes = {
     '#demos': initDemos
 };
 
+const MODULE_TITLES = {
+    '': { fr: 'Tableau de Bord', en: 'Dashboard' },
+    '#dashboard': { fr: 'Tableau de Bord', en: 'Dashboard' },
+    '#crm': { fr: 'Clients', en: 'Clients' },
+    '#workspace': { fr: 'Notion', en: 'Notion' },
+    '#prospection': { fr: 'Réglages IA', en: 'AI Settings' },
+    '#leads': { fr: 'Pipeline Leads', en: 'Pipeline Leads' },
+    '#sms': { fr: 'Boîte SMS & Réseaux', en: 'SMS & Social Inbox' },
+    '#leadhunter': { fr: 'Chasseur de Leads', en: 'Lead Hunter' },
+    '#coldcall': { fr: 'Cold Call & Suivis', en: 'Cold Call' },
+    '#followup': { fr: 'Suivis', en: 'Follow-ups' },
+    '#calendar': { fr: 'Calendrier', en: 'Calendar' },
+    '#sales': { fr: 'Facture / Devis', en: 'Invoice / Quote' },
+    '#cashflow': { fr: 'Trésorerie', en: 'Cashflow' },
+    '#demos': { fr: 'Démos Web', en: 'Web Demos' },
+    '#team': { fr: 'Équipe', en: 'Team' },
+    '#emails': { fr: 'Modèles de Courriel', en: 'Email Templates' },
+    '#ai-agents': { fr: 'Agents IA', en: 'AI Agents' },
+    '#automations': { fr: 'Automations', en: 'Automations' },
+    '#account': { fr: 'Mon Compte', en: 'My Account' }
+};
+
+export function updateDocumentTitle(customTitle = null) {
+    const lang = (typeof getCurrentLanguage === 'function' ? getCurrentLanguage() : (localStorage.getItem('erp_lang') || 'fr'));
+    const rawHash = window.location.hash || '#dashboard';
+    const baseHash = rawHash.split('?')[0] || '#dashboard';
+
+    let moduleName = customTitle;
+    if (!moduleName) {
+        const titleDef = MODULE_TITLES[baseHash];
+        if (titleDef) {
+            moduleName = titleDef[lang] || titleDef['fr'] || titleDef['en'];
+        } else {
+            const activeNav = document.querySelector(`.nav-item[href="${baseHash}"]`);
+            if (activeNav) {
+                moduleName = activeNav.innerText.trim();
+            } else {
+                const cleaned = baseHash.replace('#', '').replace(/[-_]/g, ' ');
+                moduleName = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+            }
+        }
+    }
+
+    if (moduleName) {
+        document.title = `${moduleName} · Premium Quasar ERP`;
+    } else {
+        document.title = 'Premium Quasar ERP';
+    }
+}
+
+window.setERPTitle = (title) => {
+    updateDocumentTitle(title);
+};
+
+window.addEventListener('languageChanged', () => {
+    updateDocumentTitle();
+});
+
 let activeBaseHash = '';
 
 function handleRoute() {
@@ -182,12 +274,25 @@ function handleRoute() {
 
     console.log(`[Router] Navigating to: ${baseHash} (Raw: ${rawHash})`);
 
+    // Dynamically update browser tab title with active module name displayed first
+    updateDocumentTitle();
+
     let viewId = 'view-' + baseHash.replace('#', '');
     const isSameView = (baseHash === activeBaseHash);
 
     // Teardown leads listener when leaving leads module
     if (activeBaseHash === '#leads' && baseHash !== '#leads') {
         cleanupLeadsRealtime();
+    }
+
+    // Teardown workspace realtime & presence when leaving workspace module
+    if (activeBaseHash === '#workspace' && baseHash !== '#workspace') {
+        cleanupWorkspaceRealtime();
+    }
+
+    // Teardown SMS thread open state (restore bottom nav) when leaving SMS module
+    if (baseHash !== '#sms') {
+        document.body.classList.remove('sms-thread-open');
     }
 
     if (isSameView) {
@@ -392,7 +497,7 @@ window.showToast = (message, type = 'normal') => {
     }, 4000);
 };
 
-window.showConfirmModal = ({ title = 'Confirmation', message, confirmText = 'Confirmer', cancelText = 'Annuler', onConfirm }) => {
+window.showConfirmModal = ({ title = 'Confirmation', message, confirmText = 'Confirmer', cancelText = 'Annuler', onConfirm, onCancel }) => {
     const existing = document.getElementById('app-native-confirm-modal');
     if (existing) existing.remove();
 
@@ -414,6 +519,7 @@ window.showConfirmModal = ({ title = 'Confirmation', message, confirmText = 'Con
     document.body.insertAdjacentHTML('beforeend', modalHtml);
     document.getElementById('app-confirm-cancel-btn').onclick = () => {
         document.getElementById('app-native-confirm-modal')?.remove();
+        if (typeof onCancel === 'function') onCancel();
     };
     document.getElementById('app-confirm-ok-btn').onclick = () => {
         document.getElementById('app-native-confirm-modal')?.remove();
@@ -435,35 +541,74 @@ window.showForgotPasswordModal = () => {
     host.id = 'modal-container';
     if (!host.parentElement) document.body.appendChild(host);
 
+    const lang = (typeof getCurrentLanguage === 'function' ? getCurrentLanguage() : (localStorage.getItem('erp_lang') || 'fr'));
+    const isFr = lang !== 'en';
+    const currentLoginEmail = document.getElementById('login-email')?.value?.trim() || '';
+
     host.innerHTML = `
-        <div class="crm-modal-overlay" style="z-index:9999;" onclick="document.getElementById('modal-container').innerHTML=''">
-            <div class="crm-modal-content" style="max-width:400px; padding:2rem;" onclick="event.stopPropagation()">
-                <div class="text-h mb-2">Reset Password</div>
-                <p class="text-muted text-sm mb-4">Enter your email for a secure reset link.</p>
-                <input type="email" id="reset-email-input" class="form-input mb-4" placeholder="Email Address">
+        <div class="crm-modal-overlay" style="z-index:9999; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.82); backdrop-filter:blur(8px);" onclick="document.getElementById('modal-container').innerHTML=''">
+            <div class="crm-modal-content" style="max-width:420px; width:92%; padding:2rem; border:1px solid rgba(223,165,58,0.35); border-radius:14px;" onclick="event.stopPropagation()">
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                    <span class="material-icons text-gold" style="font-size:24px;">lock_reset</span>
+                    <div class="text-h" style="margin:0; font-size:1.15rem;">${isFr ? 'Réinitialiser le mot de passe' : 'Reset Password'}</div>
+                </div>
+                <p class="text-muted text-sm mb-4" style="line-height:1.5;">
+                    ${isFr ? 'Entrez votre courriel administrateur pour recevoir un lien sécurisé de réinitialisation.' : 'Enter your administrator email to receive a secure reset link.'}
+                </p>
+                <input type="email" id="reset-email-input" class="form-input mb-4" placeholder="${isFr ? 'Adresse courriel (ex: nom@solutionsquasar.ca)' : 'Email Address'}" value="${currentLoginEmail}">
                 <div style="display:flex; justify-content:flex-end; gap:10px;">
-                    <button class="btn btn-secondary" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
-                    <button class="btn btn-primary" onclick="handlePasswordReset()">Send Link</button>
+                    <button class="btn btn-secondary" onclick="document.getElementById('modal-container').innerHTML=''">${isFr ? 'Annuler' : 'Cancel'}</button>
+                    <button class="btn btn-primary" id="btn-send-reset-link" onclick="handlePasswordReset()">${isFr ? 'Envoyer le lien' : 'Send Link'}</button>
                 </div>
             </div>
         </div>`;
+
+    setTimeout(() => document.getElementById('reset-email-input')?.focus(), 50);
 };
 
 window.handlePasswordReset = async () => {
-    const email = document.getElementById('reset-email-input').value;
-    if (!email) return window.showToast("Enter email", "error");
+    const emailInput = document.getElementById('reset-email-input');
+    const btn = document.getElementById('btn-send-reset-link');
+    const lang = (typeof getCurrentLanguage === 'function' ? getCurrentLanguage() : (localStorage.getItem('erp_lang') || 'fr'));
+    const isFr = lang !== 'en';
+    const email = (emailInput?.value || '').trim().toLowerCase();
+
+    if (!email || !email.includes('@')) {
+        return window.showToast(isFr ? "Veuillez entrer une adresse courriel valide." : "Please enter a valid email.", "error");
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerText = isFr ? "Envoi en cours..." : "Sending...";
+    }
+
     try {
-        const res = await fetch(`${API_BASE}/api/forgot-password`, {
+        const res = await erpApiFetch(`/api/forgot-password`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email })
+            body: JSON.stringify({ email, lang })
         });
         const data = await res.json();
         if (data.success) {
-            window.showToast("Reset link sent", "success");
+            window.showToast(isFr ? `✓ Lien de réinitialisation envoyé à ${email} !` : `✓ Reset link sent to ${email}!`, "success");
             document.getElementById('modal-container').innerHTML = '';
-        } else throw new Error(data.error);
-    } catch (e) { window.showToast(e.message, "error"); }
+        } else {
+            throw new Error(data.error || (isFr ? "Échec de l'envoi du lien." : "Failed to send reset link."));
+        }
+    } catch (e) {
+        try {
+            await sendPasswordResetEmail(auth, email);
+            window.showToast(isFr ? `✓ Lien de réinitialisation envoyé à ${email} !` : `✓ Reset link sent to ${email}!`, "success");
+            document.getElementById('modal-container').innerHTML = '';
+        } catch (fbErr) {
+            window.showToast(e.message || fbErr.message, "error");
+        }
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerText = isFr ? "Envoyer le lien" : "Send Link";
+        }
+    }
 };
 
 // --- BOOTSTRAP ---

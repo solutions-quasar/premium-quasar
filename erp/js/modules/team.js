@@ -46,7 +46,13 @@ async function renderTeamList() {
                     <div class="text-sm text-muted mb-3">${m.role || t('team_role_default')}</div>
                     <div class="text-xs text-muted mb-3">${m.email}</div>
                     
-                    <button class="btn btn-sm btn-block" style="border-color:var(--danger); color:var(--danger);" onclick="event.stopPropagation(); deleteMember('${doc.id}')">${t('team_remove')}</button>
+                    <div style="display:flex; flex-direction:column; gap:8px;">
+                        <button class="btn btn-sm btn-block" style="border-color:rgba(223,165,58,0.45); color:var(--gold); display:inline-flex; align-items:center; justify-content:center; gap:6px;" onclick="event.stopPropagation(); sendMemberResetLink('${(m.email || '').replace(/'/g, "\\'")}')">
+                            <span class="material-icons" style="font-size:15px;">lock_reset</span>
+                            <span>Réinitialiser MDP</span>
+                        </button>
+                        <button class="btn btn-sm btn-block" style="border-color:var(--danger); color:var(--danger);" onclick="event.stopPropagation(); deleteMember('${doc.id}')">${t('team_remove')}</button>
+                    </div>
                 </div>
             `;
         });
@@ -118,7 +124,7 @@ window.saveMember = async (id) => {
     const voicePhone = document.getElementById('tm-phone').value;
 
     if (!name || !email) {
-        alert(t('team_fill_required'));
+        window.showToast?.(t('team_fill_required'), 'warning');
         return;
     }
 
@@ -138,9 +144,36 @@ window.saveMember = async (id) => {
 
         document.getElementById('team-modal-container').innerHTML = ''; // Close
         renderTeamList(); // Refresh
+        window.showToast?.("✓ Membre de l'équipe enregistré !", "success");
     } catch (e) {
         console.error(e);
-        alert('Error saving member: ' + e.message);
+        window.showToast?.('Erreur : ' + e.message, 'error');
+    }
+};
+
+window.sendMemberResetLink = async (email) => {
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    if (!cleanEmail) return window.showToast?.("Courriel manquant pour ce membre.", "error");
+
+    try {
+        const apiFn = typeof window.erpApiFetch === 'function'
+            ? window.erpApiFetch
+            : (p, opts) => fetch((window.location.hostname.includes('localhost') ? 'https://quasar-erp-b26d5.web.app' : '') + p, opts);
+
+        const res = await apiFn('/api/forgot-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: cleanEmail, lang: 'fr' })
+        });
+        const data = await res.json();
+        if (data.success) {
+            window.showToast?.(`✓ Lien de réinitialisation envoyé à ${cleanEmail} !`, "success");
+        } else {
+            throw new Error(data.error || "Erreur d'envoi");
+        }
+    } catch (err) {
+        console.error("[Team Reset Error]:", err);
+        window.showToast?.(`Erreur : ${err.message}`, "error");
     }
 };
 

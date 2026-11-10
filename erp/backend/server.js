@@ -4158,8 +4158,40 @@ app.post(['/api/webhook/twilio/sms', '/api/twilio/sms', '/api/twilio/inbound', '
     }
 });
 
+// Telnyx webhook signature check (ed25519 over "timestamp|rawBody").
+// Public key: Telnyx portal > Account Settings > Keys & Credentials > Public Key → env TELNYX_PUBLIC_KEY.
+// Without the key we accept the request but warn, so inbound keeps working until it is configured.
+function verifyTelnyxSignature(req) {
+    const publicKeyB64 = process.env.TELNYX_PUBLIC_KEY;
+    if (!publicKeyB64) {
+        console.warn('[Telnyx Webhook] TELNYX_PUBLIC_KEY not set: signature NOT verified.');
+        return true;
+    }
+    try {
+        const signature = req.get('telnyx-signature-ed25519');
+        const timestamp = req.get('telnyx-timestamp');
+        if (!signature || !timestamp || !req.rawBody) return false;
+        if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return false; // replay window: 5 min
+        const spkiPrefix = Buffer.from('302a300506032b6570032100', 'hex');
+        const key = crypto.createPublicKey({
+            key: Buffer.concat([spkiPrefix, Buffer.from(publicKeyB64, 'base64')]),
+            format: 'der',
+            type: 'spki'
+        });
+        const signed = Buffer.concat([Buffer.from(`${timestamp}|`), Buffer.from(req.rawBody)]);
+        return crypto.verify(null, signed, key, Buffer.from(signature, 'base64'));
+    } catch (e) {
+        console.error('[Telnyx Webhook] Signature verification error:', e.message);
+        return false;
+    }
+}
+
 // 9b. Telnyx / Unified Inbound SMS Webhook
 async function handleTelnyxOrUnifiedInboundSms(req, res) {
+    if (req.body?.data?.event_type && !verifyTelnyxSignature(req)) {
+        console.warn('[Telnyx Webhook] 🛑 Rejected request with invalid signature.');
+        return res.status(401).json({ error: 'invalid signature' });
+    }
     let isTelnyx = false;
     try {
         console.log('[Inbound SMS Webhook] Received payload:', JSON.stringify(req.body).slice(0, 300));

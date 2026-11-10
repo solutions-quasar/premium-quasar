@@ -41,7 +41,7 @@ export const HUNTER_SVGS = {
     check: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
 };
 
-const REGIONS_LIST = {
+export const REGIONS_LIST = {
     CA: [
         { id: 'ALL', label: '🍁 Toutes les provinces canadiennes (Rotation)' },
         { id: 'QC', label: 'Québec (QC) - Montréal, Québec, Laval, Sherbrooke, Lévis...' },
@@ -71,7 +71,7 @@ const REGIONS_LIST = {
     ]
 };
 
-const INDUSTRIES_LIST = [
+export const INDUSTRIES_LIST = [
     { id: 'ALL', label: '🔄 Rotation Toutes Professions (Multi-Secteurs)' },
     { id: 'Plumber', label: '🔧 Plombier (Plumber)' },
     { id: 'Electrician', label: '⚡ Électricien (Electrician)' },
@@ -104,7 +104,7 @@ function escapeHtml(str) {
         .replace(/'/g, '&#039;');
 }
 
-function buildRegionOptionsHtml(selectedCountry, currentRegion = 'ALL') {
+export function buildRegionOptionsHtml(selectedCountry, currentRegion = 'ALL') {
     let html = '';
     if (selectedCountry === 'CA') {
         html += `<option value="ALL" ${currentRegion === 'ALL' ? 'selected' : ''}>🍁 Toutes les provinces canadiennes (Rotation)</option>`;
@@ -132,7 +132,7 @@ function buildRegionOptionsHtml(selectedCountry, currentRegion = 'ALL') {
     return html;
 }
 
-function buildIndustryOptionsHtml(currentIndustry = 'ALL') {
+export function buildIndustryOptionsHtml(currentIndustry = 'ALL') {
     return INDUSTRIES_LIST.map(ind => {
         return `<option value="${ind.id}" ${currentIndustry === ind.id ? 'selected' : ''}>${ind.label}</option>`;
     }).join('');
@@ -174,7 +174,7 @@ async function fetchAutopilotConfig() {
 }
 
 // --- INIT ---
-export async function initLeadHunter() {
+export async function initLeadHunter() { if (typeof window.openSequencesConfigModal === 'function') { window.openSequencesConfigModal('hunter'); return; } window.location.hash = '#prospection'; return;
     const container = document.getElementById('view-leadhunter');
 
     // Fetch backend autopilot settings first
@@ -744,12 +744,12 @@ function renderHunterUI(container) {
 
 // --- AGENT LOGIC ---
 
-async function runAgentJob() {
+export async function runAgentJob() {
     const btn = document.getElementById('btn-run-agent');
     const logs = document.getElementById('hunter-logs');
     const previewContainer = document.getElementById('hunter-preview-container');
     const status = document.getElementById('stat-run-status');
-    const apiKey = localStorage.getItem(STORAGE_KEY_API);
+    const apiKey = document.getElementById('modal-autopilot-api-key')?.value?.trim() || localStorage.getItem(STORAGE_KEY_API); if (apiKey) localStorage.setItem(STORAGE_KEY_API, apiKey);
 
     // Get Inputs
     let industryInput = document.getElementById('input-industry').value;
@@ -931,7 +931,7 @@ async function runAgentJob() {
                 if (website) {
                     try {
                         log(`  > Scraping website contact signals: ${website}...`);
-                        const enrichResp = await fetch('http://localhost:5000/api/leads/enrich-website', {
+                        const enrichResp = await fetch(`${API_BASE}/api/leads/enrich-website`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ website, businessName: name, address: place.formattedAddress })

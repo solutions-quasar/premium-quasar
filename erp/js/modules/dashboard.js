@@ -266,7 +266,7 @@ window.saveQuickRevenue = async () => {
     const isRecurring = document.getElementById('rev-recurring').checked;
 
     if (!description || !amount) {
-        alert("Please fill in description and amount");
+        if (window.showToast) window.showToast("Please fill in description and amount", "warning");
         return;
     }
 
@@ -287,7 +287,7 @@ window.saveQuickRevenue = async () => {
 
     } catch (e) {
         console.error(e);
-        alert("Error saving revenue: " + e.message);
+        if (window.showToast) window.showToast("Error saving revenue: " + e.message, "error");
     }
 };
 
@@ -338,7 +338,7 @@ window.saveQuickExpense = async () => {
     const isRecurring = document.getElementById('exp-recurring').checked;
 
     if (!description || !amount) {
-        alert("Please fill in description and amount");
+        if (window.showToast) window.showToast("Please fill in description and amount", "warning");
         return;
     }
 
@@ -360,7 +360,7 @@ window.saveQuickExpense = async () => {
 
     } catch (e) {
         console.error(e);
-        alert("Error saving expense: " + e.message);
+        if (window.showToast) window.showToast("Error saving expense: " + e.message, "error");
     }
 };
 
@@ -388,8 +388,8 @@ async function loadNextLead() {
             <div class="text-center text-gold" style="font-size: 1.5rem; margin-bottom: 1rem;">${lead.phone}</div>
             
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%;">
-                <button class="btn" onclick="alert('Logged: No Answer'); initDashboard()">No Answer</button>
-                <button class="btn btn-primary" onclick="alert('Logged: Booked!'); initDashboard()">Meeting Booked</button>
+                <button class="btn" onclick="window.showToast && window.showToast('Logged: No Answer', 'info'); initDashboard()">No Answer</button>
+                <button class="btn btn-primary" onclick="window.showToast && window.showToast('Logged: Booked!', 'success'); initDashboard()">Meeting Booked</button>
             </div>
         `;
 

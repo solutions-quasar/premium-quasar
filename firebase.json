@@ -13,6 +13,7 @@
     }
   ],
   "hosting": {
+    "site": "quasar-erp-b26d5",
     "public": ".",
     "ignore": [
       "firebase.json",
@@ -53,6 +54,10 @@
       {
         "source": "/erp/portal.html",
         "destination": "/portal.html"
+      },
+      {
+        "source": "/reset-password.html",
+        "destination": "/erp/reset-password.html"
       },
       {
         "source": "/api/**",

@@ -166,7 +166,7 @@ export async function initCalendar() {
                         </div>
                         <div class="form-group" style="margin-bottom:12px;">
                             <label class="form-label">Lien Visioconférence (Google Meet)</label>
-                            <input type="text" id="cal-event-meet" class="form-input" value="https://meet.google.com/qsr-auto-meet" placeholder="https://meet.google.com/...">
+                            <input type="text" id="cal-event-meet" class="form-input" value="" placeholder="Lien Google Meet / Visio (optionnel)">
                         </div>
                         <div class="form-group" style="margin-bottom:12px; background:rgba(223,165,58,0.08); padding:10px; border-radius:8px; border:1px solid rgba(223,165,58,0.2);">
                             <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
@@ -373,7 +373,7 @@ window.saveCalEvent = async (start, end, allDay) => {
     const clientId = document.getElementById('cal-event-client')?.value || "";
     const service = document.getElementById('cal-event-service')?.value.trim() || "";
     const phone = document.getElementById('cal-event-phone')?.value.trim() || "";
-    const meetLink = document.getElementById('cal-event-meet')?.value.trim() || "https://meet.google.com/qsr-auto-meet";
+    const meetLink = document.getElementById('cal-event-meet')?.value.trim() || "";
     const remindersEnabled = document.getElementById('cal-event-reminders')?.checked || false;
 
     if (!title) {
