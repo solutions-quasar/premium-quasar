@@ -292,6 +292,13 @@
             .portal-drawer .drawer-bottom { border-top: 0; padding-top: 0; }
             .portal-drawer .drawer-bottom .nav-link { background: transparent; color: #ef4444; border-color: rgba(239,68,68,.35); }
         }
+        /* Desktop (≥1024px): the side menu stays open as a fixed sidebar; no burger, no overlay */
+        @media (min-width: 1024px) {
+            .portal-drawer { transform: none !important; width: 248px; transition: none; }
+            .menu-fab, .menu-overlay, .drawer-head .close { display: none !important; }
+            #portal-app .main-container { margin-left: 248px !important; padding-left: 2.5rem; padding-right: 2.5rem; padding-bottom: calc(1.5rem + var(--safe-bottom)) !important; width: auto; max-width: none; }
+            #tab-messages { height: calc(100dvh - 3rem - var(--safe-bottom)) !important; }
+        }
 </style>
 </head>
 
