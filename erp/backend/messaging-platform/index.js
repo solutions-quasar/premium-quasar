@@ -19,6 +19,7 @@ const core = require('./core');
 const promptLayers = require('./prompt');
 const { db } = require('../firebase-admin');
 const gmail = require('./gmail');
+const connect = require('./connect');
 
 // Local dev uses http://localhost:<port>; production uses the public hosting URL
 function serverUrlFor(req) {
@@ -28,6 +29,17 @@ function serverUrlFor(req) {
 }
 
 const DEFAULT_BASE_URL = 'https://quasar-erp-b26d5.web.app';
+
+// Pages Google may send the user back to after a Gmail connection (no open redirect)
+const RETURN_HOSTS = ['solutionsquasar.ca', 'www.solutionsquasar.ca', 'quasar-erp-b26d5.web.app', 'quasar-erp-b26d5.firebaseapp.com'];
+function safeReturnTo(url) {
+    try {
+        const u = new URL(String(url || ''));
+        if (u.protocol === 'https:' && RETURN_HOSTS.includes(u.hostname)) return u.toString();
+        if (u.protocol === 'http:' && /^(localhost|127\.0\.0\.1)$/.test(u.hostname)) return u.toString();
+    } catch (_) { /* invalid URL */ }
+    return null;
+}
 
 // ---------- Security helpers ----------
 
@@ -112,6 +124,8 @@ async function processMetaPayload(body) {
             for (const change of entry.changes || []) {
                 const value = change.value || {};
                 if (!value.messages?.length) continue; // statuses, etc.
+                // Shared test account (also on the private Quasar inbox): never answer from the client platform
+                if (connect.isBlockedMetaId(entry.id)) continue;
                 const channel = await core.getChannel('whatsapp', value.metadata?.phone_number_id);
                 if (!channel) {
                     console.warn(`[MP Meta] No client channel for WhatsApp phone_number_id ${value.metadata?.phone_number_id}`);
@@ -349,7 +363,7 @@ function createRouter({ verifyToken }) {
                 agentId: req.query.agentId || null,
                 aiEnabled: req.query.aiEnabled === 'true',
                 label: req.query.label || null,
-                returnTo: req.query.returnTo || null,
+                returnTo: safeReturnTo(req.query.returnTo),
                 serverUrl: serverUrlFor(req)
             });
             res.json({ success: true, url });
@@ -358,10 +372,77 @@ function createRouter({ verifyToken }) {
         }
     });
 
+    // ----- Self-service connection (client portal; staff can use it too) -----
+    router.get('/projects/:projectId/connect', auth, async (req, res) => {
+        try {
+            const channels = await core.listChannels(req.params.projectId);
+            res.json({ success: true, config: connect.publicConfig(), channels: channels.map(c => core.publicChannel(c)) });
+        } catch (e) {
+            res.status(500).json({ success: false, error: e.message });
+        }
+    });
+
+    // Pages + Instagram accounts the person granted in Facebook Login for Business (no tokens returned)
+    router.post('/projects/:projectId/connect/meta/assets', auth, async (req, res) => {
+        try {
+            res.json({ success: true, pages: await connect.listMetaAssets(req.body?.userToken) });
+        } catch (e) {
+            res.status(400).json({ success: false, error: e.message });
+        }
+    });
+
+    router.post('/projects/:projectId/connect/meta', auth, async (req, res) => {
+        try {
+            const { userToken, pageIds, instagramIds } = req.body || {};
+            const results = await connect.connectMetaAssets({
+                projectId: req.params.projectId, userToken,
+                pageIds: Array.isArray(pageIds) ? pageIds.map(String) : [],
+                instagramIds: Array.isArray(instagramIds) ? instagramIds.map(String) : []
+            });
+            res.json({ success: true, results });
+        } catch (e) {
+            res.status(400).json({ success: false, error: e.message });
+        }
+    });
+
+    router.post('/projects/:projectId/connect/whatsapp', auth, async (req, res) => {
+        try {
+            const { code, wabaId, phoneNumberId } = req.body || {};
+            res.json({ success: true, ...(await connect.connectWhatsApp({ projectId: req.params.projectId, code, wabaId, phoneNumberId })) });
+        } catch (e) {
+            res.status(400).json({ success: false, error: e.message });
+        }
+    });
+
+    router.get('/projects/:projectId/connect/gmail/auth-url', auth, (req, res) => {
+        try {
+            const url = gmail.getAuthUrl({
+                projectId: req.params.projectId,
+                agentId: null,
+                aiEnabled: false, // AI replies on email stay off until the team turns them on
+                label: null,
+                returnTo: safeReturnTo(req.query.returnTo),
+                serverUrl: serverUrlFor(req)
+            });
+            res.json({ success: true, url });
+        } catch (e) {
+            res.status(500).json({ success: false, error: e.message });
+        }
+    });
+
+    router.delete('/projects/:projectId/connect/channels/:channelId', auth, async (req, res) => {
+        try {
+            await core.deleteChannel(req.params.projectId, req.params.channelId);
+            res.json({ success: true });
+        } catch (e) {
+            res.status(400).json({ success: false, error: e.message });
+        }
+    });
+
     // Google redirects here (no ERP session): the state signature identifies the project.
     router.get('/gmail/callback', async (req, res) => {
         const back = (returnTo, params) => {
-            const target = returnTo && /^https?:\/\//.test(returnTo) ? returnTo : `${DEFAULT_BASE_URL}/erp/index.html#ai-agents`;
+            const target = safeReturnTo(returnTo) || `${DEFAULT_BASE_URL}/erp/index.html#ai-agents`;
             const sep = target.includes('?') ? '&' : (target.includes('#') ? '?' : '?');
             return `${target}${sep}${params}`;
         };

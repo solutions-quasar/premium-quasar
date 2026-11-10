@@ -206,6 +206,8 @@ const showDashboard = async () => {
 
     loadAgents();
     refreshUnreadBadge();
+    // Back from Google after connecting Gmail: open the Connect tab
+    if (new URLSearchParams(window.location.search).has('gmail')) window.switchTab('integrations');
     clearInterval(badgeTimer);
     badgeTimer = setInterval(refreshUnreadBadge, 60000);
 };
@@ -246,12 +248,28 @@ const refreshUnreadBadge = async () => {
 };
 let badgeTimer = null;
 
+// Connect tab: messaging channels the client links itself (Facebook/Instagram, WhatsApp, Gmail)
+let connectMounted = false;
+const mountConnect = async () => {
+    const el = document.getElementById('mp-connect');
+    if (!el || !currentProjectId) return;
+    connectMounted = true;
+    try {
+        const { renderChannelConnect } = await import('./modules/mp_connect.js?v=20261110');
+        renderChannelConnect(el, { projectId: currentProjectId, apiBase, getToken: () => auth.currentUser.getIdToken() });
+    } catch (e) {
+        connectMounted = false;
+        console.error('[Portal] Connect load error:', e);
+    }
+};
+
 window.switchTab = (tab) => {
     document.getElementById('tab-dashboard').style.display = tab === 'dashboard' ? 'block' : 'none';
     document.getElementById('tab-integrations').style.display = tab === 'integrations' ? 'block' : 'none';
     const msg = document.getElementById('tab-messages');
     if (msg) msg.style.display = tab === 'messages' ? 'block' : 'none';
     if (tab === 'messages' && !messagesMounted) mountMessages();
+    if (tab === 'integrations' && !connectMounted) mountConnect();
 
     // Update Nav UI
     document.querySelectorAll('.nav-link').forEach(el => {
