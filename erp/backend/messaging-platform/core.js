@@ -348,6 +348,8 @@ async function handleInbound({ channel, contactId, text, isRealText = true, mess
         ...(dryRun ? { dryRun: true } : {}),
         timestamp: nowIso()
     });
+    // Billing: count this AI conversation (overage past the plan's quota). Never blocks the reply.
+    if (!dryRun) require('../billing').recordAiConversation(projectId, convId);
     return { recorded: true, replied: true, reply };
 }
 

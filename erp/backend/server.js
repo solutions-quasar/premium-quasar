@@ -5043,6 +5043,7 @@ app.post('/api/stalled-recovery/process-due', verifyToken, async (req, res) => {
 
 // --- CLIENT MESSAGING PLATFORM (separate from the Quasar inbox above) ---
 require('./messaging-platform').mountMessagingPlatform(app, { verifyToken, processAiChat });
+require('./billing').mountBilling(app, { verifyToken });
 
 if (require.main === module) {
     app.listen(PORT, () => {
