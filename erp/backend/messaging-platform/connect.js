@@ -42,8 +42,8 @@ function publicConfig() {
     return {
         appId: process.env.MP_META_APP_ID || DEFAULT_APP_ID,
         graphVersion: 'v21.0',
-        fbConfigId: process.env.MP_META_FB_CONFIG_ID || null,
-        waConfigId: process.env.MP_META_WA_CONFIG_ID || null
+        fbConfigId: process.env.MP_META_FB_CONFIG_ID || '2409244763180734',
+        waConfigId: process.env.MP_META_WA_CONFIG_ID || '4689493804661860'
     };
 }
 
@@ -72,12 +72,14 @@ async function longLivedUserToken(userToken) {
 }
 
 async function fetchPages(userToken) {
+    const get = (fields) => axios.get(`${GRAPH}/me/accounts`, { params: { fields, limit: 100, access_token: userToken } });
     try {
-        const r = await axios.get(`${GRAPH}/me/accounts`, {
-            params: { fields: 'id,name,access_token,instagram_business_account{id,username,name}', limit: 100, access_token: userToken }
-        });
-        return r.data?.data || [];
-    } catch (err) { throw metaError(err, 'Impossible de lire vos Pages Facebook.'); }
+        return (await get('id,name,access_token,instagram_business_account{id,username,name}')).data?.data || [];
+    } catch (err) {
+        // Without the Instagram permissions the linked account cannot be read: fall back to Pages only
+        try { return (await get('id,name,access_token')).data?.data || []; }
+        catch (err2) { throw metaError(err2, 'Impossible de lire vos Pages Facebook.'); }
+    }
 }
 
 /** Pages the person granted, without tokens (for the picker). */
