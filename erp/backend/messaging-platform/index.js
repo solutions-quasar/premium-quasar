@@ -228,12 +228,25 @@ function createRouter({ verifyToken }) {
     // ----- Authenticated inbox API -----
     const auth = [verifyToken, requireProjectAccess];
 
+    // Effective AI state of a conversation: its channel must have an agent and AI replies on.
+    const channelsById = async (projectId) => new Map((await core.listChannels(projectId)).map(c => [c.id, c]));
+    const aiState = (conv, channels) => {
+        const ch = channels.get(conv.channelId) || [...channels.values()].find(c => c.type === conv.channel);
+        if (!ch) return { channel: false, reason: 'no_channel' };
+        if (!ch.agentId) return { channel: false, reason: 'no_agent', channelId: ch.id };
+        if (ch.aiEnabled === false) return { channel: false, reason: 'channel_off', channelId: ch.id };
+        return { channel: true, channelId: ch.id };
+    };
+
     router.get('/projects/:projectId/conversations', auth, async (req, res) => {
         try {
-            const snap = await core.conversationsRef(req.params.projectId).orderBy('lastMessageAt', 'desc').limit(200).get();
+            const [snap, channels] = await Promise.all([
+                core.conversationsRef(req.params.projectId).orderBy('lastMessageAt', 'desc').limit(200).get(),
+                channelsById(req.params.projectId)
+            ]);
             const conversations = snap.docs.map(d => {
                 const { messages, ...rest } = d.data();
-                return { id: d.id, ...rest, messageCount: (messages || []).length };
+                return { id: d.id, ...rest, ai: aiState(rest, channels), messageCount: (messages || []).length };
             });
             res.json({ success: true, conversations });
         } catch (e) {
@@ -247,7 +260,8 @@ function createRouter({ verifyToken }) {
             const snap = await ref.get();
             if (!snap.exists) return res.status(404).json({ success: false, error: 'Conversation introuvable.' });
             if (snap.data().unread) await ref.set({ unread: false }, { merge: true });
-            res.json({ success: true, conversation: { id: snap.id, ...snap.data(), unread: false } });
+            const channels = await channelsById(req.params.projectId);
+            res.json({ success: true, conversation: { id: snap.id, ...snap.data(), ai: aiState(snap.data(), channels), unread: false } });
         } catch (e) {
             res.status(500).json({ success: false, error: e.message });
         }
@@ -427,6 +441,20 @@ function createRouter({ verifyToken }) {
             res.json({ success: true, url });
         } catch (e) {
             res.status(500).json({ success: false, error: e.message });
+        }
+    });
+
+    // AI replies on/off for a whole channel (client can do it once an agent is assigned)
+    router.patch('/projects/:projectId/connect/channels/:channelId', auth, async (req, res) => {
+        try {
+            const ch = await core.getChannelById(req.params.channelId);
+            if (!ch || ch.projectId !== req.params.projectId) return res.status(404).json({ success: false, error: 'Canal introuvable.' });
+            const aiEnabled = req.body?.aiEnabled === true;
+            if (aiEnabled && !ch.agentId) return res.status(400).json({ success: false, error: 'Aucun assistant IA n\'est encore assigné à ce canal : contactez l\'équipe Quasar.' });
+            await db.collection('mp_channels').doc(ch.id).set({ aiEnabled, updatedAt: new Date().toISOString() }, { merge: true });
+            res.json({ success: true, aiEnabled });
+        } catch (e) {
+            res.status(400).json({ success: false, error: e.message });
         }
     });
 

@@ -244,6 +244,7 @@ const refreshUnreadBadge = async () => {
         const n = (data.conversations || []).filter(c => c.unread).length;
         badge.textContent = n;
         badge.style.display = n ? '' : 'none';
+        document.getElementById('menu-fab')?.classList.toggle('has-unread', n > 0);
     } catch (_) { /* badge is optional */ }
 };
 let badgeTimer = null;
@@ -263,7 +264,16 @@ const mountConnect = async () => {
     }
 };
 
+// Side menu: floating burger toggles it; closes on navigation, overlay tap or Escape
+window.togglePortalMenu = (open) => {
+    const isOpen = typeof open === 'boolean' ? open : !document.body.classList.contains('menu-open');
+    document.body.classList.toggle('menu-open', isOpen);
+    document.getElementById('menu-fab')?.setAttribute('aria-expanded', String(isOpen));
+};
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.togglePortalMenu(false); });
+
 window.switchTab = (tab) => {
+    window.togglePortalMenu(false);
     document.getElementById('tab-dashboard').style.display = tab === 'dashboard' ? 'block' : 'none';
     document.getElementById('tab-integrations').style.display = tab === 'integrations' ? 'block' : 'none';
     const msg = document.getElementById('tab-messages');

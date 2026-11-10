@@ -236,7 +236,43 @@
                 transform: rotate(360deg);
             }
         }
-    </style>
+            /* --- SIDE MENU (toggle) + floating burger: replaces the top bar and the bottom/side nav --- */
+        #portal-app, .main-container { margin-left: 0 !important; }
+        #portal-app { padding-bottom: var(--safe-bottom) !important; }
+        .main-container { padding-top: calc(4.75rem + env(safe-area-inset-top, 0px)) !important; }
+        #tab-messages { height: calc(100dvh - 6.5rem - var(--safe-bottom)) !important; }
+        .menu-fab {
+            position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); left: 14px; z-index: 1100;
+            width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--border);
+            background: rgba(18, 20, 24, .92); backdrop-filter: blur(10px); color: #fff; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 20px rgba(0,0,0,.45);
+        }
+        .menu-fab:hover { border-color: var(--gold); color: var(--gold); }
+        .menu-fab .fab-dot { position: absolute; top: 9px; right: 9px; width: 10px; height: 10px; border-radius: 50%; background: var(--gold); border: 2px solid #121418; display: none; }
+        .menu-fab.has-unread .fab-dot { display: block; }
+        .menu-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 1150; opacity: 0; pointer-events: none; transition: opacity .2s; }
+        .portal-drawer {
+            position: fixed; top: 0; bottom: 0; left: 0; width: min(280px, 82vw); z-index: 1200;
+            background: var(--bg-card); border-right: 1px solid var(--border);
+            display: flex; flex-direction: column; padding: calc(18px + env(safe-area-inset-top, 0px)) 14px calc(18px + var(--safe-bottom));
+            transform: translateX(-102%); transition: transform .25s ease; box-sizing: border-box;
+        }
+        body.menu-open .portal-drawer { transform: none; }
+        body.menu-open .menu-overlay { opacity: 1; pointer-events: auto; }
+        .drawer-head { display: flex; align-items: center; gap: 10px; padding: 4px 6px 18px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+        .drawer-head .bar { background: var(--gold); height: 32px; width: 4px; border-radius: 2px; flex-shrink: 0; }
+        .drawer-head .name { font-weight: 700; font-size: 1.05rem; letter-spacing: -0.3px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .drawer-head .close { background: transparent; border: 0; color: var(--text-dim); cursor: pointer; padding: 6px; display: flex; }
+        .portal-drawer .nav-link {
+            flex-direction: row !important; justify-content: flex-start; gap: 14px !important; margin: 0 0 4px !important;
+            padding: 13px 14px; border-radius: 12px; font-size: .95rem !important; font-weight: 600; position: relative;
+        }
+        .portal-drawer .nav-link .material-icons { font-size: 1.35rem; }
+        .portal-drawer .nav-link:hover { background: rgba(255,255,255,.04); color: #fff; }
+        .portal-drawer .nav-link.active { background: rgba(223,165,58,.12); color: var(--gold); }
+        .portal-drawer .nav-badge { position: static; margin-left: auto; }
+        .portal-drawer .drawer-bottom { margin-top: auto; border-top: 1px solid var(--border); padding-top: 12px; }
+</style>
 </head>
 
 <body>
@@ -340,14 +376,11 @@
     <!-- 2. MAIN APP SECTION -->
     <div id="portal-app">
         <!-- Header -->
-        <header class="header">
-            <div style="display:flex; align-items:center; gap:12px;">
-                <div style="background: var(--gold); height: 32px; width: 4px; border-radius: 2px;"></div>
-                <span id="project-name" style="font-weight: 700; font-size: 1.1rem; letter-spacing: -0.5px;">-</span>
-            </div>
-            <button class="icon-btn" onclick="logout()" style="color:var(--text-dim);"><span
-                    class="material-icons">logout</span></button>
-        </header>
+        <!-- Floating menu button (opens the side menu) -->
+        <button type="button" class="menu-fab" id="menu-fab" onclick="togglePortalMenu()" aria-label="Menu" aria-controls="portal-drawer" aria-expanded="false">
+            <span class="material-icons">menu</span><span class="fab-dot"></span>
+        </button>
+        <div class="menu-overlay" onclick="togglePortalMenu(false)"></div>
 
         <!-- Pages -->
         <main class="main-container">
@@ -400,7 +433,13 @@
         </main>
 
         <!-- Bottom Navigation -->
-        <nav class="bottom-nav">
+        <!-- Side menu (toggle) -->
+        <nav class="portal-drawer" id="portal-drawer" aria-label="Menu">
+            <div class="drawer-head">
+                <div class="bar"></div>
+                <span id="project-name" class="name">-</span>
+                <button type="button" class="close" onclick="togglePortalMenu(false)" aria-label="Close"><span class="material-icons">close</span></button>
+            </div>
             <a href="javascript:void(0)" class="nav-link active" onclick="switchTab('dashboard')">
                 <span class="material-icons">grid_view</span>
                 <span>Dashboard</span>
@@ -414,10 +453,12 @@
                 <span class="material-icons">extension</span>
                 <span>Connect</span>
             </a>
-            <a href="javascript:void(0)" class="nav-link" onclick="logout()">
-                <span class="material-icons">account_circle</span>
-                <span>Sign Out</span>
-            </a>
+            <div class="drawer-bottom">
+                <a href="javascript:void(0)" class="nav-link" onclick="logout()">
+                    <span class="material-icons">logout</span>
+                    <span>Sign Out</span>
+                </a>
+            </div>
         </nav>
     </div>
 

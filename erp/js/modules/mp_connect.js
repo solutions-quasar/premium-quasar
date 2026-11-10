@@ -4,6 +4,8 @@
  * Talks to /api/mp/projects/:projectId/connect/* (see erp/backend/messaging-platform/connect.js).
  */
 
+import { tip, bindTips } from './mp_help.js';
+
 const isEn = () => { try { return (localStorage.getItem('erp_lang') || 'en') !== 'fr'; } catch (_) { return true; } };
 const L = (fr, en) => (isEn() ? en : fr);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -33,8 +35,20 @@ const STYLES = `
 .mpc-btn:disabled { opacity:.45; cursor:not-allowed; }
 .mpc-btn.ghost { background:transparent; color:inherit; border:1px solid var(--border, #2d3139); }
 .mpc-list { display:flex; flex-direction:column; border:1px solid var(--border, #2d3139); border-radius:12px; overflow:hidden; }
-.mpc-row { display:flex; align-items:center; gap:12px; padding:10px 14px; border-top:1px solid var(--border, #2d3139); }
+.mpc-row { display:flex; align-items:center; gap:10px 12px; padding:10px 14px; border-top:1px solid var(--border, #2d3139); flex-wrap:wrap; }
 .mpc-row:first-child { border-top:0; }
+.mpc-row-main { display:flex; align-items:center; gap:12px; flex:1 1 220px; min-width:0; }
+.mpc-row-side { display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; margin-left:auto; }
+.mpc-ai { display:flex; align-items:center; gap:6px; font-size:.75rem; }
+.mpc-switch { position:relative; width:36px; height:20px; flex-shrink:0; display:inline-block; }
+.mpc-switch input { opacity:0; width:0; height:0; }
+.mpc-switch span { position:absolute; inset:0; background:#444; border-radius:20px; cursor:pointer; transition:.2s; }
+.mpc-switch span::before { content:''; position:absolute; width:14px; height:14px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.2s; }
+.mpc-switch input:checked + span { background:#3ecf8e; }
+.mpc-switch input:checked + span::before { transform:translateX(16px); }
+.mpc-switch input:disabled + span { opacity:.4; cursor:not-allowed; }
+.mpc-chip.off { color:var(--text-dim, #94a3b8); border:1px solid var(--border, #2d3139); }
+@media (max-width: 600px) { .mpc-row-side { width:100%; justify-content:space-between; margin-left:0; } }
 .mpc-chip { font-size:.7rem; padding:2px 8px; border-radius:20px; white-space:nowrap; }
 .mpc-chip.ok { color:#3ecf8e; background:#3ecf8e14; border:1px solid #3ecf8e55; }
 .mpc-chip.warn { color:#f5a524; background:#f5a52414; border:1px solid #f5a52455; }
@@ -105,8 +119,8 @@ export function renderChannelConnect(container, opts) {
         <style>${STYLES}</style>
         <div class="mpc">
             <div class="mpc-head">
-                <div style="flex:1;">
-                    <div class="mpc-title">${L('Canaux de messagerie', 'Messaging channels')}</div>
+                <div style="flex:1;" data-tip-host>
+                    <div class="mpc-title">${L('Canaux de messagerie', 'Messaging channels')} ${tip(L('Reliez ici les comptes où vos clients vous écrivent. Chaque canal connecté envoie ses messages dans l\'onglet Messages. Vous pouvez déconnecter un canal à tout moment : vos conversations sont conservées.', 'Link the accounts where your customers write to you. Each connected channel sends its messages to the Messages tab. You can disconnect a channel at any time: your conversations are kept.'))}</div>
                     <div class="mpc-dim">${L('Connectez vos comptes : les messages de vos clients arrivent dans l\'onglet Messages et votre assistant IA peut y répondre.', 'Connect your accounts: your customers\' messages arrive in the Messages tab and your AI assistant can reply.')}</div>
                 </div>
             </div>
@@ -118,13 +132,14 @@ export function renderChannelConnect(container, opts) {
     if (gmailResult === 'connected') notice('ok', `${L('Gmail connecté', 'Gmail connected')} : <strong>${esc(gmailEmail)}</strong>`);
     if (gmailResult === 'error') notice('err', L('La connexion Gmail n\'a pas abouti. Réessayez.', 'The Gmail connection did not complete. Please try again.'));
 
-    function tile(type, title, desc, btnHtml) {
+    function tile(type, title, desc, btnHtml, help) {
         const t = TYPES[type];
         return `
             <div class="mpc-tile">
-                <div class="mpc-tile-top">
+                <div class="mpc-tile-top" data-tip-host>
                     <div class="mpc-ico" style="background:${t.color}1f; color:${t.color};"><span class="material-icons">${t.icon}</span></div>
-                    <div style="min-width:0;"><div style="font-weight:700;">${title}</div><div class="mpc-dim">${desc}</div></div>
+                    <div style="min-width:0; flex:1;"><div style="font-weight:700;">${title}</div><div class="mpc-dim">${desc}</div></div>
+                    ${help ? tip(help) : ''}
                 </div>
                 ${btnHtml}
             </div>`;
@@ -135,13 +150,17 @@ export function renderChannelConnect(container, opts) {
         const soon = `<button class="mpc-btn ghost" disabled>${L('Bientôt disponible', 'Coming soon')}</button>`;
         container.querySelector('#mpc-tiles').innerHTML = [
             tile('facebook', 'Facebook & Instagram', L('Messenger de votre Page et messages directs Instagram', 'Your Page\'s Messenger and Instagram direct messages'),
-                c.fbConfigId ? `<button class="mpc-btn" id="mpc-fb" style="background:#1877f2; color:#fff;"><span class="material-icons" style="font-size:1.1rem;">facebook</span> ${L('Continuer avec Facebook', 'Continue with Facebook')}</button>` : soon),
+                c.fbConfigId ? `<button class="mpc-btn" id="mpc-fb" style="background:#1877f2; color:#fff;"><span class="material-icons" style="font-size:1.1rem;">facebook</span> ${L('Continuer avec Facebook', 'Continue with Facebook')}</button>` : soon,
+                L('Il faut être administrateur de la Page Facebook. Meta vous demande quelles Pages partager, puis vous choisissez celles à connecter. Pour Instagram, le compte doit être professionnel et relié à la Page.', 'You must be an admin of the Facebook Page. Meta asks which Pages to share, then you pick the ones to connect. For Instagram, the account must be a professional account linked to the Page.')),
             tile('whatsapp', 'WhatsApp Business', L('Votre numéro WhatsApp, créé ou relié dans la fenêtre de Meta', 'Your WhatsApp number, created or linked in Meta\'s window'),
-                c.waConfigId ? `<button class="mpc-btn" id="mpc-wa" style="background:#25d366; color:#000;"><span class="material-icons" style="font-size:1.1rem;">forum</span> ${L('Connecter WhatsApp', 'Connect WhatsApp')}</button>` : soon),
+                c.waConfigId ? `<button class="mpc-btn" id="mpc-wa" style="background:#25d366; color:#000;"><span class="material-icons" style="font-size:1.1rem;">forum</span> ${L('Connecter WhatsApp', 'Connect WhatsApp')}</button>` : soon,
+                L('Prévoyez un numéro de téléphone qui n\'est pas déjà utilisé dans l\'application WhatsApp. Meta vous envoie un code par SMS ou par appel pour le vérifier. Comptez environ 5 minutes.', 'Have a phone number that is not already used in the WhatsApp app. Meta sends you a code by text or call to verify it. It takes about 5 minutes.')),
             tile('email', 'Gmail', L('Votre boîte Gmail ou Google Workspace', 'Your Gmail or Google Workspace inbox'),
-                `<button class="mpc-btn" id="mpc-gmail" style="background:#fff; color:#000;"><span class="material-icons" style="font-size:1.1rem; color:#ea4335;">mail</span> ${L('Connecter Gmail', 'Connect Gmail')}</button>`),
+                `<button class="mpc-btn" id="mpc-gmail" style="background:#fff; color:#000;"><span class="material-icons" style="font-size:1.1rem; color:#ea4335;">mail</span> ${L('Connecter Gmail', 'Connect Gmail')}</button>`,
+                L('Google vous demande l\'autorisation de lire et d\'envoyer des courriels. Seuls les nouveaux courriels sont importés (pas l\'historique), toutes les 2 minutes. Les promotions et notifications sont ignorées.', 'Google asks for permission to read and send emails. Only new emails are imported (no history), every 2 minutes. Promotions and notifications are ignored.')),
             tile('sms', L('Texto (SMS)', 'Text messages (SMS)'), L('Un numéro texto dédié, fourni par notre équipe', 'A dedicated texting number, set up by our team'),
-                `<a class="mpc-btn ghost" style="text-decoration:none;" href="mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(L('Demande de numéro texto', 'Texting number request'))}"><span class="material-icons" style="font-size:1.1rem;">sms</span> ${L('Demander un numéro', 'Request a number')}</a>`)
+                `<a class="mpc-btn ghost" style="text-decoration:none;" href="mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(L('Demande de numéro texto', 'Texting number request'))}"><span class="material-icons" style="font-size:1.1rem;">sms</span> ${L('Demander un numéro', 'Request a number')}</a>`,
+                L('Notre équipe réserve un numéro local pour vous et l\'enregistre auprès des opérateurs. Comptez quelques jours. Vos clients pourront ensuite vous texter.', 'Our team reserves a local number for you and registers it with the carriers. It takes a few days. Your customers can then text you.'))
         ].join('');
         container.querySelector('#mpc-fb')?.addEventListener('click', connectFacebook);
         container.querySelector('#mpc-wa')?.addEventListener('click', connectWhatsApp);
@@ -155,24 +174,49 @@ export function renderChannelConnect(container, opts) {
             return;
         }
         el.innerHTML = `
-            <div style="font-weight:700; margin-bottom:8px;">${L('Canaux connectés', 'Connected channels')}</div>
+            <div data-tip-host style="font-weight:700; margin-bottom:8px; display:flex; align-items:center; gap:8px;">${L('Canaux connectés', 'Connected channels')} ${tip(L('« Réponses IA » : quand c\'est activé, votre assistant répond automatiquement sur ce canal. Désactivez-le pour répondre vous-même. « Aucun assistant » : l\'équipe Quasar doit encore configurer votre assistant pour ce canal. « À reconnecter » : l\'accès a expiré, cliquez de nouveau sur le bouton de connexion du canal.', '"AI replies": when on, your assistant replies automatically on this channel. Turn it off to reply yourself. "No assistant": the Quasar team still has to set up your assistant for this channel. "Reconnect needed": access expired, click the channel\'s connect button again.'))}</div>
             <div class="mpc-list">${state.channels.map(ch => {
                 const t = TYPES[ch.type] || TYPES.sms;
                 const ok = ch.type === 'sms' || (ch.hasToken && !ch.lastError);
                 const confirming = state.confirmDelete === ch.id;
+                const hasAgent = !!ch.agentId;
+                const aiOn = hasAgent && ch.aiEnabled !== false;
                 return `
                     <div class="mpc-row">
-                        <div class="mpc-ico" style="width:32px; height:32px; background:${t.color}1f; color:${t.color};"><span class="material-icons" style="font-size:1.1rem;">${t.icon}</span></div>
-                        <div style="flex:1; min-width:0;">
-                            <div style="font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(ch.label || ch.externalId)}</div>
-                            <div class="mpc-dim">${t.label}${ch.active ? '' : ` · ${L('en pause', 'paused')}`}</div>
+                        <div class="mpc-row-main">
+                            <div class="mpc-ico" style="width:32px; height:32px; background:${t.color}1f; color:${t.color};"><span class="material-icons" style="font-size:1.1rem;">${t.icon}</span></div>
+                            <div style="flex:1; min-width:0;">
+                                <div style="font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(ch.label || ch.externalId)}</div>
+                                <div class="mpc-dim" style="color:${t.color};">${t.label}${ch.active ? '' : ` · ${L('en pause', 'paused')}`}</div>
+                            </div>
                         </div>
-                        <span class="mpc-chip ${ok ? 'ok' : 'warn'}">${ok ? L('Connecté', 'Connected') : L('À reconnecter', 'Reconnect needed')}</span>
-                        <button class="mpc-btn ghost" data-del="${esc(ch.id)}" style="padding:6px 10px; ${confirming ? 'color:#ef4444; border-color:#ef4444;' : ''}" title="${L('Déconnecter', 'Disconnect')}">
-                            ${confirming ? L('Confirmer', 'Confirm') : '<span class="material-icons" style="font-size:1.05rem;">link_off</span>'}
-                        </button>
+                        <div class="mpc-row-side">
+                            <span class="mpc-chip ${ok ? 'ok' : 'warn'}">${ok ? L('Connecté', 'Connected') : L('À reconnecter', 'Reconnect needed')}</span>
+                            ${hasAgent
+                                ? `<label class="mpc-ai" title="${L('Réponses IA sur ce canal', 'AI replies on this channel')}"><span class="mpc-switch"><input type="checkbox" data-ai="${esc(ch.id)}" ${aiOn ? 'checked' : ''}><span></span></span><span style="color:${aiOn ? '#3ecf8e' : 'var(--text-dim, #94a3b8)'}; font-weight:600;">${aiOn ? L('IA activée', 'AI on') : L('IA désactivée', 'AI off')}</span></label>`
+                                : `<span class="mpc-chip off">🤖 ${L('Aucun assistant', 'No assistant')}</span>`}
+                            <button class="mpc-btn ghost" data-del="${esc(ch.id)}" style="padding:6px 10px; ${confirming ? 'color:#ef4444; border-color:#ef4444;' : ''}" title="${L('Déconnecter', 'Disconnect')}">
+                                ${confirming ? L('Confirmer', 'Confirm') : '<span class="material-icons" style="font-size:1.05rem;">link_off</span>'}
+                            </button>
+                        </div>
                     </div>`;
             }).join('')}</div>`;
+        el.querySelectorAll('[data-ai]').forEach(input => input.addEventListener('change', async () => {
+            input.disabled = true;
+            try {
+                await api(`/channels/${encodeURIComponent(input.dataset.ai)}`, { method: 'PATCH', body: { aiEnabled: input.checked } });
+                const ch = state.channels.find(c => c.id === input.dataset.ai);
+                if (ch) ch.aiEnabled = input.checked;
+                notice('ok', input.checked
+                    ? L('Réponses IA activées : votre assistant répond automatiquement sur ce canal.', 'AI replies on: your assistant replies automatically on this channel.')
+                    : L('Réponses IA désactivées : vous répondez vous-même sur ce canal.', 'AI replies off: you reply yourself on this channel.'));
+                renderConnected();
+            } catch (e) {
+                input.checked = !input.checked;
+                input.disabled = false;
+                notice('err', esc(e.message));
+            }
+        }));
         el.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
             const id = b.dataset.del;
             if (state.confirmDelete !== id) { state.confirmDelete = id; renderConnected(); return; }
@@ -327,5 +371,6 @@ export function renderChannelConnect(container, opts) {
         } catch (err) { notice('err', esc(err.message)); btn.disabled = false; }
     }
 
+    bindTips(container);
     load();
 }

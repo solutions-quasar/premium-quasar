@@ -1,3 +1,5 @@
+import { tip, bindTips } from './mp_help.js';
+
 /**
  * Messaging Platform (clients) — project inbox + channel management UI.
  * Used in the AI Agents module (ERP staff). Separate from the Quasar SMS & Social Inbox (sms.js).
@@ -109,10 +111,22 @@ const CHANNELS = {
 const PUBLIC_BASE = 'https://quasar-erp-b26d5.web.app';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-// In-app notifications (no browser popups): ERP toast, console fallback
+// In-app notifications (no browser popups): ERP toast, or a small built-in one (client portal)
 const toast = (msg, type = 'normal') => {
-    if (window.showToast) window.showToast(esc(msg), type);
-    else console.log(`[Messagerie] ${msg}`);
+    if (window.showToast) return window.showToast(esc(msg), type);
+    let box = document.getElementById('mp-toasts');
+    if (!box) {
+        box = document.createElement('div');
+        box.id = 'mp-toasts';
+        box.style.cssText = 'position:fixed; left:50%; transform:translateX(-50%); bottom:calc(84px + env(safe-area-inset-bottom, 0px)); z-index:10001; display:flex; flex-direction:column; gap:8px; width:min(420px, calc(100vw - 32px)); pointer-events:none;';
+        document.body.appendChild(box);
+    }
+    const color = type === 'error' ? '#ef4444' : type === 'success' ? '#3ecf8e' : '#dfa53a';
+    const t = document.createElement('div');
+    t.style.cssText = `background:#12141A; color:#fff; border:1px solid ${color}; border-left:4px solid ${color}; border-radius:10px; padding:10px 14px; font-size:.85rem; box-shadow:0 8px 24px rgba(0,0,0,.5);`;
+    t.textContent = msg;
+    box.appendChild(t);
+    setTimeout(() => t.remove(), type === 'error' ? 6000 : 3500);
 };
 const confirmInApp = (message, onConfirm) => {
     if (window.showConfirmModal) window.showConfirmModal({ title: 'Confirmation', message: esc(message), confirmText: L('Supprimer', 'Delete'), onConfirm });
@@ -123,6 +137,11 @@ const fmtTime = (iso) => {
     const d = new Date(iso);
     const sameDay = d.toDateString() === new Date().toDateString();
     return sameDay ? d.toLocaleTimeString(LOCALE(), { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString(LOCALE(), { month: 'short', day: 'numeric' });
+};
+// Coloured "WhatsApp / Messenger / …" label so the channel is obvious at a glance
+const channelPill = (type) => {
+    const ch = CHANNELS[type] || CHANNELS.sms;
+    return `<span class="mp-ch-pill" style="color:${ch.color}; background:${ch.color}1a; border-color:${ch.color}55;"><span class="material-icons">${ch.icon}</span>${ch.label}</span>`;
 };
 const initials = (name) => String(name || '?').replace(/[^\p{L}\p{N} ]/gu, '').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '#';
 const smsWebhookUrl = (c) => c.webhookKey ? `${PUBLIC_BASE}/api/mp/sms/twilio/${c.webhookKey}` : '';
@@ -352,6 +371,9 @@ const STYLES = `
 #mp-root .mp-avatar .mp-dot { position:absolute; right:-3px; bottom:-3px; width:16px; height:16px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:2px solid var(--bg-card); }
 #mp-root .mp-avatar .mp-dot .material-icons { font-size:.6rem; color:#fff; }
 #mp-root .mp-conv { display:flex; gap:10px; padding:11px 12px; border-bottom:1px solid var(--border); cursor:pointer; }
+#mp-root .mp-ch-pill { display:inline-flex; align-items:center; gap:3px; font-size:.66rem; font-weight:700; padding:1px 7px 1px 5px; border-radius:20px; border:1px solid; flex-shrink:0; white-space:nowrap; }
+#mp-root .mp-ch-pill .material-icons { font-size:.8rem; }
+#mp-root .mp-filters button .material-icons { font-size:.85rem; vertical-align:-2px; margin-right:2px; }
 #mp-root .mp-conv:hover { background:rgba(255,255,255,.03); }
 #mp-root .mp-conv.active { background:rgba(223,165,58,.1); box-shadow:inset 3px 0 0 var(--gold); }
 #mp-root details.mp-tech summary { cursor:pointer; color:var(--text-muted); font-size:.8rem; }
@@ -629,7 +651,7 @@ export function renderProjectMessaging(container, opts) {
     container.innerHTML = `
         <style>${STYLES}</style>
         <div id="mp-root">
-            <div class="mp-topbar">
+            <div class="mp-topbar" ${state.isStaff ? "" : "style=\"display:none;\""}>
                 <div class="mp-seg">
                     <button data-tab="inbox"><span class="material-icons">inbox</span> ${L('Boîte de réception', 'Inbox')} <span class="mp-badge-count" id="mp-unread" style="display:none;"></span></button>
                     ${state.isStaff ? `<button data-tab="channels"><span class="material-icons">hub</span> ${L('Canaux', 'Channels')} <span class="mp-badge-count" id="mp-ch-count" style="display:none;"></span></button>` : ''}
@@ -825,7 +847,7 @@ export function renderProjectMessaging(container, opts) {
         el.style.display = '';
         el.innerHTML = [
             `<button data-f="all" class="${state.filter === 'all' ? 'on' : ''}">${L('Tous', 'All')} · ${state.conversations.length}</button>`,
-            ...types.map(t => `<button data-f="${t}" class="${state.filter === t ? 'on' : ''}">${CHANNELS[t].label} · ${counts[t]}</button>`),
+            ...types.map(t => `<button data-f="${t}" class="${state.filter === t ? 'on' : ''}" style="${state.filter === t ? `border-color:${CHANNELS[t].color}; color:${CHANNELS[t].color}; background:${CHANNELS[t].color}1a;` : ''}"><span class="material-icons" style="color:${CHANNELS[t].color};">${CHANNELS[t].icon}</span>${CHANNELS[t].label} · ${counts[t]}</button>`),
             `<button data-f="unread" class="${state.filter === 'unread' ? 'on' : ''}">${L('Non lus', 'Unread')}</button>`
         ].join('');
         el.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { state.filter = b.dataset.f; renderFilters(); renderConvList(); }));
@@ -855,15 +877,16 @@ export function renderProjectMessaging(container, opts) {
             const name = c.contactName || c.contactId;
             return `
                 <div class="mp-conv ${c.id === state.activeConvId ? 'active' : ''}" data-id="${esc(c.id)}">
-                    <div class="mp-avatar">${esc(initials(name))}<span class="mp-dot" style="background:${ch.color};"><span class="material-icons">${ch.icon}</span></span></div>
+                    <div class="mp-avatar" style="border:2px solid ${ch.color}; background:${ch.color}1f;">${esc(initials(name))}<span class="mp-dot" style="background:${ch.color};"><span class="material-icons">${ch.icon}</span></span></div>
                     <div style="flex:1; min-width:0;">
                         <div style="display:flex; justify-content:space-between; gap:6px; align-items:baseline;">
                             <strong style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; ${c.unread ? '' : 'font-weight:500;'}">${esc(name)}</strong>
                             <span class="mp-muted" style="font-size:.7rem; flex-shrink:0;">${fmtTime(c.lastMessageAt)}</span>
                         </div>
-                        <div style="display:flex; gap:6px; align-items:center; margin-top:2px;">
+                        <div style="display:flex; gap:6px; align-items:center; margin-top:3px;">
+                            ${channelPill(c.channel)}
                             <div class="mp-muted" style="flex:1; font-size:.8rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; ${c.unread ? 'color:var(--text-main,#fff);' : ''}">${c.lastAuthor === 'ai' ? '🤖 ' : (c.lastAuthor === 'human' ? L('Vous : ', 'You: ') : '')}${esc(c.lastMessage || '')}</div>
-                            ${c.aiEnabled === false ? `<span class="mp-chip off" title="${L('Réponse IA désactivée', 'AI reply off')}">${L('IA off', 'AI off')}</span>` : ''}
+                            ${(c.aiEnabled === false || c.ai?.channel === false) ? `<span class="mp-chip off" title="${L('Réponse IA désactivée', 'AI reply off')}">${L('IA off', 'AI off')}</span>` : ''}
                             ${c.unread ? '<span style="width:8px; height:8px; border-radius:50%; background:var(--gold); flex-shrink:0;"></span>' : ''}
                         </div>
                     </div>
@@ -890,12 +913,28 @@ export function renderProjectMessaging(container, opts) {
         }
         renderConvList();
 
-        // Keep a draft being typed (and scroll position) across refreshes
+        // Keep a draft being typed, the scroll position and an open help bubble across refreshes
         const draft = thread.querySelector('#mp-reply')?.value || '';
+        const openTip = thread.querySelector('.mp-tip')?.dataset.for || null;
         const prevBox = thread.querySelector('#mp-msgs');
         const wasAtBottom = !prevBox || prevBox.scrollHeight - prevBox.scrollTop - prevBox.clientHeight < 40;
         const ch = CHANNELS[conv.channel] || CHANNELS.sms;
         const name = conv.contactName || conv.contactId;
+        // Effective AI state: the channel (agent + switch) first, then this contact
+        const aiChannelOn = conv.ai ? conv.ai.channel !== false : true;
+        const aiOn = aiChannelOn && conv.aiEnabled !== false && !conv.optedOut;
+        const whereToEnable = state.isStaff ? L('dans l\'onglet Canaux', 'in the Channels tab') : L('dans l\'onglet Connect', 'in the Connect tab');
+        const aiReason = conv.optedOut ? L('Ce contact s\'est désabonné (STOP) : aucun message automatique.', 'This contact unsubscribed (STOP): no automatic messages.')
+            : conv.ai?.reason === 'no_agent' ? (state.isStaff ? L('Aucun agent n\'est assigné à ce canal : choisissez-en un dans l\'onglet Canaux.', 'No agent is assigned to this channel: pick one in the Channels tab.') : L('Aucun assistant IA n\'est encore configuré pour ce canal. L\'équipe Quasar s\'en occupe.', 'No AI assistant is set up for this channel yet. The Quasar team takes care of it.'))
+            : conv.ai?.reason === 'channel_off' ? L(`Les réponses IA sont désactivées pour tout le canal ${ch.label}. Activez-les ${whereToEnable}.`, `AI replies are turned off for the whole ${ch.label} channel. Turn them on ${whereToEnable}.`)
+            : L('Vous avez désactivé l\'IA pour ce contact : vous répondez vous-même.', 'You turned AI off for this contact: you reply yourself.');
+        const replyHelp = {
+            facebook: L('Répondez librement dans les 24 h qui suivent le dernier message du client. Après 24 h, Meta bloque les messages libres.', 'Reply freely within 24 h of the customer\'s last message. After 24 h, Meta blocks free-form messages.'),
+            instagram: L('Répondez librement dans les 24 h qui suivent le dernier message du client. Après 24 h, Meta bloque les messages libres.', 'Reply freely within 24 h of the customer\'s last message. After 24 h, Meta blocks free-form messages.'),
+            whatsapp: L('Texte libre possible dans les 24 h qui suivent le dernier message du client. Après, WhatsApp exige un modèle approuvé.', 'Free-form text works within 24 h of the customer\'s last message. After that, WhatsApp requires an approved template.'),
+            sms: L('Le client reçoit un texto de votre numéro. S\'il répond STOP, il est désabonné automatiquement.', 'The customer gets a text from your number. If they reply STOP, they are unsubscribed automatically.'),
+            email: L('La réponse part de votre adresse Gmail, dans le même fil de discussion.', 'The reply is sent from your Gmail address, in the same thread.')
+        }[conv.channel] || '';
 
         const msgs = (conv.messages || []).map(m => {
             if (m.role === 'system') return `<div style="text-align:center; margin:10px 0;"><span class="mp-chip warn">${esc(m.content)}</span></div>`;
@@ -911,21 +950,29 @@ export function renderProjectMessaging(container, opts) {
         }).join('');
 
         thread.innerHTML = `
-            <div style="padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px;">
+            <div data-tip-host style="padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                 <button class="mp-iconbtn mp-back" id="mp-back" title="${L('Retour aux conversations', 'Back to conversations')}"><span class="material-icons">arrow_back</span></button>
-                <div class="mp-avatar">${esc(initials(name))}<span class="mp-dot" style="background:${ch.color};"><span class="material-icons">${ch.icon}</span></span></div>
+                <div class="mp-avatar" style="border:2px solid ${ch.color}; background:${ch.color}1f;">${esc(initials(name))}<span class="mp-dot" style="background:${ch.color};"><span class="material-icons">${ch.icon}</span></span></div>
                 <div style="flex:1; min-width:0;">
-                    <div style="font-weight:700;">${esc(name)}</div>
-                    <div class="mp-muted" style="font-size:.75rem;">${ch.label} · ${esc(conv.contactId)}</div>
+                    <div style="font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(name)}</div>
+                    <div style="display:flex; align-items:center; gap:6px; margin-top:2px; min-width:0;">${channelPill(conv.channel)}<span class="mp-muted" style="font-size:.72rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(conv.contactId)}</span></div>
                 </div>
                 ${conv.optedOut ? `<span class="mp-chip warn"><span class="material-icons">block</span>${L('Désabonné (STOP)', 'Unsubscribed (STOP)')}</span>` : ''}
-                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:.8rem;" title="${L('L\'IA répond automatiquement aux nouveaux messages de ce contact', 'The AI automatically replies to new messages from this contact')}">
-                    <span class="mp-muted">${L('Réponse IA', 'AI reply')}</span>
-                    <span class="mp-switch"><input type="checkbox" id="mp-ai-toggle" ${conv.aiEnabled !== false ? 'checked' : ''} ${conv.optedOut ? 'disabled' : ''}><span></span></span>
-                </label>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:.8rem;">
+                        <span class="mp-muted">${L('Réponse IA', 'AI reply')}</span>
+                        <span class="mp-switch"><input type="checkbox" id="mp-ai-toggle" ${conv.aiEnabled !== false && aiChannelOn ? 'checked' : ''} ${conv.optedOut || !aiChannelOn ? 'disabled' : ''}><span></span></span>
+                    </label>
+                    ${tip(L('Activé : votre assistant IA répond automatiquement aux nouveaux messages de ce contact. Désactivé : vous répondez vous-même. Vous pouvez reprendre la main à tout moment.', 'On: your AI assistant automatically replies to new messages from this contact. Off: you reply yourself. You can take over at any time.'))}
+                </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; padding:8px 16px; font-size:.78rem; border-bottom:1px solid var(--border); background:${aiOn ? 'rgba(62,207,142,.07)' : 'rgba(245,165,36,.08)'}; color:${aiOn ? '#3ecf8e' : '#f5a524'};">
+                <span class="material-icons" style="font-size:1rem;">${aiOn ? 'smart_toy' : 'person'}</span>
+                <span style="flex:1;">${aiOn ? L('L\'assistant IA répond automatiquement à ce contact.', 'The AI assistant replies to this contact automatically.') : `<strong>${L('IA désactivée', 'AI is off')}</strong> · ${esc(aiReason)}`}</span>
             </div>
             <div id="mp-msgs" style="flex:1; overflow-y:auto; padding:14px 18px;">${msgs || `<div class="mp-muted" style="font-size:.85rem;">${L('Aucun message.', 'No messages.')}</div>`}</div>
-            <div style="padding:10px 12px; border-top:1px solid var(--border); display:flex; gap:8px; align-items:flex-end;">
+            <div data-tip-host style="padding:10px 12px; border-top:1px solid var(--border); display:flex; gap:8px; align-items:flex-end;">
+                ${replyHelp ? `<div style="align-self:center;">${tip(replyHelp)}</div>` : ''}
                 <textarea id="mp-reply" class="form-input" rows="2" style="flex:1; resize:none;" placeholder="${conv.optedOut ? L('Ce contact s\'est désabonné', 'This contact has unsubscribed') : `${L('Répondre via', 'Reply via')} ${ch.label}…`}" ${conv.optedOut ? 'disabled' : ''}></textarea>
                 <button id="mp-send" class="btn btn-primary" style="height:44px;" ${conv.optedOut ? 'disabled' : ''} title="${L('Envoyer', 'Send')}"><span class="material-icons" style="vertical-align:middle;">send</span></button>
             </div>`;
@@ -938,6 +985,8 @@ export function renderProjectMessaging(container, opts) {
             renderConvList();
         });
 
+        bindTips(thread);
+        if (openTip) [...thread.querySelectorAll('.mp-tip-btn')].find(b => b.dataset.tip === openTip)?.click();
         const box = thread.querySelector('#mp-msgs');
         if (wasAtBottom) box.scrollTop = box.scrollHeight;
         else if (prevBox) box.scrollTop = prevBox.scrollTop;
@@ -950,6 +999,7 @@ export function renderProjectMessaging(container, opts) {
                 const c = state.conversations.find(x => x.id === convId);
                 if (c) c.aiEnabled = e.target.checked;
                 renderConvList();
+                openConversation(convId, true);
                 toast(e.target.checked ? L('Réponse IA activée pour ce contact.', 'AI reply turned on for this contact.') : L('Réponse IA désactivée : vous répondez manuellement.', 'AI reply turned off: you reply manually.'), 'success');
             } catch (err) { toast(err.message, 'error'); e.target.checked = !e.target.checked; }
         });
