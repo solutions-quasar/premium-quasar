@@ -71,6 +71,175 @@ const fmtTime = (iso) => {
 const initials = (name) => String(name || '?').replace(/[^\p{L}\p{N} ]/gu, '').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '#';
 const smsWebhookUrl = (c) => c.webhookKey ? `${PUBLIC_BASE}/api/mp/sms/twilio/${c.webhookKey}` : '';
 
+/**
+ * In-app modal: business questionnaire → AI-generated agent instructions (layer 2).
+ * onUse(prompt) receives the reviewed text (the caller puts it in the agent form).
+ */
+export function openPromptGenerator({ apiBase, getToken, projectId, agentId = null, initialBrief = {}, onUse }) {
+    document.getElementById('mp-gen-modal')?.remove();
+    const FIELDS = [
+        ['businessName', 'Nom de l\'entreprise *', 'input', 'ex. Ben\'s Small Engines'],
+        ['activity', 'Activité *', 'input', 'ex. Réparation de tondeuses, souffleuses et VTT'],
+        ['agentName', 'Nom de l\'assistant', 'input', 'ex. Jose Luis'],
+        ['location', 'Adresse / zone desservie', 'input', 'ex. 123 rue Main, Moncton (NB) · Grand Moncton'],
+        ['contact', 'Téléphone, courriel, site web', 'input', 'ex. 506 555-1234 · info@… · www…'],
+        ['hours', 'Horaires', 'textarea', 'ex. Lun-ven 8h-17h · Sam 9h-12h · Fermé dim'],
+        ['services', 'Services et produits', 'textarea', 'Un service par ligne'],
+        ['prices', 'Prix et tarifs', 'textarea', 'ex. Changement d\'huile tondeuse : 45 $ · Diagnostic : 30 $'],
+        ['booking', 'Rendez-vous / commandes', 'textarea', 'ex. Sur rendez-vous seulement ; l\'équipe rappelle pour confirmer'],
+        ['policies', 'Politiques', 'textarea', 'Garantie, paiement, annulation, délais…'],
+        ['faq', 'Questions fréquentes', 'textarea', 'Q : … R : …'],
+        ['tone', 'Ton', 'input', 'ex. Amical, tutoiement interdit, phrases courtes'],
+        ['languages', 'Langues', 'input', 'ex. Français et anglais'],
+        ['extra', 'Autres consignes', 'textarea', 'Tout ce que l\'assistant doit savoir ou éviter']
+    ];
+    const overlay = document.createElement('div');
+    overlay.id = 'mp-gen-modal';
+    overlay.style.cssText = 'position:fixed; inset:0; z-index:10000; background:rgba(0,0,0,.8); backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; padding:24px;';
+    overlay.innerHTML = `
+        <div style="width:min(980px, 100%); max-height:92vh; display:flex; flex-direction:column; background:#12141A; border:1px solid rgba(223,165,58,.4); border-radius:14px; overflow:hidden;">
+            <div style="display:flex; align-items:center; gap:10px; padding:14px 18px; border-bottom:1px solid var(--border, #2a2d36);">
+                <span class="material-icons" style="color:var(--gold);">auto_awesome</span>
+                <div style="flex:1;">
+                    <div style="font-weight:700;">Générer les instructions de l'agent avec l'IA</div>
+                    <div style="font-size:.75rem; color:var(--text-muted);">L'IA n'utilise que ce que vous écrivez ici. Ce que vous laissez vide, l'agent dira qu'il doit le vérifier avec l'équipe.</div>
+                </div>
+                <button id="mp-gen-close" style="background:transparent; border:0; color:var(--text-muted); cursor:pointer;" title="Fermer"><span class="material-icons">close</span></button>
+            </div>
+            <div id="mp-gen-body" style="overflow-y:auto; padding:16px 18px;">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px 16px;">
+                    ${FIELDS.map(([k, label, type, ph]) => `
+                        <label style="display:flex; flex-direction:column; gap:4px; ${type === 'textarea' ? 'grid-column:span 1;' : ''}">
+                            <span style="font-size:.78rem; font-weight:600;">${label}</span>
+                            ${type === 'textarea'
+                                ? `<textarea data-k="${k}" class="form-input" rows="3" placeholder="${esc(ph)}" style="resize:vertical;">${esc(initialBrief[k] || '')}</textarea>`
+                                : `<input data-k="${k}" class="form-input" placeholder="${esc(ph)}" value="${esc(initialBrief[k] || '')}">`}
+                        </label>`).join('')}
+                </div>
+            </div>
+            <div style="display:flex; gap:10px; align-items:center; padding:12px 18px; border-top:1px solid var(--border, #2a2d36);">
+                <span id="mp-gen-status" style="font-size:.78rem; color:var(--text-muted); flex:1;"></span>
+                <button class="btn" id="mp-gen-back" style="display:none;">Modifier les réponses</button>
+                <button class="btn btn-primary" id="mp-gen-go">Générer</button>
+                <button class="btn btn-primary" id="mp-gen-use" style="display:none;">Utiliser ces instructions</button>
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
+
+    const q = (s) => overlay.querySelector(s);
+    const close = () => overlay.remove();
+    q('#mp-gen-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    const formHtml = q('#mp-gen-body').innerHTML;
+    let brief = { ...initialBrief };
+
+    const readBrief = () => {
+        overlay.querySelectorAll('[data-k]').forEach(el => { brief[el.dataset.k] = el.value.trim(); });
+        return brief;
+    };
+    const showForm = () => {
+        q('#mp-gen-body').innerHTML = formHtml;
+        overlay.querySelectorAll('[data-k]').forEach(el => { el.value = brief[el.dataset.k] || ''; });
+        q('#mp-gen-go').style.display = ''; q('#mp-gen-use').style.display = 'none'; q('#mp-gen-back').style.display = 'none';
+        q('#mp-gen-status').textContent = '';
+    };
+
+    q('#mp-gen-back').addEventListener('click', showForm);
+    q('#mp-gen-go').addEventListener('click', async () => {
+        readBrief();
+        if (!brief.businessName || !brief.activity) { toast('Indiquez au moins le nom de l\'entreprise et son activité.', 'error'); return; }
+        const go = q('#mp-gen-go');
+        go.disabled = true; go.textContent = 'Génération…';
+        q('#mp-gen-status').textContent = 'L\'IA rédige les instructions (10 à 20 secondes)…';
+        try {
+            const token = await getToken();
+            const res = await fetch(`${apiBase}/api/mp/projects/${projectId}/generate-prompt`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ brief, agentId })
+            });
+            const d = await res.json();
+            if (!res.ok || !d.success) throw new Error(d.error || `HTTP ${res.status}`);
+            q('#mp-gen-body').innerHTML = `
+                <div style="font-size:.78rem; color:var(--text-muted); margin-bottom:8px;">Relisez et corrigez si besoin. Les règles de la plateforme et les consignes d'outils sont ajoutées automatiquement à l'envoi.</div>
+                <textarea id="mp-gen-result" class="form-input" style="width:100%; min-height:52vh; resize:vertical; font-size:.85rem; line-height:1.5;">${esc(d.prompt)}</textarea>`;
+            go.style.display = 'none'; q('#mp-gen-use').style.display = ''; q('#mp-gen-back').style.display = '';
+            q('#mp-gen-status').textContent = agentId ? 'Vos réponses sont enregistrées dans l\'agent pour une prochaine génération.' : '';
+        } catch (e) {
+            toast(`Génération impossible : ${e.message}`, 'error');
+            q('#mp-gen-status').textContent = '';
+        } finally {
+            go.disabled = false; go.textContent = 'Générer';
+        }
+    });
+    q('#mp-gen-use').addEventListener('click', () => {
+        const text = q('#mp-gen-result')?.value.trim();
+        if (!text) return;
+        onUse?.(text);
+        close();
+        toast('Instructions insérées : cliquez sur « Save Changes » pour enregistrer l\'agent.', 'success');
+    });
+}
+
+/**
+ * In-app modal showing the final prompt an agent receives (all layers).
+ * Exported so the agent form (ai_agents.js) can open it too.
+ */
+export async function showPromptPreview({ apiBase, getToken, projectId, agentId, channel = 'sms' }) {
+    document.getElementById('mp-prompt-modal')?.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'mp-prompt-modal';
+    overlay.style.cssText = 'position:fixed; inset:0; z-index:10000; background:rgba(0,0,0,.8); backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; padding:24px;';
+    overlay.innerHTML = `
+        <div style="width:min(900px, 100%); max-height:90vh; display:flex; flex-direction:column; background:#12141A; border:1px solid rgba(223,165,58,.4); border-radius:14px; overflow:hidden;">
+            <div style="display:flex; align-items:center; gap:10px; padding:14px 18px; border-bottom:1px solid var(--border, #2a2d36);">
+                <span class="material-icons" style="color:var(--gold);">visibility</span>
+                <div style="flex:1;">
+                    <div style="font-weight:700;">Prompt final de l'agent</div>
+                    <div id="mp-pp-meta" style="font-size:.75rem; color:var(--text-muted);">Chargement…</div>
+                </div>
+                <select id="mp-pp-channel" class="form-input" style="width:auto;">
+                    ${Object.entries(CHANNELS).map(([k, v]) => `<option value="${k}" ${k === channel ? 'selected' : ''}>${v.label}</option>`).join('')}
+                </select>
+                <button id="mp-pp-close" style="background:transparent; border:0; color:var(--text-muted); cursor:pointer;" title="Fermer"><span class="material-icons">close</span></button>
+            </div>
+            <div id="mp-pp-body" style="overflow-y:auto; padding:16px 18px;"></div>
+        </div>`;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('#mp-pp-close').addEventListener('click', close);
+    document.addEventListener('keydown', function onEsc(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc); } });
+
+    const LAYER_STYLE = {
+        rules: { title: '1 · Règles de la plateforme (communes, prioritaires)', color: '#dfa53a' },
+        agent: { title: '2 · Instructions de l\'agent', color: '#3ecf8e' },
+        tools: { title: '3 · Outils (généré automatiquement)', color: '#60a5fa' },
+        channel: { title: '4 · Canal et date (généré à chaque message)', color: '#c084fc' }
+    };
+    const load = async (ch) => {
+        const body = overlay.querySelector('#mp-pp-body');
+        body.innerHTML = '<div style="color:var(--text-muted);">Chargement…</div>';
+        try {
+            const token = await getToken();
+            const res = await fetch(`${apiBase}/api/mp/projects/${projectId}/agents/${agentId}/prompt-preview?channel=${ch}`, { headers: { Authorization: `Bearer ${token}` } });
+            const d = await res.json();
+            if (!res.ok || !d.success) throw new Error(d.error || `HTTP ${res.status}`);
+            overlay.querySelector('#mp-pp-meta').textContent = `Modèle ${d.model} · ${d.mode === 'full' ? 'agent complet (outils + mémoires du projet)' : 'prompt seulement (projet sans clé Firebase : aucun outil)'}`;
+            body.innerHTML = Object.entries(LAYER_STYLE).map(([k, s]) => `
+                <div style="margin-bottom:14px; border-left:3px solid ${s.color}; padding-left:12px;">
+                    <div style="font-size:.75rem; font-weight:700; color:${s.color}; margin-bottom:4px;">${s.title}</div>
+                    <pre style="white-space:pre-wrap; word-break:break-word; margin:0; font-size:.8rem; line-height:1.45; color:var(--text-main, #fff); font-family:inherit;">${esc(d.layers[k])}</pre>
+                </div>`).join('') +
+                `<div style="font-size:.75rem; color:var(--text-muted);">Un rappel final anti-invention est ajouté à la fin du prompt.</div>`;
+        } catch (e) {
+            body.innerHTML = `<div class="text-danger">${esc(e.message)}</div>`;
+        }
+    };
+    overlay.querySelector('#mp-pp-channel').addEventListener('change', (e) => load(e.target.value));
+    load(channel);
+}
+
 const STYLES = `
 #mp-root { --mp-radius: 12px; display:flex; flex-direction:column; height:100%; gap:14px; }
 #mp-root .mp-topbar { display:flex; gap:8px; align-items:center; }
@@ -175,6 +344,7 @@ export function renderProjectMessaging(container, opts) {
                 <div class="mp-seg">
                     <button data-tab="inbox"><span class="material-icons">inbox</span> Boîte de réception <span class="mp-badge-count" id="mp-unread" style="display:none;"></span></button>
                     ${state.isStaff ? `<button data-tab="channels"><span class="material-icons">hub</span> Canaux <span class="mp-badge-count" id="mp-ch-count" style="display:none;"></span></button>` : ''}
+                    ${state.isStaff ? `<button data-tab="rules" title="Règles communes à tous les agents clients"><span class="material-icons">gavel</span> Règles IA</button>` : ''}
                 </div>
                 <span class="mp-muted" style="margin-left:auto; font-size:.75rem;">Messagerie clients · séparée de la boîte Quasar</span>
             </div>
@@ -202,7 +372,104 @@ export function renderProjectMessaging(container, opts) {
         setTabStyles();
         clearInterval(state.poll);
         if (state.tab === 'channels') return renderChannels();
+        if (state.tab === 'rules') return renderRules();
         return renderInbox();
+    }
+
+    // =====================================================================
+    // PLATFORM RULES (layer 1, shared by every client agent)
+    // =====================================================================
+
+    const platformApi = async (method = 'GET', body) => {
+        const token = await state.getToken();
+        const res = await fetch(`${state.apiBase}/api/mp/platform/prompt`, {
+            method,
+            headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+            body: body ? JSON.stringify(body) : undefined
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.success === false) throw new Error(data.error || `HTTP ${res.status}`);
+        return data;
+    };
+
+    async function renderRules() {
+        const body = container.querySelector('#mp-body');
+        body.innerHTML = '<div class="mp-muted">Chargement des règles…</div>';
+        let d;
+        try { d = await platformApi(); }
+        catch (e) { body.innerHTML = `<div class="text-danger">${esc(e.message)}</div>`; return; }
+
+        const fmtDate = (iso) => iso ? new Date(iso).toLocaleString('fr-CA', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+        body.innerHTML = `
+            <div style="display:grid; grid-template-columns:minmax(0, 1fr) 300px; gap:16px; height:100%; min-height:0;">
+                <div class="mp-panel" style="display:flex; flex-direction:column; min-height:0;">
+                    <div style="display:flex; align-items:flex-start; gap:10px; margin-bottom:10px;">
+                        <div style="flex:1;">
+                            <div style="font-size:1.05rem; font-weight:700;">Règles IA de la plateforme</div>
+                            <div class="mp-muted" style="font-size:.8rem;">Communes à <strong>tous les agents clients</strong> et prioritaires sur leurs instructions. Ne s'appliquent pas à la boîte Quasar.</div>
+                        </div>
+                        <span class="mp-chip ${d.isDefault ? 'off' : 'ok'}">${d.isDefault ? 'Règles par défaut' : `Version ${d.version}`}</span>
+                    </div>
+                    <textarea id="mp-rules" class="form-input" style="flex:1; min-height:340px; resize:vertical; font-size:.85rem; line-height:1.5;">${esc(d.rules)}</textarea>
+                    <div style="display:flex; gap:10px; align-items:center; margin-top:12px;">
+                        <button class="btn btn-primary" id="mp-rules-save">Enregistrer pour tous les agents</button>
+                        <button class="btn" id="mp-rules-reset" ${d.isDefault ? 'disabled' : ''}>Restaurer les règles par défaut</button>
+                        <span class="mp-muted" style="font-size:.75rem; margin-left:auto;">${d.updatedAt ? `Modifié le ${fmtDate(d.updatedAt)}${d.updatedBy ? ` par ${esc(d.updatedBy)}` : ''}` : ''}</span>
+                    </div>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:12px; min-height:0; overflow-y:auto;">
+                    <div class="mp-help">
+                        <div style="font-weight:700; margin-bottom:6px;">Comment le prompt est assemblé</div>
+                        <ol>
+                            <li><strong>Ces règles</strong> (communes, prioritaires)</li>
+                            <li>Les <strong>instructions de l'agent</strong></li>
+                            <li>Les <strong>outils</strong> disponibles (automatique)</li>
+                            <li>Le <strong>canal et la date</strong> (automatique)</li>
+                        </ol>
+                        <div class="mp-muted" style="margin-top:6px;">Un rappel anti-invention est ajouté à la fin. Le bouton 👁 d'un canal montre le prompt final complet.</div>
+                    </div>
+                    <div class="mp-panel" style="padding:14px;">
+                        <div style="font-weight:700; margin-bottom:8px;">Historique</div>
+                        ${d.history.length ? d.history.map((h, i) => `
+                            <div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-top:${i ? '1px solid var(--border)' : '0'};">
+                                <div style="flex:1; font-size:.75rem;">
+                                    <div>Version ${h.version}</div>
+                                    <div class="mp-muted">${fmtDate(h.updatedAt)}${h.updatedBy ? ` · ${esc(h.updatedBy)}` : ''}</div>
+                                </div>
+                                <button class="mp-iconbtn mp-rules-load" data-i="${i}" title="Charger cette version dans l'éditeur"><span class="material-icons">history</span></button>
+                            </div>`).join('') : '<div class="mp-muted" style="font-size:.8rem;">Aucune version précédente.</div>'}
+                    </div>
+                </div>
+            </div>`;
+
+        const ta = body.querySelector('#mp-rules');
+        body.querySelector('#mp-rules-save').addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            btn.disabled = true;
+            try {
+                await platformApi('PUT', { rules: ta.value });
+                toast('Règles enregistrées : elles s\'appliquent à tous les agents clients dès le prochain message.', 'success');
+                renderRules();
+            } catch (err) { toast(err.message, 'error'); btn.disabled = false; }
+        });
+        body.querySelector('#mp-rules-reset').addEventListener('click', () => {
+            if (window.showConfirmModal) {
+                window.showConfirmModal({
+                    title: 'Restaurer les règles par défaut',
+                    message: 'Les règles actuelles seront remplacées par les règles par défaut pour tous les agents clients. La version actuelle reste dans l\'historique.',
+                    confirmText: 'Restaurer',
+                    onConfirm: async () => {
+                        try { await platformApi('PUT', { reset: true }); toast('Règles par défaut restaurées.', 'success'); renderRules(); }
+                        catch (err) { toast(err.message, 'error'); }
+                    }
+                });
+            }
+        });
+        body.querySelectorAll('.mp-rules-load').forEach(b => b.addEventListener('click', () => {
+            ta.value = d.history[Number(b.dataset.i)].rules;
+            ta.focus();
+            toast('Version chargée dans l\'éditeur : cliquez sur « Enregistrer » pour l\'appliquer.');
+        }));
     }
 
     // =====================================================================
@@ -455,6 +722,7 @@ export function renderProjectMessaging(container, opts) {
                         </label>
                         <div class="mp-actions">
                             ${smsUrl ? `<button class="mp-iconbtn mp-copy-btn" data-copy="${esc(smsUrl)}" title="Copier le webhook Twilio (« A message comes in », HTTP POST)"><span class="material-icons">link</span></button>` : ''}
+                            ${agent ? `<button class="mp-iconbtn mp-prompt" title="Voir le prompt final de l'agent sur ce canal"><span class="material-icons">visibility</span></button>` : ''}
                             <button class="mp-iconbtn mp-sim" title="Simuler un message entrant"><span class="material-icons">play_arrow</span></button>
                             ${c.type !== 'sms' ? `<button class="mp-iconbtn mp-test" title="Vérifier le jeton"><span class="material-icons">verified</span></button>` : ''}
                             <button class="mp-iconbtn mp-edit" title="Modifier"><span class="material-icons">edit</span></button>
@@ -530,6 +798,9 @@ export function renderProjectMessaging(container, opts) {
             });
 
             card.querySelector('.mp-sim').addEventListener('click', () => toggleSimulation(card, c));
+            card.querySelector('.mp-prompt')?.addEventListener('click', () => showPromptPreview({
+                apiBase: state.apiBase, getToken: state.getToken, projectId: state.projectId, agentId: c.agentId, channel: c.type
+            }));
         });
     }
 

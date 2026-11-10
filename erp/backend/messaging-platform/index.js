@@ -16,6 +16,8 @@ const crypto = require('crypto');
 const express = require('express');
 const twilio = require('twilio');
 const core = require('./core');
+const promptLayers = require('./prompt');
+const { db } = require('../firebase-admin');
 
 const DEFAULT_BASE_URL = 'https://quasar-erp-b26d5.web.app';
 
@@ -294,6 +296,71 @@ function createRouter({ verifyToken }) {
             res.json({ success: true, account: me });
         } catch (e) {
             res.status(400).json({ success: false, error: e.response?.data?.error?.message || e.message });
+        }
+    });
+
+    // ----- Platform rules (layer 1, shared by all client agents) -----
+    router.get('/platform/prompt', staff, async (req, res) => {
+        try {
+            res.json({ success: true, ...(await promptLayers.getPlatformRules()) });
+        } catch (e) {
+            res.status(500).json({ success: false, error: e.message });
+        }
+    });
+
+    router.put('/platform/prompt', staff, async (req, res) => {
+        try {
+            const { rules, reset } = req.body || {};
+            if (!reset && (!rules || String(rules).trim().length < 20)) {
+                return res.status(400).json({ success: false, error: 'Les règles sont vides ou trop courtes.' });
+            }
+            if (rules && String(rules).length > 20000) return res.status(400).json({ success: false, error: 'Règles trop longues (20 000 caractères max).' });
+            await promptLayers.setPlatformRules(reset ? null : rules, req.user);
+            res.json({ success: true, ...(await promptLayers.getPlatformRules()) });
+        } catch (e) {
+            res.status(500).json({ success: false, error: e.message });
+        }
+    });
+
+    // Final prompt an agent receives on a channel (all layers assembled)
+    router.get('/projects/:projectId/agents/:agentId/prompt-preview', staff, async (req, res) => {
+        try {
+            const preview = await core.previewPrompt({
+                projectId: req.params.projectId,
+                agentId: req.params.agentId,
+                channelType: ['facebook', 'instagram', 'whatsapp', 'sms'].includes(req.query.channel) ? req.query.channel : 'sms'
+            });
+            res.json({ success: true, ...preview });
+        } catch (e) {
+            res.status(400).json({ success: false, error: e.message });
+        }
+    });
+
+    // Generate an agent's own instructions (layer 2) from a business brief.
+    // The brief is saved on the agent (promptBrief) so it can be edited and regenerated later;
+    // the generated text is only returned: the user reviews it and saves the agent from the ERP.
+    router.post('/projects/:projectId/generate-prompt', staff, async (req, res) => {
+        try {
+            const { brief, agentId } = req.body || {};
+            const { projectId } = req.params;
+            let agent = null;
+            if (agentId) {
+                const snap = await db.collection('ai_agents').doc(agentId).get();
+                if (!snap.exists) return res.status(404).json({ success: false, error: 'Agent introuvable.' });
+                agent = snap.data();
+                const agentProject = agent.knowledgeBase?.projectId || agent.projectId;
+                if (agentProject && agentProject !== projectId) return res.status(403).json({ success: false, error: 'Agent rattaché à un autre projet.' });
+            }
+            const projectSnap = await db.collection('ai_projects').doc(projectId).get();
+            const fullAgent = !!projectSnap.data()?.serviceAccountKey;
+            const tools = Object.entries(agent?.tools || {}).filter(([, on]) => on === true).map(([n]) => n);
+            const result = await promptLayers.generateAgentPrompt({ brief, fullAgent, tools });
+            if (agentId) {
+                await db.collection('ai_agents').doc(agentId).set({ promptBrief: result.brief, promptBriefUpdatedAt: new Date().toISOString() }, { merge: true });
+            }
+            res.json({ success: true, prompt: result.prompt, brief: result.brief, mode: fullAgent ? 'full' : 'prompt' });
+        } catch (e) {
+            res.status(400).json({ success: false, error: e.message });
         }
     });
 

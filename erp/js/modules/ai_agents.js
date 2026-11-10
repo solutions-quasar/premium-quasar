@@ -185,6 +185,35 @@ window.selectProject = async (id, json) => {
     window.showProjectTab('agents');
 };
 
+// Final prompt of an agent on the client Messaging Platform (platform rules + agent + tools + channel)
+window.agent_showPromptPreview = async (agentId) => {
+    if (!activeProjectId || !agentId) return;
+    const { showPromptPreview } = await import('./mp_inbox.js');
+    showPromptPreview({ apiBase: API_BASE, getToken: getAuthToken, projectId: activeProjectId, agentId, channel: 'sms' });
+};
+
+// AI questionnaire that writes the agent's instructions (layer 2) into the form
+window.agent_openPromptGenerator = async (agentId) => {
+    if (!activeProjectId) return;
+    let initialBrief = {};
+    if (agentId) {
+        try {
+            const snap = await getDoc(doc(db, "ai_agents", agentId));
+            initialBrief = snap.exists() ? (snap.data().promptBrief || {}) : {};
+        } catch (e) { console.warn('[PromptGenerator] Could not load brief:', e.message); }
+    }
+    if (!initialBrief.businessName && currentProject?.clientName) initialBrief.businessName = currentProject.name || '';
+    if (!initialBrief.agentName) initialBrief.agentName = document.getElementById('ag-name')?.value || '';
+    const { openPromptGenerator } = await import('./mp_inbox.js');
+    openPromptGenerator({
+        apiBase: API_BASE, getToken: getAuthToken, projectId: activeProjectId, agentId, initialBrief,
+        onUse: (text) => {
+            const ta = document.getElementById('ag-personality');
+            if (ta) { ta.value = text; ta.dispatchEvent(new Event('input', { bubbles: true })); }
+        }
+    });
+};
+
 // Project tabs: AI agents (existing) or the client Messaging Platform inbox
 window.showProjectTab = async (tab) => {
     if (!activeProjectId) return;
@@ -1450,7 +1479,10 @@ window.openAgentModal = (agentJson = null) => {
                                 <div class="form-group">
                                     <label class="form-label">System Personality / Instructions</label>
                                     <textarea id="ag-personality" class="form-input" rows="24" placeholder="You are a helpful assistant...">${agent?.personality || 'You are a helpful assistant for ' + (currentProject?.clientName || 'our company') + '.'}</textarea>
-                                    <div class="text-xs text-muted mt-1">Define the agent's core behavior and tone here.</div>
+                                    <div class="text-xs text-muted mt-1">Define the agent's core behavior and tone here.
+                                        <a href="#" style="color:var(--gold); margin-left:8px;" onclick="event.preventDefault(); window.agent_openPromptGenerator(${agent?.id ? `'${agent.id}'` : 'null'})"><span class="material-icons" style="font-size:.9rem; vertical-align:text-bottom;">auto_awesome</span> Générer avec l'IA</a>
+                                        ${agent?.id ? `<a href="#" style="color:var(--gold); margin-left:8px;" onclick="event.preventDefault(); window.agent_showPromptPreview('${agent.id}')"><span class="material-icons" style="font-size:.9rem; vertical-align:text-bottom;">visibility</span> Voir le prompt final (Messagerie clients)</a>` : ''}
+                                    </div>
                                 </div>
                                 <div class="form-group">
                                      <label class="form-label-checkbox">

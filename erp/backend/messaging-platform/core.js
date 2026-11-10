@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const OpenAI = require('openai');
 const { db } = require('../firebase-admin');
 const providers = require('./providers');
+const { buildPrompt } = require('./prompt');
 
 const CHANNEL_TYPES = ['facebook', 'instagram', 'whatsapp', 'sms'];
 const MAX_MESSAGES = 100;
@@ -170,8 +171,6 @@ async function generateReply({ projectId, agentId, channelType, history }) {
     if (agentProject && agentProject !== projectId) throw new Error('Agent rattaché à un autre projet.');
     if (agent.active === false) return null;
 
-    const channelHint = `\n\n[CANAL]\nTu réponds via ${CHANNEL_LABELS[channelType] || channelType}. ` +
-        'Réponses courtes et naturelles, texte brut uniquement (pas de Markdown). Réponds dans la langue du client.';
     const messages = history
         .filter(m => (m.role === 'user' || m.role === 'assistant') && m.content)
         .slice(-12)
@@ -181,9 +180,13 @@ async function generateReply({ projectId, agentId, channelType, history }) {
     // Projects with their own Firebase get the full agent (tools + memories) via processAiChat.
     // No sessionId is passed, so nothing is written to the Quasar `conversations` collection.
     const projectSnap = await db.collection('ai_projects').doc(projectId).get();
-    if (projectSnap.exists && projectSnap.data().serviceAccountKey && deps.processAiChat) {
+    const project = projectSnap.exists ? projectSnap.data() : {};
+    const canUseFullAgent = !!(project.serviceAccountKey && deps.processAiChat);
+
+    if (canUseFullAgent) {
         try {
-            const result = await deps.processAiChat({ agentId, messages, clientContext: channelHint });
+            const { context } = await buildPrompt({ agent, channelType, fullAgent: true, timeZone: project.timeZone });
+            const result = await deps.processAiChat({ agentId, messages, clientContext: context });
             if (result?.message) return result.message;
         } catch (e) {
             console.warn(`[MP AI] Full agent failed for project ${projectId}, falling back to prompt only:`, e.message);
@@ -192,13 +195,33 @@ async function generateReply({ projectId, agentId, channelType, history }) {
 
     if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY manquant.');
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const prompt = (agent.knowledgeBase?.prompt || agent.prompt || 'Tu es un assistant utile.') + channelHint +
-        `\n- Date du jour : ${new Date().toLocaleDateString('fr-CA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
+    const { full } = await buildPrompt({ agent, channelType, fullAgent: false, timeZone: project.timeZone });
     const completion = await openai.chat.completions.create({
         model: agent.knowledgeBase?.model || agent.model || 'gpt-4o-mini',
-        messages: [{ role: 'system', content: prompt }, ...messages]
+        temperature: 0.3,
+        messages: [{ role: 'system', content: full }, ...messages]
     });
     return completion.choices[0]?.message?.content || null;
+}
+
+/** Final prompt an agent receives on a channel, for the ERP preview. */
+async function previewPrompt({ projectId, agentId, channelType = 'sms' }) {
+    const agentSnap = await db.collection('ai_agents').doc(agentId).get();
+    if (!agentSnap.exists) throw new Error('Agent introuvable.');
+    const agent = agentSnap.data();
+    const agentProject = agent.knowledgeBase?.projectId || agent.projectId;
+    if (agentProject && agentProject !== projectId) throw new Error('Agent rattaché à un autre projet.');
+    const projectSnap = await db.collection('ai_projects').doc(projectId).get();
+    const project = projectSnap.exists ? projectSnap.data() : {};
+    const fullAgent = !!(project.serviceAccountKey && deps.processAiChat);
+    const built = await buildPrompt({ agent, channelType, fullAgent, timeZone: project.timeZone });
+    return {
+        mode: fullAgent ? 'full' : 'prompt',
+        model: agent.knowledgeBase?.model || agent.model || 'gpt-4o-mini',
+        // In full mode processAiChat puts the agent prompt (+ memories) first, then the platform layers
+        prompt: fullAgent ? `${built.base}\n\n[+ mémoires pertinentes, si trouvées]${built.context}` : built.full,
+        layers: built.layers
+    };
 }
 
 // ---------- Sending ----------
@@ -365,5 +388,6 @@ module.exports = {
     deleteChannel,
     handleInbound,
     handleEcho,
-    sendManualReply
+    sendManualReply,
+    previewPrompt
 };
