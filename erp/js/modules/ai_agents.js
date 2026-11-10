@@ -74,6 +74,18 @@ export async function initAiAgents() {
                 setTimeout(async () => {
                     await window.selectProject(urlProjectId, projJson);
 
+                    // Back from the Google sign-in of a client Gmail channel
+                    const gmailResult = params.get('gmail');
+                    if (gmailResult) {
+                        const msg = gmailResult === 'connected'
+                            ? `Gmail connecté : ${params.get('email') || ''}`
+                            : `Connexion Gmail impossible : ${params.get('message') || 'erreur inconnue'}`;
+                        if (window.showToast) window.showToast(msg.replace(/[<>&]/g, ''), gmailResult === 'connected' ? 'success' : 'error');
+                        const clean = `${window.location.pathname}${window.location.search}#ai-agents?projectId=${urlProjectId}`;
+                        if (window.history.replaceState) window.history.replaceState(null, '', clean);
+                        window.showProjectTab('messaging', 'channels');
+                    }
+
                     if (urlAgentId) {
                         const agentSnap = await getDoc(doc(db, "ai_agents", urlAgentId));
                         if (agentSnap.exists()) {
@@ -215,8 +227,10 @@ window.agent_openPromptGenerator = async (agentId) => {
 };
 
 // Project tabs: AI agents (existing) or the client Messaging Platform inbox
-window.showProjectTab = async (tab) => {
+let currentProjectTab = 'agents';
+window.showProjectTab = async (tab, subTab = null) => {
     if (!activeProjectId) return;
+    currentProjectTab = tab;
     ['agents', 'messaging'].forEach(t => {
         const b = document.getElementById(`ai-tab-${t}`);
         if (b) {
@@ -234,7 +248,7 @@ window.showProjectTab = async (tab) => {
         if (projectId !== activeProjectId) return; // project changed while loading
         const agents = snap.docs.map(d => ({ id: d.id, name: d.data().name || d.id }));
         const { renderProjectMessaging } = await import('./mp_inbox.js');
-        renderProjectMessaging(contentEl, { projectId, apiBase: API_BASE, getToken: getAuthToken, agents, isStaff: true });
+        renderProjectMessaging(contentEl, { projectId, apiBase: API_BASE, getToken: getAuthToken, agents, isStaff: true, initialTab: subTab || 'inbox' });
     } catch (e) {
         console.error('[Messaging] Load error:', e);
         contentEl.innerHTML = `<div class="text-danger">Impossible de charger la messagerie : ${e.message}</div>`;
@@ -250,6 +264,8 @@ async function renderAgentList(projectId) {
     try {
         const q = query(collection(db, "ai_agents"), where("projectId", "==", projectId));
         const snapshot = await getDocs(q);
+        // The user switched to another tab (e.g. Messagerie) while agents were loading
+        if (currentProjectTab !== 'agents') return;
 
         if (snapshot.empty) {
             contentEl.innerHTML = `

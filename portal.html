@@ -21,7 +21,15 @@
             --text-dim: #94a3b8;
             --border: #2d3139;
             --safe-bottom: env(safe-area-inset-bottom);
+            /* Aliases used by the shared Messagerie module (mp_inbox.js) */
+            --text-muted: var(--text-dim);
+            --bg-dark: #0d0f12;
         }
+
+        /* Messages tab: fills the screen between the header and the bottom nav */
+        #tab-messages { height: calc(100vh - 175px - var(--safe-bottom)); min-height: 420px; }
+        .nav-link { position: relative; }
+        .nav-badge { position: absolute; top: -4px; right: 2px; background: var(--gold); color: #000; border-radius: 10px; padding: 0 6px; font-size: .65rem; font-weight: 700; }
 
         body {
             background-color: var(--bg-body);
@@ -357,6 +365,11 @@
                 </div>
             </div>
 
+            <!-- Messages (client Messaging Platform inbox) -->
+            <div id="tab-messages" style="display:none;">
+                <div class="portal-card" style="text-align:center; color:var(--text-dim);">Chargement des messages…</div>
+            </div>
+
             <!-- Integrations -->
             <div id="tab-integrations" style="display:none;">
                 <h2 class="section-title">Integrations</h2>
@@ -388,6 +401,11 @@
             <a href="javascript:void(0)" class="nav-link active" onclick="switchTab('dashboard')">
                 <span class="material-icons">grid_view</span>
                 <span>Dashboard</span>
+            </a>
+            <a href="javascript:void(0)" class="nav-link" onclick="switchTab('messages')">
+                <span class="material-icons">forum</span>
+                <span>Messages</span>
+                <span id="nav-msg-badge" class="nav-badge" style="display:none;"></span>
             </a>
             <a href="javascript:void(0)" class="nav-link" onclick="switchTab('integrations')">
                 <span class="material-icons">extension</span>

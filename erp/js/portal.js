@@ -205,11 +205,53 @@ const showDashboard = async () => {
     }
 
     loadAgents();
+    refreshUnreadBadge();
+    clearInterval(badgeTimer);
+    badgeTimer = setInterval(refreshUnreadBadge, 60000);
 };
+
+// Messages: the client Messaging Platform inbox (same module as the ERP, client mode: no channel settings)
+let messagesMounted = false;
+const mountMessages = async () => {
+    const el = document.getElementById('tab-messages');
+    if (!el || !currentProjectId) return;
+    try {
+        const { renderProjectMessaging } = await import('./modules/mp_inbox.js');
+        renderProjectMessaging(el, {
+            projectId: currentProjectId,
+            apiBase,
+            getToken: () => auth.currentUser.getIdToken(),
+            agents: [],
+            isStaff: false
+        });
+        messagesMounted = true;
+    } catch (e) {
+        console.error('[Portal] Messages load error:', e);
+        el.innerHTML = '<div class="portal-card" style="text-align:center;">Impossible de charger les messages.</div>';
+    }
+};
+
+// Unread badge on the Messages tab (refreshed every minute)
+const refreshUnreadBadge = async () => {
+    const badge = document.getElementById('nav-msg-badge');
+    if (!badge || !auth.currentUser || !currentProjectId) return;
+    try {
+        const token = await auth.currentUser.getIdToken();
+        const res = await fetch(`${apiBase}/api/mp/projects/${currentProjectId}/conversations`, { headers: { Authorization: `Bearer ${token}` } });
+        const data = await res.json();
+        const n = (data.conversations || []).filter(c => c.unread).length;
+        badge.textContent = n;
+        badge.style.display = n ? '' : 'none';
+    } catch (_) { /* badge is optional */ }
+};
+let badgeTimer = null;
 
 window.switchTab = (tab) => {
     document.getElementById('tab-dashboard').style.display = tab === 'dashboard' ? 'block' : 'none';
     document.getElementById('tab-integrations').style.display = tab === 'integrations' ? 'block' : 'none';
+    const msg = document.getElementById('tab-messages');
+    if (msg) msg.style.display = tab === 'messages' ? 'block' : 'none';
+    if (tab === 'messages' && !messagesMounted) mountMessages();
 
     // Update Nav UI
     document.querySelectorAll('.nav-link').forEach(el => {
