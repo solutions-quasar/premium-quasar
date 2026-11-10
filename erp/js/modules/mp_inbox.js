@@ -388,10 +388,18 @@ export function renderProjectMessaging(container, opts) {
     // ---------- New message (business-initiated) ----------
     async function openNewMessage() {
         try { if (!state.channels.length) await loadChannels(); } catch (_) { }
-        const usable = state.channels.filter(c => ['whatsapp', 'sms', 'email'].includes(c.type) && c.active);
+        const order = { whatsapp: 0, sms: 1, email: 2 };
+        const usable = state.channels.filter(c => c.type in order && c.active).sort((a, b) => order[a.type] - order[b.type]);
         if (!usable.length) { toast('Aucun canal WhatsApp, SMS ou courriel actif dans ce projet.', 'error'); return; }
         const m = openModal('Nouveau message', 'edit_square', `
-            ${field('Canal', `<select class="form-input" data-f="channel">${usable.map(c => `<option value="${esc(c.id)}">${CHANNELS[c.type].label} · ${esc(c.label || c.externalId)}</option>`).join('')}</select>`)}
+            <div style="font-size:.8rem; font-weight:600; margin-bottom:6px;">Envoyer par</div>
+            <input type="hidden" data-f="channel" value="${esc(usable[0].id)}">
+            <div data-tiles style="display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:8px; margin-bottom:14px;">
+                ${usable.map(c => `<button type="button" data-tile="${esc(c.id)}" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:10px; cursor:pointer; text-align:left; background:transparent; color:inherit; border:2px solid var(--border, #2a2d36);">
+                    <span class="material-icons" style="color:${CHANNELS[c.type].color};">${CHANNELS[c.type].icon}</span>
+                    <span style="display:flex; flex-direction:column; min-width:0;"><strong style="font-size:.85rem;">${CHANNELS[c.type].label}</strong><small style="color:var(--text-muted); font-size:.72rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(c.label || c.externalId)}</small></span>
+                </button>`).join('')}
+            </div>
             ${field('Destinataire', `<input class="form-input" data-f="to" placeholder="+1 506 555-1234">`, '', )}
             <div data-wa style="display:none; margin-bottom:12px;">
                 <div style="display:flex; gap:16px; font-size:.82rem;">
@@ -432,6 +440,12 @@ export function renderProjectMessaging(container, opts) {
         const sync = async () => {
             const ch = current();
             const isWa = ch.type === 'whatsapp';
+            m.body.querySelectorAll('[data-tile]').forEach(b => {
+                const on = b.dataset.tile === ch.id;
+                b.style.borderColor = on ? CHANNELS[ch.type].color : 'var(--border, #2a2d36)';
+                b.style.background = on ? 'rgba(255,255,255,.05)' : 'transparent';
+            });
+            q('[data-send]').innerHTML = `<span class="material-icons" style="font-size:1.1rem; vertical-align:text-bottom;">send</span> Envoyer par ${CHANNELS[ch.type].label}`;
             q('[data-wa]').style.display = isWa ? '' : 'none';
             q('[data-f=to]').placeholder = ch.type === 'email' ? 'client@exemple.com' : '+1 506 555-1234';
             const tplMode = mode() === 'template';
@@ -453,7 +467,7 @@ export function renderProjectMessaging(container, opts) {
                 renderParams();
             }
         };
-        q('[data-f=channel]').addEventListener('change', sync);
+        m.body.querySelectorAll('[data-tile]').forEach(b => b.addEventListener('click', () => { q('[data-f=channel]').value = b.dataset.tile; sync(); }));
         m.body.querySelectorAll('input[name=mp-mode]').forEach(r => r.addEventListener('change', sync));
         q('[data-f=template]').addEventListener('change', renderParams);
         sync();
