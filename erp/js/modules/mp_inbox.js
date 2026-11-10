@@ -5,10 +5,49 @@
  */
 
 const CHANNELS = {
-    facebook: { label: 'Messenger', icon: 'chat', color: '#0084ff', idLabel: 'ID de la Page Facebook', tokenLabel: 'Jeton d\'accès de la Page (EAA…)' },
-    instagram: { label: 'Instagram', icon: 'photo_camera', color: '#e1306c', idLabel: 'ID du compte Instagram professionnel', tokenLabel: 'Jeton Instagram (IGAA…) ou jeton de Page' },
-    whatsapp: { label: 'WhatsApp', icon: 'forum', color: '#25d366', idLabel: 'phone_number_id WhatsApp', tokenLabel: 'Jeton permanent (utilisateur système)' },
-    sms: { label: 'SMS', icon: 'sms', color: '#dfa53a', idLabel: 'Numéro Twilio (+15551234567)', tokenLabel: null }
+    facebook: {
+        label: 'Messenger', icon: 'chat', color: '#0084ff',
+        tagline: 'Messages de la Page Facebook',
+        idLabel: 'ID de la Page Facebook', idPlaceholder: 'ex. 1220358074484046',
+        tokenLabel: 'Jeton d\'accès de la Page', tokenPlaceholder: 'EAA…',
+        help: [
+            'Dans l\'app Meta « Quasar Messaging Platform » : Cas d\'utilisation › Messenger › Paramètres de Messenger API.',
+            'Section « Générez des tokens d\'accès » : l\'ID est sous le nom de la Page, le jeton via « Générer ».',
+            'Sur la même ligne, ajoutez les abonnements « messages » et « message_echoes ».'
+        ]
+    },
+    instagram: {
+        label: 'Instagram', icon: 'photo_camera', color: '#e1306c',
+        tagline: 'Messages directs Instagram',
+        idLabel: 'ID du compte Instagram professionnel', idPlaceholder: 'ex. 17841400000000000',
+        tokenLabel: 'Jeton Instagram', tokenPlaceholder: 'IGAA… (ou jeton de Page EAA…)',
+        help: [
+            'Dans l\'app Meta clients : Cas d\'utilisation › Instagram › Configuration de l\'API avec connexion Instagram.',
+            'Ajoutez le compte, puis « Générer un token » : l\'ID du compte est affiché à côté.',
+            'Abonnez le compte au champ « messages » et activez « Autoriser l\'accès aux messages » dans l\'app Instagram.'
+        ]
+    },
+    whatsapp: {
+        label: 'WhatsApp', icon: 'forum', color: '#25d366',
+        tagline: 'Numéro WhatsApp Business',
+        idLabel: 'Phone Number ID', idPlaceholder: 'ex. 1389043390962434',
+        tokenLabel: 'Jeton permanent (utilisateur système)', tokenPlaceholder: 'EAA…',
+        help: [
+            'Un numéro propre au client (jamais celui de Quasar).',
+            'Le Phone Number ID est dans WhatsApp › Configuration de l\'API.',
+            'Jeton permanent : Business Manager › Utilisateurs système, avec l\'app et le compte WhatsApp assignés.'
+        ]
+    },
+    sms: {
+        label: 'SMS', icon: 'sms', color: '#dfa53a',
+        tagline: 'Numéro de texto Twilio',
+        idLabel: 'Numéro Twilio', idPlaceholder: '+15551234567',
+        tokenLabel: null,
+        help: [
+            'Un numéro Twilio dédié au client (jamais le numéro de Quasar).',
+            'Après l\'enregistrement, copiez l\'adresse du webhook affichée dans Twilio › Phone Numbers › le numéro › « A message comes in » (HTTP POST).'
+        ]
+    }
 };
 
 const PUBLIC_BASE = 'https://quasar-erp-b26d5.web.app';
@@ -29,13 +68,79 @@ const fmtTime = (iso) => {
     const sameDay = d.toDateString() === new Date().toDateString();
     return sameDay ? d.toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' });
 };
+const initials = (name) => String(name || '?').replace(/[^\p{L}\p{N} ]/gu, '').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '#';
+const smsWebhookUrl = (c) => c.webhookKey ? `${PUBLIC_BASE}/api/mp/sms/twilio/${c.webhookKey}` : '';
+
+const STYLES = `
+#mp-root { --mp-radius: 12px; display:flex; flex-direction:column; height:100%; gap:14px; }
+#mp-root .mp-topbar { display:flex; gap:8px; align-items:center; }
+#mp-root .mp-seg { display:inline-flex; background:var(--bg-dark); border:1px solid var(--border); border-radius:10px; padding:3px; gap:3px; }
+#mp-root .mp-seg button { background:transparent; border:0; color:var(--text-muted); padding:8px 14px; border-radius:8px; cursor:pointer; font-weight:600; display:flex; align-items:center; gap:6px; }
+#mp-root .mp-seg button.on { background:var(--gold); color:#000; }
+#mp-root .mp-seg .material-icons { font-size:1.1rem; }
+#mp-root .mp-badge-count { background:var(--gold); color:#000; border-radius:10px; padding:0 7px; font-size:.7rem; font-weight:700; }
+#mp-root .mp-seg button.on .mp-badge-count { background:#000; color:var(--gold); }
+#mp-root .mp-muted { color:var(--text-muted); }
+#mp-root .mp-ico { width:40px; height:40px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+#mp-root .mp-chip { display:inline-flex; align-items:center; gap:4px; font-size:.72rem; padding:2px 8px; border-radius:20px; border:1px solid var(--border); color:var(--text-muted); white-space:nowrap; }
+#mp-root .mp-chip.ok { color:#3ecf8e; border-color:#3ecf8e55; background:#3ecf8e14; }
+#mp-root .mp-chip.warn { color:#f5a524; border-color:#f5a52455; background:#f5a52414; }
+#mp-root .mp-chip.off { color:var(--text-muted); }
+#mp-root .mp-chip .material-icons { font-size:.85rem; }
+#mp-root .mp-iconbtn { background:transparent; border:1px solid var(--border); color:var(--text-muted); width:34px; height:34px; border-radius:9px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
+#mp-root .mp-iconbtn:hover { color:var(--gold); border-color:var(--gold); }
+#mp-root .mp-iconbtn.danger:hover { color:#ef4444; border-color:#ef4444; }
+#mp-root .mp-iconbtn .material-icons { font-size:1.15rem; }
+#mp-root .mp-list { background:var(--bg-dark); border:1px solid var(--border); border-radius:var(--mp-radius); overflow:hidden; }
+#mp-root .mp-list-head, #mp-root .mp-row-main { display:grid; grid-template-columns:minmax(220px, 2fr) minmax(130px, 1fr) minmax(130px, 1fr) 90px 120px 170px; gap:12px; align-items:center; padding:10px 16px; }
+#mp-root .mp-list-head { font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); border-bottom:1px solid var(--border); }
+#mp-root .mp-card { border-bottom:1px solid var(--border); position:relative; }
+#mp-root .mp-card:last-child { border-bottom:0; }
+#mp-root .mp-card:hover { background:rgba(255,255,255,.02); }
+#mp-root .mp-card::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--mp-accent); }
+#mp-root .mp-card.paused .mp-row-main { opacity:.55; }
+#mp-root .mp-card .mp-sim-row, #mp-root .mp-card .mp-extra { padding:0 16px 12px 68px; }
+#mp-root .mp-actions { display:flex; gap:6px; justify-content:flex-end; }
+@media (max-width: 1100px) { #mp-root .mp-list-head { display:none; } #mp-root .mp-row-main { grid-template-columns:1fr auto; } #mp-root .mp-row-main > .mp-col-opt { display:none; } }
+#mp-root .mp-switch { position:relative; width:36px; height:20px; flex-shrink:0; }
+#mp-root .mp-switch input { opacity:0; width:0; height:0; }
+#mp-root .mp-switch span { position:absolute; inset:0; background:#444; border-radius:20px; cursor:pointer; transition:.2s; }
+#mp-root .mp-switch span::before { content:''; position:absolute; width:14px; height:14px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.2s; }
+#mp-root .mp-switch input:checked + span { background:var(--gold); }
+#mp-root .mp-switch input:checked + span::before { transform:translateX(16px); }
+#mp-root .mp-copy { display:flex; gap:6px; align-items:center; background:var(--bg-card); border:1px dashed var(--border); border-radius:8px; padding:6px 8px; }
+#mp-root .mp-copy code { flex:1; font-size:.72rem; word-break:break-all; color:var(--text-main, #fff); }
+#mp-root .mp-tile { background:var(--bg-dark); border:1px solid var(--border); border-radius:var(--mp-radius); padding:18px; cursor:pointer; text-align:left; color:inherit; display:flex; flex-direction:column; gap:10px; transition:.15s; }
+#mp-root .mp-tile:hover { border-color:var(--mp-accent); transform:translateY(-2px); }
+#mp-root .mp-tiles { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:12px; }
+#mp-root .mp-panel { background:var(--bg-dark); border:1px solid var(--border); border-radius:var(--mp-radius); padding:20px; }
+#mp-root .mp-field { display:flex; flex-direction:column; gap:5px; margin-bottom:14px; }
+#mp-root .mp-field label { font-size:.8rem; font-weight:600; }
+#mp-root .mp-field small { color:var(--text-muted); font-size:.72rem; }
+#mp-root .mp-help { background:rgba(223,165,58,.06); border:1px solid rgba(223,165,58,.25); border-radius:10px; padding:12px 14px; font-size:.8rem; }
+#mp-root .mp-help ol { margin:6px 0 0 18px; padding:0; color:var(--text-muted); }
+#mp-root .mp-help li { margin:4px 0; }
+#mp-root .mp-filters { display:flex; gap:6px; flex-wrap:wrap; padding:10px; border-bottom:1px solid var(--border); }
+#mp-root .mp-filters button { background:transparent; border:1px solid var(--border); color:var(--text-muted); border-radius:20px; padding:3px 10px; font-size:.75rem; cursor:pointer; }
+#mp-root .mp-filters button.on { border-color:var(--gold); color:var(--gold); background:rgba(223,165,58,.1); }
+#mp-root .mp-avatar { width:38px; height:38px; border-radius:50%; background:var(--bg-card); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:.8rem; position:relative; flex-shrink:0; }
+#mp-root .mp-avatar .mp-dot { position:absolute; right:-3px; bottom:-3px; width:16px; height:16px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:2px solid var(--bg-card); }
+#mp-root .mp-avatar .mp-dot .material-icons { font-size:.6rem; color:#fff; }
+#mp-root .mp-conv { display:flex; gap:10px; padding:11px 12px; border-bottom:1px solid var(--border); cursor:pointer; }
+#mp-root .mp-conv:hover { background:rgba(255,255,255,.03); }
+#mp-root .mp-conv.active { background:rgba(223,165,58,.1); box-shadow:inset 3px 0 0 var(--gold); }
+#mp-root details.mp-tech summary { cursor:pointer; color:var(--text-muted); font-size:.8rem; }
+`;
 
 /**
  * @param {HTMLElement} container
  * @param {object} opts { projectId, apiBase, getToken, agents: [{id,name}], isStaff }
  */
 export function renderProjectMessaging(container, opts) {
-    const state = { ...opts, tab: 'inbox', conversations: [], channels: [], activeConvId: null, poll: null };
+    const state = {
+        ...opts, tab: 'inbox', conversations: [], channels: [], activeConvId: null, poll: null,
+        filter: 'all', wizard: null // { step: 'type'|'form'|'done', type, editing, saved }
+    };
 
     const api = async (path, { method = 'GET', body } = {}) => {
         const token = await state.getToken();
@@ -58,25 +163,39 @@ export function renderProjectMessaging(container, opts) {
         return false;
     };
 
+    const copyText = async (text) => {
+        try { await navigator.clipboard.writeText(text); toast('Copié dans le presse-papiers.', 'success'); }
+        catch (_) { toast('Copie impossible : sélectionnez le texte manuellement.', 'error'); }
+    };
+
     container.innerHTML = `
-        <div id="mp-root" style="display:flex; flex-direction:column; height:100%; gap:12px;">
-            <div style="display:flex; gap:8px; align-items:center;">
-                <button class="btn mp-tab" data-tab="inbox"><span class="material-icons" style="font-size:1.1rem; vertical-align:text-bottom;">inbox</span> Boîte de réception</button>
-                ${state.isStaff ? `<button class="btn mp-tab" data-tab="channels"><span class="material-icons" style="font-size:1.1rem; vertical-align:text-bottom;">hub</span> Canaux</button>` : ''}
-                <span class="text-xs text-muted" style="margin-left:auto;">Plateforme Messagerie clients — séparée de la boîte Quasar</span>
+        <style>${STYLES}</style>
+        <div id="mp-root">
+            <div class="mp-topbar">
+                <div class="mp-seg">
+                    <button data-tab="inbox"><span class="material-icons">inbox</span> Boîte de réception <span class="mp-badge-count" id="mp-unread" style="display:none;"></span></button>
+                    ${state.isStaff ? `<button data-tab="channels"><span class="material-icons">hub</span> Canaux <span class="mp-badge-count" id="mp-ch-count" style="display:none;"></span></button>` : ''}
+                </div>
+                <span class="mp-muted" style="margin-left:auto; font-size:.75rem;">Messagerie clients · séparée de la boîte Quasar</span>
             </div>
             <div id="mp-body" style="flex:1; min-height:0;"></div>
         </div>`;
 
-    container.querySelectorAll('.mp-tab').forEach(b => b.addEventListener('click', () => { state.tab = b.dataset.tab; render(); }));
+    container.querySelectorAll('.mp-seg button').forEach(b => b.addEventListener('click', () => {
+        state.tab = b.dataset.tab;
+        state.wizard = null;
+        render();
+    }));
 
     function setTabStyles() {
-        container.querySelectorAll('.mp-tab').forEach(b => {
-            const on = b.dataset.tab === state.tab;
-            b.style.background = on ? 'var(--gold)' : 'transparent';
-            b.style.color = on ? '#000' : 'var(--text-main, #fff)';
-            b.style.border = '1px solid var(--border)';
-        });
+        container.querySelectorAll('.mp-seg button').forEach(b => b.classList.toggle('on', b.dataset.tab === state.tab));
+    }
+
+    function setCount(id, n) {
+        const el = container.querySelector(id);
+        if (!el) return;
+        el.style.display = n ? '' : 'none';
+        el.textContent = n || '';
     }
 
     async function render() {
@@ -86,23 +205,23 @@ export function renderProjectMessaging(container, opts) {
         return renderInbox();
     }
 
-    // ---------------- INBOX ----------------
+    // =====================================================================
+    // INBOX
+    // =====================================================================
 
     async function renderInbox() {
         const body = container.querySelector('#mp-body');
         body.innerHTML = `
-            <div style="display:flex; gap:12px; height:100%; min-height:420px;">
-                <div style="width:320px; display:flex; flex-direction:column; border:1px solid var(--border); border-radius:10px; overflow:hidden;">
+            <div style="display:flex; gap:14px; height:100%; min-height:460px;">
+                <div style="width:340px; display:flex; flex-direction:column; border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--bg-dark);">
                     <div style="padding:10px; border-bottom:1px solid var(--border);">
-                        <input id="mp-search" class="form-input" placeholder="Chercher un contact ou un message…" style="width:100%;">
+                        <input id="mp-search" class="form-input" placeholder="Rechercher un contact ou un message…" style="width:100%;">
                     </div>
-                    <div id="mp-conv-list" style="flex:1; overflow-y:auto;"><div class="text-muted text-sm" style="padding:1rem;">Chargement…</div></div>
+                    <div class="mp-filters" id="mp-filters"></div>
+                    <div id="mp-conv-list" style="flex:1; overflow-y:auto;"><div class="mp-muted" style="padding:1rem; font-size:.85rem;">Chargement…</div></div>
                 </div>
-                <div id="mp-thread" style="flex:1; display:flex; flex-direction:column; border:1px solid var(--border); border-radius:10px; overflow:hidden;">
-                    <div style="margin:auto; color:var(--text-muted); text-align:center;">
-                        <span class="material-icons" style="font-size:3rem; opacity:.5;">forum</span>
-                        <div>Sélectionnez une conversation</div>
-                    </div>
+                <div id="mp-thread" style="flex:1; display:flex; flex-direction:column; border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--bg-dark);">
+                    ${emptyThread()}
                 </div>
             </div>`;
         body.querySelector('#mp-search').addEventListener('input', renderConvList);
@@ -115,39 +234,77 @@ export function renderProjectMessaging(container, opts) {
         }, 10000);
     }
 
+    function emptyThread() {
+        return `
+            <div style="margin:auto; color:var(--text-muted); text-align:center; padding:2rem;">
+                <span class="material-icons" style="font-size:3.2rem; opacity:.4;">forum</span>
+                <div style="margin-top:6px;">Sélectionnez une conversation</div>
+            </div>`;
+    }
+
     async function loadConversations(silent = false) {
         try {
             const data = await api('/conversations');
             state.conversations = data.conversations || [];
+            setCount('#mp-unread', state.conversations.filter(c => c.unread).length);
+            renderFilters();
             renderConvList();
         } catch (e) {
-            if (!silent) container.querySelector('#mp-conv-list').innerHTML = `<div class="text-danger text-sm" style="padding:1rem;">${esc(e.message)}</div>`;
+            if (!silent) container.querySelector('#mp-conv-list').innerHTML = `<div class="text-danger" style="padding:1rem; font-size:.85rem;">${esc(e.message)}</div>`;
         }
+    }
+
+    function renderFilters() {
+        const el = container.querySelector('#mp-filters');
+        if (!el) return;
+        const counts = state.conversations.reduce((a, c) => { a[c.channel] = (a[c.channel] || 0) + 1; return a; }, {});
+        const types = Object.keys(CHANNELS).filter(t => counts[t]);
+        if (!types.length) { el.style.display = 'none'; return; }
+        el.style.display = '';
+        el.innerHTML = [
+            `<button data-f="all" class="${state.filter === 'all' ? 'on' : ''}">Tous · ${state.conversations.length}</button>`,
+            ...types.map(t => `<button data-f="${t}" class="${state.filter === t ? 'on' : ''}">${CHANNELS[t].label} · ${counts[t]}</button>`),
+            `<button data-f="unread" class="${state.filter === 'unread' ? 'on' : ''}">Non lus</button>`
+        ].join('');
+        el.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { state.filter = b.dataset.f; renderFilters(); renderConvList(); }));
     }
 
     function renderConvList() {
         const list = container.querySelector('#mp-conv-list');
         if (!list) return;
         const q = (container.querySelector('#mp-search')?.value || '').toLowerCase();
-        const items = state.conversations.filter(c => !q || `${c.contactName || ''} ${c.contactId} ${c.lastMessage || ''}`.toLowerCase().includes(q));
+        const items = state.conversations.filter(c =>
+            (state.filter === 'all' || (state.filter === 'unread' ? c.unread : c.channel === state.filter)) &&
+            (!q || `${c.contactName || ''} ${c.contactId} ${c.lastMessage || ''}`.toLowerCase().includes(q)));
         if (!items.length) {
-            list.innerHTML = `<div class="text-muted text-sm" style="padding:1rem;">${state.conversations.length ? 'Aucun résultat.' : 'Aucune conversation pour l\'instant. Configurez un canal dans l\'onglet « Canaux ».'}</div>`;
+            list.innerHTML = state.conversations.length
+                ? `<div class="mp-muted" style="padding:1.2rem; font-size:.85rem;">Aucun résultat.</div>`
+                : `<div style="padding:2rem 1.2rem; text-align:center;">
+                        <span class="material-icons mp-muted" style="font-size:2.4rem; opacity:.5;">mark_chat_unread</span>
+                        <div style="margin:8px 0 4px; font-weight:600;">Aucune conversation</div>
+                        <div class="mp-muted" style="font-size:.8rem;">Les messages reçus sur les canaux du projet apparaîtront ici.</div>
+                        ${state.isStaff ? `<button class="btn btn-primary" id="mp-go-channels" style="margin-top:12px;">Connecter un canal</button>` : ''}
+                   </div>`;
+            list.querySelector('#mp-go-channels')?.addEventListener('click', () => { state.tab = 'channels'; render(); });
             return;
         }
         list.innerHTML = items.map(c => {
             const ch = CHANNELS[c.channel] || CHANNELS.sms;
-            const active = c.id === state.activeConvId;
+            const name = c.contactName || c.contactId;
             return `
-                <div class="mp-conv" data-id="${esc(c.id)}" style="padding:10px 12px; border-bottom:1px solid var(--border); cursor:pointer; ${active ? 'background:rgba(223,165,58,.12);' : ''}">
-                    <div style="display:flex; justify-content:space-between; gap:6px;">
-                        <strong style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${c.unread ? '<span style="color:var(--gold);">●</span> ' : ''}${esc(c.contactName || c.contactId)}</strong>
-                        <span class="text-xs text-muted">${fmtTime(c.lastMessageAt)}</span>
+                <div class="mp-conv ${c.id === state.activeConvId ? 'active' : ''}" data-id="${esc(c.id)}">
+                    <div class="mp-avatar">${esc(initials(name))}<span class="mp-dot" style="background:${ch.color};"><span class="material-icons">${ch.icon}</span></span></div>
+                    <div style="flex:1; min-width:0;">
+                        <div style="display:flex; justify-content:space-between; gap:6px; align-items:baseline;">
+                            <strong style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; ${c.unread ? '' : 'font-weight:500;'}">${esc(name)}</strong>
+                            <span class="mp-muted" style="font-size:.7rem; flex-shrink:0;">${fmtTime(c.lastMessageAt)}</span>
+                        </div>
+                        <div style="display:flex; gap:6px; align-items:center; margin-top:2px;">
+                            <div class="mp-muted" style="flex:1; font-size:.8rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; ${c.unread ? 'color:var(--text-main,#fff);' : ''}">${c.lastAuthor === 'ai' ? '🤖 ' : (c.lastAuthor === 'human' ? 'Vous : ' : '')}${esc(c.lastMessage || '')}</div>
+                            ${c.aiEnabled === false ? '<span class="mp-chip off" title="Réponse IA désactivée">IA off</span>' : ''}
+                            ${c.unread ? '<span style="width:8px; height:8px; border-radius:50%; background:var(--gold); flex-shrink:0;"></span>' : ''}
+                        </div>
                     </div>
-                    <div style="display:flex; gap:6px; align-items:center; margin-top:3px;">
-                        <span style="font-size:.7rem; padding:1px 6px; border-radius:6px; background:${ch.color}22; color:${ch.color};">${ch.label}</span>
-                        ${c.aiEnabled === false ? '<span class="text-xs text-muted">IA off</span>' : ''}
-                    </div>
-                    <div class="text-sm text-muted" style="margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${c.lastAuthor && c.lastAuthor !== 'user' ? 'Vous : ' : ''}${esc(c.lastMessage || '')}</div>
                 </div>`;
         }).join('');
         list.querySelectorAll('.mp-conv').forEach(el => el.addEventListener('click', () => openConversation(el.dataset.id)));
@@ -165,43 +322,54 @@ export function renderProjectMessaging(container, opts) {
             return;
         }
         const local = state.conversations.find(c => c.id === convId);
-        if (local) local.unread = false;
+        if (local && local.unread) {
+            local.unread = false;
+            setCount('#mp-unread', state.conversations.filter(c => c.unread).length);
+        }
         renderConvList();
 
-        // Keep a draft being typed across refreshes
+        // Keep a draft being typed (and scroll position) across refreshes
         const draft = thread.querySelector('#mp-reply')?.value || '';
+        const prevBox = thread.querySelector('#mp-msgs');
+        const wasAtBottom = !prevBox || prevBox.scrollHeight - prevBox.scrollTop - prevBox.clientHeight < 40;
         const ch = CHANNELS[conv.channel] || CHANNELS.sms;
+        const name = conv.contactName || conv.contactId;
+
         const msgs = (conv.messages || []).map(m => {
-            if (m.role === 'system') return `<div class="text-xs" style="text-align:center; color:var(--danger, #e55); margin:6px 0;">${esc(m.content)}</div>`;
+            if (m.role === 'system') return `<div style="text-align:center; margin:10px 0;"><span class="mp-chip warn">${esc(m.content)}</span></div>`;
             const mine = m.role === 'assistant';
-            const who = m.author === 'ai' ? `🤖 IA${m.dryRun ? ' (simulation, non envoyé)' : ''}` : (m.author === 'human' ? (m.senderName || 'Vous') : esc(conv.contactName || 'Client'));
+            const who = m.author === 'ai' ? `🤖 IA${m.dryRun ? ' · simulation, non envoyé' : ''}` : (m.author === 'human' ? (m.senderName || 'Vous') : name);
             return `
-                <div style="display:flex; justify-content:${mine ? 'flex-end' : 'flex-start'}; margin:6px 0;">
-                    <div style="max-width:70%; padding:8px 12px; border-radius:10px; background:${mine ? 'rgba(223,165,58,.15)' : 'var(--bg-dark)'}; border:1px solid var(--border);">
-                        <div class="text-xs text-muted" style="margin-bottom:3px;">${esc(who)} · ${fmtTime(m.timestamp)}</div>
-                        <div style="white-space:pre-wrap; word-break:break-word;">${esc(m.content)}</div>
+                <div style="display:flex; justify-content:${mine ? 'flex-end' : 'flex-start'}; margin:8px 0;">
+                    <div style="max-width:72%;">
+                        <div class="mp-muted" style="font-size:.7rem; margin:0 4px 3px; text-align:${mine ? 'right' : 'left'};">${esc(who)} · ${fmtTime(m.timestamp)}</div>
+                        <div style="padding:9px 13px; border-radius:${mine ? '14px 14px 4px 14px' : '14px 14px 14px 4px'}; background:${mine ? (m.author === 'ai' ? 'rgba(223,165,58,.16)' : 'rgba(62,207,142,.12)') : 'var(--bg-card)'}; border:1px solid ${mine ? (m.author === 'ai' ? 'rgba(223,165,58,.35)' : 'rgba(62,207,142,.3)') : 'var(--border)'}; white-space:pre-wrap; word-break:break-word; ${m.dryRun ? 'border-style:dashed;' : ''}">${esc(m.content)}</div>
                     </div>
                 </div>`;
         }).join('');
 
         thread.innerHTML = `
-            <div style="padding:12px 14px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px;">
-                <div style="flex:1;">
-                    <div class="text-h" style="margin:0; font-size:1rem;">${esc(conv.contactName || conv.contactId)}</div>
-                    <div class="text-xs text-muted">${ch.label} · ${esc(conv.contactId)}${conv.optedOut ? ' · <span style="color:var(--danger,#e55);">désabonné (STOP)</span>' : ''}</div>
+            <div style="padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px;">
+                <div class="mp-avatar">${esc(initials(name))}<span class="mp-dot" style="background:${ch.color};"><span class="material-icons">${ch.icon}</span></span></div>
+                <div style="flex:1; min-width:0;">
+                    <div style="font-weight:700;">${esc(name)}</div>
+                    <div class="mp-muted" style="font-size:.75rem;">${ch.label} · ${esc(conv.contactId)}</div>
                 </div>
-                <label class="text-sm" style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-                    <input type="checkbox" id="mp-ai-toggle" ${conv.aiEnabled !== false ? 'checked' : ''} ${conv.optedOut ? 'disabled' : ''}> Réponse IA
+                ${conv.optedOut ? '<span class="mp-chip warn"><span class="material-icons">block</span>Désabonné (STOP)</span>' : ''}
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:.8rem;" title="L'IA répond automatiquement aux nouveaux messages de ce contact">
+                    <span class="mp-muted">Réponse IA</span>
+                    <span class="mp-switch"><input type="checkbox" id="mp-ai-toggle" ${conv.aiEnabled !== false ? 'checked' : ''} ${conv.optedOut ? 'disabled' : ''}><span></span></span>
                 </label>
             </div>
-            <div id="mp-msgs" style="flex:1; overflow-y:auto; padding:12px 14px;">${msgs || '<div class="text-muted text-sm">Aucun message.</div>'}</div>
-            <div style="padding:10px; border-top:1px solid var(--border); display:flex; gap:8px;">
-                <textarea id="mp-reply" class="form-input" rows="2" style="flex:1; resize:vertical;" placeholder="Répondre via ${ch.label}…" ${conv.optedOut ? 'disabled' : ''}></textarea>
-                <button id="mp-send" class="btn btn-primary" ${conv.optedOut ? 'disabled' : ''}><span class="material-icons" style="vertical-align:text-bottom;">send</span></button>
+            <div id="mp-msgs" style="flex:1; overflow-y:auto; padding:14px 18px;">${msgs || '<div class="mp-muted" style="font-size:.85rem;">Aucun message.</div>'}</div>
+            <div style="padding:10px 12px; border-top:1px solid var(--border); display:flex; gap:8px; align-items:flex-end;">
+                <textarea id="mp-reply" class="form-input" rows="2" style="flex:1; resize:none;" placeholder="${conv.optedOut ? 'Ce contact s\'est désabonné' : `Répondre via ${ch.label}… (Entrée pour envoyer, Maj+Entrée pour une ligne)`}" ${conv.optedOut ? 'disabled' : ''}></textarea>
+                <button id="mp-send" class="btn btn-primary" style="height:44px;" ${conv.optedOut ? 'disabled' : ''} title="Envoyer"><span class="material-icons" style="vertical-align:middle;">send</span></button>
             </div>`;
 
         const box = thread.querySelector('#mp-msgs');
-        box.scrollTop = box.scrollHeight;
+        if (wasAtBottom) box.scrollTop = box.scrollHeight;
+        else if (prevBox) box.scrollTop = prevBox.scrollTop;
         const reply = thread.querySelector('#mp-reply');
         reply.value = draft;
 
@@ -211,7 +379,7 @@ export function renderProjectMessaging(container, opts) {
                 const c = state.conversations.find(x => x.id === convId);
                 if (c) c.aiEnabled = e.target.checked;
                 renderConvList();
-                toast(e.target.checked ? 'Réponse IA activée pour cette conversation.' : 'Réponse IA désactivée pour cette conversation.', 'success');
+                toast(e.target.checked ? 'Réponse IA activée pour ce contact.' : 'Réponse IA désactivée : vous répondez manuellement.', 'success');
             } catch (err) { toast(err.message, 'error'); e.target.checked = !e.target.checked; }
         });
 
@@ -233,194 +401,355 @@ export function renderProjectMessaging(container, opts) {
         reply.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
     }
 
-    // ---------------- CHANNELS ----------------
+    // =====================================================================
+    // CHANNELS
+    // =====================================================================
+
+    async function loadChannels() {
+        state.channels = (await api('/channels')).channels || [];
+        setCount('#mp-ch-count', state.channels.length);
+    }
 
     async function renderChannels() {
         const body = container.querySelector('#mp-body');
-        body.innerHTML = `<div class="text-muted">Chargement des canaux…</div>`;
-        try {
-            state.channels = (await api('/channels')).channels || [];
-        } catch (e) {
-            body.innerHTML = `<div class="text-danger">${esc(e.message)}</div>`;
+        if (state.wizard) return renderWizard();
+        body.innerHTML = `<div class="mp-muted">Chargement des canaux…</div>`;
+        try { await loadChannels(); }
+        catch (e) { body.innerHTML = `<div class="text-danger">${esc(e.message)}</div>`; return; }
+
+        if (!state.channels.length) {
+            body.innerHTML = `
+                <div style="max-width:820px; margin:0 auto; padding-top:1rem; overflow-y:auto; height:100%;">
+                    <div style="text-align:center; margin-bottom:1.5rem;">
+                        <div style="font-size:1.2rem; font-weight:700;">Connectez le premier canal de ce client</div>
+                        <div class="mp-muted" style="font-size:.85rem; margin-top:4px;">Chaque message reçu arrive dans la boîte de réception et l'agent IA peut y répondre.</div>
+                    </div>
+                    ${typeTiles()}
+                </div>`;
+            bindTiles(body);
             return;
         }
-        const agentName = (id) => state.agents.find(a => a.id === id)?.name || (id ? 'Agent introuvable' : '— aucun (pas de réponse IA)');
 
-        const rows = state.channels.map(c => {
+        const agentName = (id) => state.agents.find(a => a.id === id)?.name;
+        const cards = state.channels.map(c => {
             const ch = CHANNELS[c.type];
-            const smsUrl = c.type === 'sms' && c.webhookKey ? `${PUBLIC_BASE}/api/mp/sms/twilio/${c.webhookKey}` : null;
+            const agent = agentName(c.agentId);
+            const credOk = c.type === 'sms' ? true : c.hasToken;
+            const smsUrl = c.type === 'sms' ? smsWebhookUrl(c) : '';
             return `
-                <div class="card" style="margin:0 0 10px 0; padding:12px;">
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <span class="material-icons" style="color:${ch.color};">${ch.icon}</span>
-                        <div style="flex:1;">
-                            <strong>${esc(c.label || ch.label)}</strong> <span class="text-xs text-muted">${ch.label} · ${esc(c.externalId)}</span>
-                            <div class="text-xs text-muted">Agent : ${esc(agentName(c.agentId))} · IA ${c.aiEnabled ? 'activée' : 'désactivée'} · ${c.active ? 'actif' : 'inactif'} · ${c.type === 'sms' ? (c.hasTwilioCredentials ? 'identifiants Twilio du client' : 'compte Twilio Quasar') : (c.hasToken ? 'jeton enregistré' : '<span style="color:var(--danger,#e55);">jeton manquant</span>')}</div>
+                <div class="mp-card ${c.active ? '' : 'paused'}" style="--mp-accent:${ch.color};" data-id="${esc(c.id)}">
+                    <div class="mp-row-main">
+                        <div style="display:flex; gap:12px; align-items:center; min-width:0;">
+                            <div class="mp-ico" style="background:${ch.color}1f; color:${ch.color};"><span class="material-icons">${ch.icon}</span></div>
+                            <div style="min-width:0;">
+                                <div style="font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(c.label || ch.label)}</div>
+                                <div class="mp-muted" style="font-size:.75rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${ch.label} · ${esc(c.externalId)}</div>
+                            </div>
                         </div>
-                        <button class="btn mp-sim" data-id="${esc(c.id)}" title="Simuler un message entrant">Simuler</button>
-                        ${c.type !== 'sms' ? `<button class="btn mp-test" data-id="${esc(c.id)}">Tester</button>` : ''}
-                        <button class="btn mp-edit" data-id="${esc(c.id)}">Modifier</button>
-                        <button class="icon-btn mp-del" data-id="${esc(c.id)}" title="Supprimer"><span class="material-icons" style="color:var(--danger,#e55);">delete</span></button>
+                        <div class="mp-col-opt"><span class="mp-chip ${agent ? 'ok' : 'warn'}"><span class="material-icons">smart_toy</span>${agent ? esc(agent) : 'Aucun agent'}</span></div>
+                        <div class="mp-col-opt"><span class="mp-chip ${credOk ? 'ok' : 'warn'}"><span class="material-icons">${credOk ? 'key' : 'key_off'}</span>${c.type === 'sms' ? (c.hasTwilioCredentials ? 'Twilio du client' : 'Twilio Quasar') : (c.hasToken ? 'Jeton enregistré' : 'Jeton manquant')}</span></div>
+                        <div class="mp-col-opt"><span class="mp-chip ${c.active ? 'ok' : 'off'}">${c.active ? 'Actif' : 'En pause'}</span></div>
+                        <label class="mp-col-opt" style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:.8rem;" title="L'agent répond automatiquement aux messages de ce canal">
+                            <span class="mp-switch"><input type="checkbox" class="mp-quick-ai" ${c.aiEnabled ? 'checked' : ''} ${agent ? '' : 'disabled'}><span></span></span>
+                            <span class="mp-muted">${c.aiEnabled ? 'Activée' : 'Désactivée'}</span>
+                        </label>
+                        <div class="mp-actions">
+                            ${smsUrl ? `<button class="mp-iconbtn mp-copy-btn" data-copy="${esc(smsUrl)}" title="Copier le webhook Twilio (« A message comes in », HTTP POST)"><span class="material-icons">link</span></button>` : ''}
+                            <button class="mp-iconbtn mp-sim" title="Simuler un message entrant"><span class="material-icons">play_arrow</span></button>
+                            ${c.type !== 'sms' ? `<button class="mp-iconbtn mp-test" title="Vérifier le jeton"><span class="material-icons">verified</span></button>` : ''}
+                            <button class="mp-iconbtn mp-edit" title="Modifier"><span class="material-icons">edit</span></button>
+                            <button class="mp-iconbtn danger mp-del" title="Supprimer"><span class="material-icons">delete_outline</span></button>
+                        </div>
                     </div>
-                    ${smsUrl ? `<div class="text-xs" style="margin-top:8px;">Webhook Twilio (« A message comes in », HTTP POST) : <code style="user-select:all;">${esc(smsUrl)}</code></div>` : ''}
                 </div>`;
         }).join('');
 
         body.innerHTML = `
-            <div style="display:flex; gap:16px; align-items:flex-start; overflow-y:auto; height:100%;">
-                <div style="flex:1;">
-                    <div class="text-h" style="font-size:1rem;">Canaux de ce projet</div>
-                    <p class="text-sm text-muted">Chaque canal (Page, compte Instagram, numéro WhatsApp ou SMS) est relié à un agent qui répond automatiquement.</p>
-                    ${rows || '<div class="text-muted text-sm">Aucun canal configuré.</div>'}
-                    <div class="card" style="margin-top:14px; padding:12px;">
-                        <div class="text-sm"><strong>Webhook Meta (app Meta des clients)</strong></div>
-                        <div class="text-xs text-muted">URL de rappel : <code style="user-select:all;">${PUBLIC_BASE}/api/mp/webhook/meta</code> · jeton de vérification : variable <code>MP_META_VERIFY_TOKEN</code></div>
+            <div style="overflow-y:auto; height:100%; padding-right:4px;">
+                <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+                    <div style="flex:1;">
+                        <div style="font-size:1.05rem; font-weight:700;">Canaux connectés</div>
+                        <div class="mp-muted" style="font-size:.8rem;">Les messages reçus sur ces canaux arrivent dans la boîte de réception du projet.</div>
                     </div>
+                    <button class="btn btn-primary" id="mp-add"><span class="material-icons" style="font-size:1.1rem; vertical-align:text-bottom;">add</span> Connecter un canal</button>
                 </div>
-                <form id="mp-channel-form" class="card" style="width:360px; margin:0; padding:14px;">
-                    <div class="text-h" id="mp-form-title" style="font-size:1rem;">Ajouter un canal</div>
-                    <label class="text-sm">Type</label>
-                    <select id="mp-f-type" class="form-input" style="width:100%; margin-bottom:8px;">
-                        ${Object.entries(CHANNELS).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('')}
-                    </select>
-                    <label class="text-sm" id="mp-f-id-label">ID</label>
-                    <input id="mp-f-id" class="form-input" style="width:100%; margin-bottom:8px;" required>
-                    <label class="text-sm">Nom affiché (optionnel)</label>
-                    <input id="mp-f-label" class="form-input" style="width:100%; margin-bottom:8px;" placeholder="ex. Page Clinique ABC">
-                    <label class="text-sm">Agent qui répond</label>
-                    <select id="mp-f-agent" class="form-input" style="width:100%; margin-bottom:8px;">
-                        <option value="">— aucun (boîte seulement)</option>
-                        ${state.agents.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}
-                    </select>
-                    <div id="mp-f-token-wrap">
-                        <label class="text-sm" id="mp-f-token-label">Jeton</label>
-                        <input id="mp-f-token" class="form-input" type="password" autocomplete="off" style="width:100%; margin-bottom:8px;" placeholder="Laisser vide pour conserver l'actuel">
+                <div class="mp-list">
+                    <div class="mp-list-head"><div>Canal</div><div>Agent</div><div>Connexion</div><div>Statut</div><div>Réponses IA</div><div style="text-align:right;">Actions</div></div>
+                    ${cards}
+                </div>
+                <details class="mp-tech" style="margin-top:20px;">
+                    <summary>Informations techniques</summary>
+                    <div class="mp-panel" style="margin-top:10px; font-size:.8rem;">
+                        <div style="font-weight:600; margin-bottom:6px;">Webhook de l'app Meta des clients (« Quasar Messaging Platform »)</div>
+                        <div class="mp-copy"><code>${PUBLIC_BASE}/api/mp/webhook/meta</code><button class="mp-iconbtn mp-copy-btn" data-copy="${PUBLIC_BASE}/api/mp/webhook/meta" title="Copier"><span class="material-icons">content_copy</span></button></div>
+                        <div class="mp-muted" style="margin-top:6px;">Jeton de vérification : variable <code>MP_META_VERIFY_TOKEN</code> du backend.</div>
                     </div>
-                    <div id="mp-f-twilio-wrap" style="display:none;">
-                        <label class="text-sm">Twilio Account SID du client (optionnel)</label>
-                        <input id="mp-f-tsid" class="form-input" style="width:100%; margin-bottom:8px;" placeholder="AC… (vide = compte Twilio Quasar)">
-                        <label class="text-sm">Twilio Auth Token du client (optionnel)</label>
-                        <input id="mp-f-ttoken" class="form-input" type="password" autocomplete="off" style="width:100%; margin-bottom:8px;">
-                    </div>
-                    <label class="text-sm" style="display:flex; gap:6px; align-items:center; margin:6px 0;"><input type="checkbox" id="mp-f-ai" checked> Réponses IA automatiques</label>
-                    <label class="text-sm" style="display:flex; gap:6px; align-items:center; margin:6px 0 12px;"><input type="checkbox" id="mp-f-active" checked> Canal actif</label>
-                    <div style="display:flex; gap:8px;">
-                        <button type="submit" class="btn btn-primary" style="flex:1;">Enregistrer</button>
-                        <button type="button" id="mp-f-reset" class="btn">Nouveau</button>
-                    </div>
-                </form>
+                </details>
             </div>`;
 
-        const form = body.querySelector('#mp-channel-form');
-        const typeSel = form.querySelector('#mp-f-type');
-        const syncType = () => {
-            const ch = CHANNELS[typeSel.value];
-            form.querySelector('#mp-f-id-label').textContent = ch.idLabel;
-            form.querySelector('#mp-f-token-wrap').style.display = ch.tokenLabel ? '' : 'none';
-            form.querySelector('#mp-f-token-label').textContent = ch.tokenLabel || '';
-            form.querySelector('#mp-f-twilio-wrap').style.display = typeSel.value === 'sms' ? '' : 'none';
-        };
-        typeSel.addEventListener('change', syncType);
-        syncType();
+        body.querySelector('#mp-add').addEventListener('click', () => { state.wizard = { step: 'type' }; renderWizard(); });
+        body.querySelectorAll('.mp-copy-btn').forEach(b => b.addEventListener('click', () => copyText(b.dataset.copy)));
 
-        const resetForm = () => {
-            form.reset();
-            form.querySelector('#mp-form-title').textContent = 'Ajouter un canal';
-            typeSel.disabled = false;
-            form.querySelector('#mp-f-id').disabled = false;
-            syncType();
-        };
-        form.querySelector('#mp-f-reset').addEventListener('click', resetForm);
-
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const payload = {
-                type: typeSel.value,
-                externalId: form.querySelector('#mp-f-id').value.trim(),
-                label: form.querySelector('#mp-f-label').value.trim() || null,
-                agentId: form.querySelector('#mp-f-agent').value || null,
-                accessToken: form.querySelector('#mp-f-token').value.trim() || undefined,
-                twilioAccountSid: form.querySelector('#mp-f-tsid').value.trim() || undefined,
-                twilioAuthToken: form.querySelector('#mp-f-ttoken').value.trim() || undefined,
-                aiEnabled: form.querySelector('#mp-f-ai').checked,
-                active: form.querySelector('#mp-f-active').checked
-            };
-            try {
-                await api('/channels', { method: 'POST', body: payload });
-                toast('Canal enregistré.', 'success');
-                renderChannels();
-            } catch (err) { toast(err.message, 'error'); }
-        });
-
-        body.querySelectorAll('.mp-edit').forEach(b => b.addEventListener('click', () => {
-            const c = state.channels.find(x => x.id === b.dataset.id);
+        body.querySelectorAll('.mp-card').forEach(card => {
+            const c = state.channels.find(x => x.id === card.dataset.id);
             if (!c) return;
-            form.querySelector('#mp-form-title').textContent = 'Modifier le canal';
-            typeSel.value = c.type; typeSel.disabled = true;
-            const idInput = form.querySelector('#mp-f-id');
-            idInput.value = c.externalId; idInput.disabled = true;
-            form.querySelector('#mp-f-label').value = c.label || '';
-            form.querySelector('#mp-f-agent').value = c.agentId || '';
-            form.querySelector('#mp-f-ai').checked = c.aiEnabled;
-            form.querySelector('#mp-f-active').checked = c.active;
-            syncType();
-        }));
 
-        body.querySelectorAll('.mp-del').forEach(b => b.addEventListener('click', () => {
-            confirmInApp('Supprimer ce canal ? Les conversations existantes sont conservées.', async () => {
+            card.querySelector('.mp-quick-ai').addEventListener('change', async (e) => {
                 try {
-                    await api(`/channels/${encodeURIComponent(b.dataset.id)}`, { method: 'DELETE' });
-                    toast('Canal supprimé.', 'success');
-                    renderChannels();
-                } catch (err) { toast(err.message, 'error'); }
+                    await saveChannel({ ...channelPayload(c), aiEnabled: e.target.checked });
+                    c.aiEnabled = e.target.checked;
+                    const lbl = e.target.closest('label')?.querySelector('.mp-muted');
+                    if (lbl) lbl.textContent = e.target.checked ? 'Activée' : 'Désactivée';
+                    toast(e.target.checked ? 'Réponses IA activées sur ce canal.' : 'Réponses IA désactivées sur ce canal.', 'success');
+                } catch (err) { toast(err.message, 'error'); e.target.checked = !e.target.checked; }
             });
-        }));
 
-        body.querySelectorAll('.mp-test').forEach(b => b.addEventListener('click', async () => {
-            b.disabled = true;
-            try {
-                const r = await api(`/channels/${encodeURIComponent(b.dataset.id)}/test`, { method: 'POST' });
-                toast(r.account ? `Jeton valide : ${r.account.name || ''} (${r.account.id})` : (r.info || 'OK'), 'success');
-            } catch (err) { toast(`Jeton invalide : ${err.message}`, 'error'); }
-            finally { b.disabled = false; }
-        }));
+            card.querySelector('.mp-edit').addEventListener('click', () => {
+                state.wizard = { step: 'form', type: c.type, editing: c };
+                renderWizard();
+            });
 
-        // Simulation: inline field under the channel card; the result opens in the inbox
-        body.querySelectorAll('.mp-sim').forEach(b => b.addEventListener('click', () => {
-            const card = b.closest('.card');
-            const open = card.querySelector('.mp-sim-row');
-            if (open) { open.remove(); return; }
-            const row = document.createElement('div');
-            row.className = 'mp-sim-row';
-            row.style.cssText = 'display:flex; gap:8px; margin-top:10px;';
-            row.innerHTML = `
-                <input class="form-input" style="flex:1;" value="Bonjour, quels sont vos horaires ?" placeholder="Message entrant à simuler">
-                <button class="btn btn-primary">Simuler</button>`;
-            card.appendChild(row);
-            const input = row.querySelector('input');
-            const go = row.querySelector('button');
-            input.focus(); input.select();
-            const run = async () => {
-                const text = input.value.trim();
-                if (!text) return;
-                go.disabled = true; go.textContent = 'IA en cours…';
+            card.querySelector('.mp-del').addEventListener('click', () => {
+                confirmInApp(`Supprimer le canal « ${c.label || CHANNELS[c.type].label} » ? Les conversations existantes sont conservées.`, async () => {
+                    try {
+                        await api(`/channels/${encodeURIComponent(c.id)}`, { method: 'DELETE' });
+                        toast('Canal supprimé.', 'success');
+                        renderChannels();
+                    } catch (err) { toast(err.message, 'error'); }
+                });
+            });
+
+            card.querySelector('.mp-test')?.addEventListener('click', async (e) => {
+                const btn = e.currentTarget;
+                btn.disabled = true;
                 try {
-                    const r = await api('/simulate', { method: 'POST', body: { channelId: b.dataset.id, text } });
-                    const ch = state.channels.find(x => x.id === b.dataset.id);
-                    if (!r.replied) toast(`Message enregistré, pas de réponse IA (${r.reason || r.error || 'IA désactivée ou aucun agent'}).`);
-                    else toast('Réponse IA générée (simulation, non envoyée).', 'success');
-                    state.activeConvId = ch ? `${ch.type}_simulation` : null;
-                    state.tab = 'inbox';
-                    render();
-                } catch (err) {
-                    toast(err.message, 'error');
-                    go.disabled = false; go.textContent = 'Simuler';
-                }
-            };
-            go.addEventListener('click', run);
-            input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); run(); } });
+                    const r = await api(`/channels/${encodeURIComponent(c.id)}/test`, { method: 'POST' });
+                    toast(r.account ? `Jeton valide · ${r.account.name || ''}` : (r.info || 'OK'), 'success');
+                } catch (err) { toast(`Jeton invalide : ${err.message}`, 'error'); }
+                finally { btn.disabled = false; }
+            });
+
+            card.querySelector('.mp-sim').addEventListener('click', () => toggleSimulation(card, c));
+        });
+    }
+
+    function toggleSimulation(card, c) {
+        const open = card.querySelector('.mp-sim-row');
+        if (open) { open.remove(); return; }
+        const row = document.createElement('div');
+        row.className = 'mp-sim-row';
+        row.innerHTML = `
+            <div class="mp-muted" style="font-size:.72rem; margin-bottom:4px;">Message de test (la réponse IA est enregistrée, sans être envoyée)</div>
+            <div style="display:flex; gap:8px;">
+                <input class="form-input" style="flex:1;" value="Bonjour, quels sont vos horaires ?">
+                <button class="btn btn-primary">Tester</button>
+            </div>`;
+        card.appendChild(row);
+        const input = row.querySelector('input');
+        const go = row.querySelector('button');
+        input.focus(); input.select();
+        const run = async () => {
+            const text = input.value.trim();
+            if (!text) return;
+            go.disabled = true; go.textContent = 'IA…';
+            try {
+                const r = await api('/simulate', { method: 'POST', body: { channelId: c.id, text } });
+                if (!r.replied) toast(`Message enregistré, pas de réponse IA (${r.reason || r.error || 'IA désactivée ou aucun agent'}).`);
+                else toast('Réponse IA générée (simulation, non envoyée).', 'success');
+                state.activeConvId = `${c.type}_simulation`;
+                state.tab = 'inbox';
+                render();
+            } catch (err) {
+                toast(err.message, 'error');
+                go.disabled = false; go.textContent = 'Tester';
+            }
+        };
+        go.addEventListener('click', run);
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); run(); } });
+    }
+
+    const channelPayload = (c) => ({
+        type: c.type, externalId: c.externalId, label: c.label || null, agentId: c.agentId || null,
+        aiEnabled: c.aiEnabled, active: c.active
+    });
+    const saveChannel = async (payload) => (await api('/channels', { method: 'POST', body: payload })).channel;
+
+    // ---------- Add / edit wizard ----------
+
+    function typeTiles() {
+        return `<div class="mp-tiles">${Object.entries(CHANNELS).map(([k, v]) => `
+            <button type="button" class="mp-tile" data-type="${k}" style="--mp-accent:${v.color};">
+                <div class="mp-ico" style="background:${v.color}1f; color:${v.color};"><span class="material-icons">${v.icon}</span></div>
+                <div style="font-weight:700;">${v.label}</div>
+                <div class="mp-muted" style="font-size:.78rem;">${v.tagline}</div>
+            </button>`).join('')}</div>`;
+    }
+
+    function bindTiles(root) {
+        root.querySelectorAll('.mp-tile').forEach(t => t.addEventListener('click', () => {
+            state.wizard = { step: 'form', type: t.dataset.type };
+            renderWizard();
         }));
     }
 
+    function wizardHeader(title, subtitle) {
+        return `
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:18px;">
+                <button class="mp-iconbtn" id="mp-wz-back" title="Retour"><span class="material-icons">arrow_back</span></button>
+                <div>
+                    <div style="font-size:1.05rem; font-weight:700;">${title}</div>
+                    ${subtitle ? `<div class="mp-muted" style="font-size:.8rem;">${subtitle}</div>` : ''}
+                </div>
+            </div>`;
+    }
+
+    function renderWizard() {
+        const body = container.querySelector('#mp-body');
+        const wz = state.wizard;
+        const back = (to) => body.querySelector('#mp-wz-back').addEventListener('click', to);
+
+        if (wz.step === 'type') {
+            body.innerHTML = `<div style="max-width:820px; margin:0 auto; overflow-y:auto; height:100%;">
+                ${wizardHeader('Connecter un canal', 'Étape 1 sur 2 · choisissez le type de canal')}
+                ${typeTiles()}
+            </div>`;
+            back(() => { state.wizard = null; renderChannels(); });
+            bindTiles(body);
+            return;
+        }
+
+        const ch = CHANNELS[wz.type];
+        const ed = wz.editing;
+
+        if (wz.step === 'done') {
+            const c = wz.saved;
+            const url = c.type === 'sms' ? smsWebhookUrl(c) : '';
+            body.innerHTML = `<div style="max-width:640px; margin:0 auto; overflow-y:auto; height:100%;">
+                <div class="mp-panel" style="text-align:center;">
+                    <div class="mp-ico" style="margin:0 auto 10px; width:56px; height:56px; background:#3ecf8e1f; color:#3ecf8e;"><span class="material-icons" style="font-size:2rem;">check_circle</span></div>
+                    <div style="font-size:1.1rem; font-weight:700;">${ch.label} ${ed ? 'mis à jour' : 'connecté'}</div>
+                    <div class="mp-muted" style="font-size:.85rem; margin-top:4px;">${esc(c.label || c.externalId)}</div>
+                </div>
+                ${url ? `
+                <div class="mp-panel" style="margin-top:14px;">
+                    <div style="font-weight:700; margin-bottom:4px;">Dernière étape : brancher le numéro dans Twilio</div>
+                    <div class="mp-muted" style="font-size:.8rem; margin-bottom:10px;">Twilio › Phone Numbers › ${esc(c.externalId)} › Messaging › « A message comes in » › Webhook, méthode HTTP POST.</div>
+                    <div class="mp-copy"><code>${esc(url)}</code><button class="mp-iconbtn mp-copy-btn" data-copy="${esc(url)}" title="Copier"><span class="material-icons">content_copy</span></button></div>
+                </div>` : `
+                <div class="mp-panel" style="margin-top:14px;">
+                    <div style="font-weight:700; margin-bottom:4px;">À vérifier côté Meta</div>
+                    <div class="mp-muted" style="font-size:.8rem;">Le compte doit être abonné au champ « messages » dans l'app « Quasar Messaging Platform » (jamais dans l'app Quasar).</div>
+                </div>`}
+                <div style="display:flex; gap:10px; justify-content:center; margin-top:16px;">
+                    <button class="btn" id="mp-wz-sim">Tester avec un message simulé</button>
+                    <button class="btn btn-primary" id="mp-wz-finish">Terminer</button>
+                </div>
+            </div>`;
+            body.querySelectorAll('.mp-copy-btn').forEach(b => b.addEventListener('click', () => copyText(b.dataset.copy)));
+            body.querySelector('#mp-wz-finish').addEventListener('click', () => { state.wizard = null; renderChannels(); });
+            body.querySelector('#mp-wz-sim').addEventListener('click', async () => {
+                state.wizard = null;
+                await renderChannels();
+                const card = container.querySelector(`.mp-card[data-id="${CSS.escape(c.id)}"]`);
+                if (card) toggleSimulation(card, state.channels.find(x => x.id === c.id) || c);
+            });
+            return;
+        }
+
+        // step 'form'
+        body.innerHTML = `<div style="max-width:900px; margin:0 auto; overflow-y:auto; height:100%;">
+            ${wizardHeader(ed ? `Modifier · ${esc(ed.label || ch.label)}` : `Connecter ${ch.label}`, ed ? '' : 'Étape 2 sur 2 · informations du compte')}
+            <div style="display:grid; grid-template-columns:minmax(0, 1.4fr) minmax(0, 1fr); gap:16px; align-items:start;">
+                <form id="mp-wz-form" class="mp-panel" style="--mp-accent:${ch.color};">
+                    <div style="display:flex; gap:10px; align-items:center; margin-bottom:16px;">
+                        <div class="mp-ico" style="background:${ch.color}1f; color:${ch.color};"><span class="material-icons">${ch.icon}</span></div>
+                        <div style="font-weight:700;">${ch.label}</div>
+                    </div>
+                    <div class="mp-field">
+                        <label>${ch.idLabel}</label>
+                        <input id="mp-f-id" class="form-input" placeholder="${esc(ch.idPlaceholder)}" value="${esc(ed?.externalId || '')}" ${ed ? 'disabled' : 'required'}>
+                        ${ed ? '<small>L\'identifiant ne peut pas être modifié. Supprimez le canal pour en changer.</small>' : ''}
+                    </div>
+                    <div class="mp-field">
+                        <label>Nom affiché <span class="mp-muted" style="font-weight:400;">(optionnel)</span></label>
+                        <input id="mp-f-label" class="form-input" placeholder="ex. Page Clinique ABC" value="${esc(ed?.label || '')}">
+                    </div>
+                    <div class="mp-field">
+                        <label>Agent qui répond</label>
+                        <select id="mp-f-agent" class="form-input">
+                            <option value="">Aucun : boîte de réception seulement</option>
+                            ${state.agents.map(a => `<option value="${esc(a.id)}" ${(ed ? ed.agentId === a.id : state.agents.length === 1) ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}
+                        </select>
+                        ${state.agents.length ? '' : '<small>Ce projet n\'a pas encore d\'agent : créez-en un dans l\'onglet Agents pour activer les réponses IA.</small>'}
+                    </div>
+                    ${ch.tokenLabel ? `
+                    <div class="mp-field">
+                        <label>${ch.tokenLabel}</label>
+                        <input id="mp-f-token" class="form-input" type="password" autocomplete="off" placeholder="${ed?.hasToken ? 'Jeton enregistré · laisser vide pour le conserver' : esc(ch.tokenPlaceholder)}" ${ed?.hasToken ? '' : 'required'}>
+                    </div>` : `
+                    <details style="margin-bottom:14px;">
+                        <summary class="mp-muted" style="cursor:pointer; font-size:.8rem;">Utiliser le compte Twilio du client (optionnel)</summary>
+                        <div class="mp-field" style="margin-top:10px;">
+                            <label>Account SID</label>
+                            <input id="mp-f-tsid" class="form-input" placeholder="AC… (vide = compte Twilio Quasar)">
+                        </div>
+                        <div class="mp-field">
+                            <label>Auth Token</label>
+                            <input id="mp-f-ttoken" class="form-input" type="password" autocomplete="off">
+                        </div>
+                    </details>`}
+                    <div style="display:flex; flex-direction:column; gap:10px; margin:6px 0 18px;">
+                        <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:.85rem;">
+                            <span class="mp-switch"><input type="checkbox" id="mp-f-ai" ${ed ? (ed.aiEnabled ? 'checked' : '') : 'checked'}><span></span></span> L'agent répond automatiquement
+                        </label>
+                        <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:.85rem;">
+                            <span class="mp-switch"><input type="checkbox" id="mp-f-active" ${ed ? (ed.active ? 'checked' : '') : 'checked'}><span></span></span> Canal actif
+                        </label>
+                    </div>
+                    <div style="display:flex; gap:10px;">
+                        <button type="submit" class="btn btn-primary" style="flex:1;">${ed ? 'Enregistrer' : `Connecter ${ch.label}`}</button>
+                        <button type="button" class="btn" id="mp-wz-cancel">Annuler</button>
+                    </div>
+                </form>
+                <div class="mp-help">
+                    <div style="font-weight:700; display:flex; gap:6px; align-items:center;"><span class="material-icons" style="font-size:1.1rem; color:var(--gold);">tips_and_updates</span> Où trouver ces informations ?</div>
+                    <ol>${ch.help.map(h => `<li>${esc(h)}</li>`).join('')}</ol>
+                </div>
+            </div>
+        </div>`;
+
+        back(() => { state.wizard = ed ? null : { step: 'type' }; ed ? renderChannels() : renderWizard(); });
+        body.querySelector('#mp-wz-cancel').addEventListener('click', () => { state.wizard = null; renderChannels(); });
+        body.querySelector('#mp-wz-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const f = (id) => body.querySelector(id);
+            const btn = e.submitter || f('button[type=submit]');
+            const payload = {
+                type: wz.type,
+                externalId: ed ? ed.externalId : f('#mp-f-id').value.trim(),
+                label: f('#mp-f-label').value.trim() || null,
+                agentId: f('#mp-f-agent').value || null,
+                accessToken: f('#mp-f-token')?.value.trim() || undefined,
+                twilioAccountSid: f('#mp-f-tsid')?.value.trim() || undefined,
+                twilioAuthToken: f('#mp-f-ttoken')?.value.trim() || undefined,
+                aiEnabled: f('#mp-f-ai').checked,
+                active: f('#mp-f-active').checked
+            };
+            btn.disabled = true;
+            try {
+                const saved = await saveChannel(payload);
+                await loadChannels();
+                state.wizard = { step: 'done', type: wz.type, editing: ed, saved };
+                renderWizard();
+            } catch (err) {
+                toast(err.message, 'error');
+                btn.disabled = false;
+            }
+        });
+        if (!ed) body.querySelector('#mp-f-id').focus();
+    }
+
     render();
+    // Show channel count on the tab from the start
+    if (state.isStaff) loadChannels().catch(() => { });
 }
