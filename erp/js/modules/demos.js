@@ -589,7 +589,23 @@ window.handleDemoSubmit = async (e) => {
 };
 
 window.deleteDemoRecord = async (id) => {
-    if (!confirm(t('demos_delete_confirm'))) return;
+    if (window.showConfirmModal) {
+        return window.showConfirmModal({
+            title: t('demos_delete_confirm') || 'Confirmation',
+            message: t('demos_delete_confirm'),
+            confirmText: 'Supprimer',
+            cancelText: 'Annuler',
+            onConfirm: async () => {
+                try {
+                    await deleteDoc(doc(db, 'demos', id));
+                    window.showToast("Demo deleted successfully", "success");
+                    await loadDemos();
+                } catch (e) {
+                    window.showToast(e.message, "error");
+                }
+            }
+        });
+    }
     try {
         await deleteDoc(doc(db, 'demos', id));
         window.showToast("Demo deleted successfully", "success");

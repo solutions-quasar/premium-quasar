@@ -2,6 +2,7 @@ import { db, auth } from '../firebase-config.js';
 import { collection, query, where, getDocs, orderBy, onSnapshot, doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { t } from '../services/translationService.js';
 import { getAuditConfig, getAuditStats, renderAuditConfigTab } from './audit.js';
+import { REGIONS_LIST, INDUSTRIES_LIST, buildRegionOptionsHtml, buildIndustryOptionsHtml, runAgentJob } from './leadhunter.js?v=43';
 
 const API_BASE = window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1')
     ? 'http://localhost:5000'
@@ -53,92 +54,7 @@ export const SEQ_SVGS = {
     sparkles: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>`
 };
 
-const REGIONS_LIST = {
-    CA: [
-        { id: 'ALL', label: '🍁 Toutes les provinces canadiennes (Rotation)' },
-        { id: 'QC', label: 'Québec (QC) - Montréal, Québec, Laval, Sherbrooke, Lévis...' },
-        { id: 'ON', label: 'Ontario (ON) - Toronto, Ottawa, Mississauga, Brampton, Hamilton...' },
-        { id: 'NB', label: 'Nouveau-Brunswick (NB) - Moncton, Dieppe, Fredericton, Saint John...' },
-        { id: 'NS', label: 'Nouvelle-Écosse (NS) - Halifax, Dartmouth, Sydney...' },
-        { id: 'BC', label: 'Colombie-Britannique (BC) - Vancouver, Surrey, Burnaby, Victoria...' },
-        { id: 'AB', label: 'Alberta (AB) - Calgary, Edmonton, Red Deer, Lethbridge...' },
-        { id: 'MB', label: 'Manitoba (MB) - Winnipeg, Brandon, Steinbach...' },
-        { id: 'SK', label: 'Saskatchewan (SK) - Saskatoon, Regina, Prince Albert...' },
-        { id: 'NL', label: 'Terre-Neuve-et-Labrador (NL) - St. John\'s, Mount Pearl...' },
-        { id: 'PE', label: 'Île-du-Prince-Édouard (PE) - Charlottetown, Summerside...' }
-    ],
-    US: [
-        { id: 'ALL', label: '🦅 Tous les états américains (Rotation)' },
-        { id: 'FL', label: 'Florida (FL) - Tampa, Miami, Orlando, Jacksonville, Fort Lauderdale...' },
-        { id: 'GA', label: 'Georgia (GA) - Atlanta, Savannah, Augusta, Columbus...' },
-        { id: 'NC', label: 'North Carolina (NC) - Charlotte, Raleigh, Greensboro, Durham...' },
-        { id: 'TX', label: 'Texas (TX) - Houston, Dallas, Austin, San Antonio, Fort Worth...' },
-        { id: 'CA_US', label: 'California (CA) - Los Angeles, San Diego, San Francisco, San Jose...' },
-        { id: 'NY', label: 'New York (NY) - New York City, Buffalo, Rochester, Albany...' },
-        { id: 'IL', label: 'Illinois (IL) - Chicago, Aurora, Naperville, Joliet...' },
-        { id: 'MA', label: 'Massachusetts (MA) - Boston, Worcester, Cambridge, Lowell...' },
-        { id: 'WA', label: 'Washington (WA) - Seattle, Spokane, Tacoma, Vancouver...' },
-        { id: 'CO', label: 'Colorado (CO) - Denver, Colorado Springs, Aurora, Boulder...' },
-        { id: 'AZ', label: 'Arizona (AZ) - Phoenix, Tucson, Scottsdale, Mesa, Chandler...' }
-    ]
-};
-
-const INDUSTRIES_LIST = [
-    { id: 'ALL', label: '🔄 Rotation Toutes Professions (Multi-Secteurs)' },
-    { id: 'Plumber', label: '🔧 Plombier (Plumber)' },
-    { id: 'Electrician', label: '⚡ Électricien (Electrician)' },
-    { id: 'Roofer', label: '🏠 Couvreur / Toiture (Roofer)' },
-    { id: 'HVAC Contractor', label: '❄️ Climatisation, Chauffage & Ventilation (HVAC)' },
-    { id: 'General Contractor', label: '🔨 Entrepreneur Général / Rénovation' },
-    { id: 'Auto Repair Shop', label: '🚗 Garage & Mécanique Automobile' },
-    { id: 'Dentist', label: '🦷 Dentiste / Clinique Dentaire' },
-    { id: 'Med Spa', label: '💆‍♀️ Clinique Esthétique & Med Spa' },
-    { id: 'Lawyer', label: '⚖️ Avocat / Cabinet Juridique' },
-    { id: 'Accountant', label: '📊 Comptable / Fiscaliste / CPA' },
-    { id: 'Cleaning Service', label: '🧹 Entretien Ménager & Nettoyage Commercial' },
-    { id: 'Landscaper', label: '🌿 Paysagiste & Aménagement Extérieur' },
-    { id: 'Pest Control', label: '🐜 Exterminateur / Gestion Parasitaire' },
-    { id: 'Window & Door Installer', label: '🪟 Portes et Fenêtres' },
-    { id: 'Flooring Specialist', label: '🪵 Pose de Planchers & Céramique' },
-    { id: 'Veterinarian', label: '🐾 Clinique Vétérinaire' },
-    { id: 'Optometrist', label: '👓 Optométriste & Lunetterie' },
-    { id: 'Real Estate Agent', label: '🏡 Courtier Immobilier' },
-    { id: 'CUSTOM', label: '✏️ Métier Spécifique (Personnalisé...)' }
-];
-
-function buildRegionOptionsHtml(selectedCountry, currentRegion = 'ALL') {
-    let html = '';
-    if (selectedCountry === 'CA') {
-        html += `<option value="ALL" ${currentRegion === 'ALL' ? 'selected' : ''}>🍁 Toutes les provinces canadiennes (Rotation)</option>`;
-        REGIONS_LIST.CA.filter(r => r.id !== 'ALL').forEach(r => {
-            html += `<option value="${r.id}" ${currentRegion === r.id ? 'selected' : ''}>${r.label}</option>`;
-        });
-    } else if (selectedCountry === 'US') {
-        html += `<option value="ALL" ${currentRegion === 'ALL' ? 'selected' : ''}>🦅 Tous les états américains (Rotation)</option>`;
-        REGIONS_LIST.US.filter(r => r.id !== 'ALL').forEach(r => {
-            html += `<option value="${r.id}" ${currentRegion === r.id ? 'selected' : ''}>${r.label}</option>`;
-        });
-    } else {
-        html += `<option value="ALL" ${currentRegion === 'ALL' ? 'selected' : ''}>🌎 Toutes les provinces & états (Canada + USA)</option>`;
-        html += `<optgroup label="🇨🇦 Canada">`;
-        REGIONS_LIST.CA.filter(r => r.id !== 'ALL').forEach(r => {
-            html += `<option value="${r.id}" ${currentRegion === r.id ? 'selected' : ''}>${r.label}</option>`;
-        });
-        html += `</optgroup>`;
-        html += `<optgroup label="🇺🇸 USA">`;
-        REGIONS_LIST.US.filter(r => r.id !== 'ALL').forEach(r => {
-            html += `<option value="${r.id}" ${currentRegion === r.id ? 'selected' : ''}>${r.label}</option>`;
-        });
-        html += `</optgroup>`;
-    }
-    return html;
-}
-
-function buildIndustryOptionsHtml(currentIndustry = 'ALL') {
-    return INDUSTRIES_LIST.map(ind => {
-        return `<option value="${ind.id}" ${currentIndustry === ind.id ? 'selected' : ''}>${ind.label}</option>`;
-    }).join('');
-}
+// Regions & Industries imported from ./leadhunter.js (single source of truth)
 
 /**
  * Main Prospection IA Page Module (Full View)
@@ -229,45 +145,54 @@ export async function initProspectionView(initialTab = 'hunter') {
     const dryRunToggle = document.getElementById('sequence-dryrun-toggle');
     const dryRunLabel = document.getElementById('dry-run-status-label');
     if (dryRunToggle && dryRunLabel) {
-        const isSimulation = sequenceSettings.dryRun !== false;
-        dryRunToggle.checked = isSimulation;
-        dryRunLabel.innerHTML = isSimulation
-            ? `${SEQ_SVGS.flask} Mode Simulation`
-            : `${SEQ_SVGS.send} Mode Réel`;
-        dryRunLabel.style.color = isSimulation ? '#F2C037' : '#10B981';
+        const updateDryRunUI = (isSim) => {
+            dryRunToggle.checked = isSim;
+            dryRunLabel.innerHTML = isSim
+                ? `${SEQ_SVGS.flask} Mode Simulation`
+                : `${SEQ_SVGS.send} Mode Réel`;
+            dryRunLabel.style.color = isSim ? '#F2C037' : '#10B981';
+        };
+
+        const initialSimulation = sequenceSettings.dryRun !== false;
+        updateDryRunUI(initialSimulation);
 
         dryRunToggle.addEventListener('click', (e) => {
             e.preventDefault();
-            const willBeActiveSimulation = !dryRunToggle.checked;
+            // Read the CURRENT truth directly from sequenceSettings
+            const isCurrentlySimulation = sequenceSettings.dryRun !== false;
 
-            if (!willBeActiveSimulation) {
-                // Switching from Simulation to Production Réelle
+            if (isCurrentlySimulation) {
+                // Currently in Simulation -> User wants to switch to Production Réelle (dryRun: false)
                 window.showConfirmModal({
                     title: "Activer la Production Réelle ?",
                     message: "⚠️ <strong>Attention : Conséquences importantes</strong><br><br>Vous quittez le mode simulation. Tous les SMS générés par l'IA seront désormais <strong>réellement envoyés</strong> aux prospects ciblés et <strong>facturés</strong> sur vos comptes opérateurs (Twilio / Telnyx).<br><br>Souhaitez-vous confirmer le passage en mode réel ?",
                     confirmText: "Oui, passer en Réel",
                     cancelText: "Garder la Simulation",
                     onConfirm: async () => {
-                        dryRunToggle.checked = false;
-                        dryRunLabel.innerHTML = `${SEQ_SVGS.send} Mode Réel`;
-                        dryRunLabel.style.color = '#10B981';
+                        sequenceSettings.dryRun = false;
+                        updateDryRunUI(false);
                         await handleSaveSettings({ dryRun: false });
                         window.showToast("🟢 Mode Réel activé : les SMS programmés seront réellement envoyés.", "success");
+                    },
+                    onCancel: () => {
+                        updateDryRunUI(true);
                     }
                 });
             } else {
-                // Switching from Production to Simulation
+                // Currently in Production Réelle -> User wants to switch to Simulation (dryRun: true)
                 window.showConfirmModal({
                     title: "Activer le Mode Simulation ?",
                     message: "ℹ️ <strong>Conséquences :</strong><br><br>Aucun SMS réel ne sera transmis. Les déclenchements de séquences seront enregistrés uniquement dans les <strong>logs de simulation</strong> sans frais d'opérateur ni impact pour les clients.",
                     confirmText: "Activer la Simulation",
                     cancelText: "Annuler",
                     onConfirm: async () => {
-                        dryRunToggle.checked = true;
-                        dryRunLabel.innerHTML = `${SEQ_SVGS.flask} Mode Simulation`;
-                        dryRunLabel.style.color = '#F2C037';
+                        sequenceSettings.dryRun = true;
+                        updateDryRunUI(true);
                         await handleSaveSettings({ dryRun: true });
                         window.showToast("🟡 Mode Simulation activé : aucun SMS réel ne sera transmis.", "info");
+                    },
+                    onCancel: () => {
+                        updateDryRunUI(false);
                     }
                 });
             }
@@ -895,7 +820,7 @@ window.openSequenceEditorModal = (sequenceId) => {
     const isDefaultSequence = DEFAULT_SEQUENCE_IDS.includes(seq.id);
 
     const modalHtml = `
-    <div id="sequence-editor-modal" class="seq-modal-overlay" onclick="if(event.target === this) window.closeSequenceEditorModal();">
+    <div id="sequence-editor-modal" class="seq-modal-overlay">
         <div class="seq-modal-window">
             
             <!-- Modal Header (Pinned) -->
@@ -1362,6 +1287,68 @@ async function renderHunterAutoPilotModalTab() {
                             </div>
                         </div>
                     </div>
+
+                    <!-- Collapsible Manual Deep Search (Pages 2-5) -->
+                    <div style="background:#12151B; border:1px solid rgba(255,255,255,0.07); border-radius:12px; padding:16px 20px; box-shadow:0 4px 20px rgba(0,0,0,0.2);">
+                        <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="window.toggleHunterManualAccordion()">
+                            <div style="display:flex; align-items:center; gap:10px;">
+                                <span style="color:var(--gold); display:inline-flex;">${SEQ_SVGS.radar}</span>
+                                <div>
+                                    <div style="font-size:0.88rem; font-weight:700; color:#F8FAFC;">Recherche Manuelle Ponctuelle & Deep Search (Pages 2 à 5)</div>
+                                    <div style="font-size:0.75rem; color:#64748B;">Cibler immédiatement une ville précise et un métier spécifique sur Google Places</div>
+                                </div>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:10px;">
+                                <span class="lead-pill-subtle" id="stat-run-status" style="font-size:0.74rem;">Prêt</span>
+                                <span id="hunter-manual-chevron" class="material-icons" style="color:#64748B; font-size:18px; transition:transform 0.2s;">expand_more</span>
+                            </div>
+                        </div>
+
+                        <div id="hunter-manual-content" style="display:none; margin-top:16px; padding-top:16px; border-top:1px solid rgba(255,255,255,0.06);">
+                            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:16px;">
+                                <div style="background:#090B0F; border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:12px; min-height:220px; max-height:320px; overflow-y:auto; font-family:monospace; font-size:0.76rem; color:#38BDF8; line-height:1.5;" id="hunter-logs">
+                                    > Système de prospection manuelle prêt...<br>
+                                    > Choisissez vos paramètres et cliquez sur Lancer.<br>
+                                </div>
+                                <div style="display:flex; flex-direction:column; gap:10px;">
+                                    <div>
+                                        <label style="display:block; font-size:0.72rem; text-transform:uppercase; font-weight:600; color:#94A3B8; margin-bottom:4px;">Secteur / Métier cible</label>
+                                        <select id="input-industry" style="width:100%; background:#090B0F; border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:7px 10px; font-size:0.82rem; color:#CBD5E1;" onchange="window.toggleCustomIndustry(this)">
+                                            ${INDUSTRIES_LIST.filter(i => i.id !== 'ALL').map(i => `<option value="${i.id}">${i.label}</option>`).join('')}
+                                        </select>
+                                        <input type="text" id="input-industry-custom" style="display:none; margin-top:6px; width:100%; background:#090B0F; border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:7px 10px; font-size:0.82rem; color:#CBD5E1;" placeholder="Entrez un métier personnalisé...">
+                                    </div>
+                                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                                        <div>
+                                            <label style="display:block; font-size:0.72rem; text-transform:uppercase; font-weight:600; color:#94A3B8; margin-bottom:4px;">Filtre Site Web</label>
+                                            <select id="input-website-filter" style="width:100%; background:#090B0F; border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:7px 10px; font-size:0.82rem; color:#CBD5E1;">
+                                                <option value="NO_WEBSITE" selected>Sans site web uniquement</option>
+                                                <option value="ALL">Tous les prospects</option>
+                                                <option value="HAS_WEBSITE">Avec site web</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label style="display:block; font-size:0.72rem; text-transform:uppercase; font-weight:600; color:#94A3B8; margin-bottom:4px;">Leads max</label>
+                                            <input type="number" id="input-max-leads" value="10" min="1" max="50" style="width:100%; background:#090B0F; border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:7px 10px; font-size:0.82rem; color:#CBD5E1;">
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label style="display:block; font-size:0.72rem; text-transform:uppercase; font-weight:600; color:#94A3B8; margin-bottom:4px;">Ville ciblée (ex: Montreal, QC ou Tampa, FL)</label>
+                                        <input type="text" id="input-city" style="width:100%; background:#090B0F; border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:7px 10px; font-size:0.82rem; color:#CBD5E1;" placeholder="Ex: Montreal, QC (laisser vide = rotation aléatoire)">
+                                        <input type="hidden" id="input-city-custom" value="">
+                                    </div>
+                                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.8rem; color:#CBD5E1; margin-top:2px;">
+                                        <input type="checkbox" id="input-auto-reachout" checked style="accent-color:var(--gold);">
+                                        <span>Audit IA & Séquence automatique dès découverte</span>
+                                    </label>
+                                    <button type="button" class="lead-action-btn primary" id="btn-run-agent" onclick="window.runManualHunterJobFromProspection()" style="width:100%; justify-content:center; padding:9px; font-weight:700; margin-top:4px; border-color:var(--gold); color:var(--gold);">
+                                        ${SEQ_SVGS.send} Lancer la recherche manuelle
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="hunter-preview-container" class="leads-grid" style="margin-top:14px; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px;"></div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- RIGHT COLUMN: Target Markets & Professions Reference Card -->
@@ -1392,6 +1379,8 @@ async function renderHunterAutoPilotModalTab() {
         body.innerHTML = `<div class="text-danger" style="text-align:center; padding:2rem;">Erreur : ${e.message}</div>`;
     }
 }
+
+window.runManualHunterJobFromProspection = runAgentJob;
 
 window.handleModalAutopilotToggle = (input) => {
     const isChecked = input.checked;
@@ -1513,6 +1502,19 @@ window.runModalHunterAutopilotNow = async () => {
                 industry: targetIndustry === 'CUSTOM' ? customIndustry : (targetIndustry !== 'ALL' ? targetIndustry : undefined)
             })
         });
+
+        if (!resp.ok) {
+            if (resp.status === 502 || resp.status === 504) {
+                window.showToast("⚡ Le cycle a été lancé et s'exécute en arrière-plan. Suivez l'avancement dans le Flux Live.", "info");
+                return;
+            }
+            let errText = `Erreur (${resp.status})`;
+            try {
+                const errData = await resp.json();
+                errText = errData.message || errData.error || errText;
+            } catch (_) {}
+            throw new Error(errText);
+        }
 
         const data = await resp.json();
         if (data.success) {
@@ -1941,6 +1943,12 @@ async function handleSaveSettings(newSettings) {
         const data = await resp.json();
         if (data.success) {
             sequenceSettings = { ...sequenceSettings, ...newSettings };
+            if (newSettings.dryRun !== undefined) {
+                window.isMasterDryRun = Boolean(newSettings.dryRun);
+                if (typeof window.setLeadsSubfilter === 'function') {
+                    window.setLeadsSubfilter(window.currentSubfilter || 'ALL', false);
+                }
+            }
         }
     } catch (e) {
         console.error("Save settings error:", e);
@@ -2271,9 +2279,32 @@ window.switchSequenceEditorLang = (lang) => {
         window.syncCurrentStepInputsToMemory(seq);
     }
 
-    // 2. Switch language and re-render
+    // 2. Switch language
     sequenceEditorLang = lang;
-    renderSequencesListTab();
+
+    // 3. Update modal header buttons styling if open
+    const btnFr = document.getElementById('btn-lang-fr');
+    const btnEn = document.getElementById('btn-lang-en');
+    if (btnFr) {
+        btnFr.style.background = lang === 'fr' ? 'rgba(223,165,58,0.2)' : 'transparent';
+        btnFr.style.color = lang === 'fr' ? 'var(--gold)' : '#94A3B8';
+        btnFr.style.borderColor = lang === 'fr' ? 'rgba(223,165,58,0.35)' : 'transparent';
+    }
+    if (btnEn) {
+        btnEn.style.background = lang === 'en' ? 'rgba(56,189,248,0.2)' : 'transparent';
+        btnEn.style.color = lang === 'en' ? '#38BDF8' : '#94A3B8';
+        btnEn.style.borderColor = lang === 'en' ? 'rgba(56,189,248,0.35)' : 'transparent';
+    }
+
+    // 4. Re-render modal steps if modal is open, preserving scroll position
+    const modalStepsContainer = document.getElementById('seq-modal-steps-container');
+    if (modalStepsContainer && seq) {
+        const prevScroll = modalStepsContainer.scrollTop;
+        renderModalSteps(seq);
+        modalStepsContainer.scrollTop = prevScroll;
+    } else {
+        renderSequencesListTab();
+    }
 };
 
 // --- COLLAPSIBLE ACCORDION STATE & ACTIONS ---
@@ -3067,6 +3098,48 @@ window.switchTriggerPreviewLang = (lang) => {
     }
 };
 
+function extractHumanFirstName(lead = {}) {
+    if (!lead || typeof lead !== 'object') return null;
+
+    const biz = String(lead.company || lead.business_name || '').trim().toLowerCase();
+    const candidates = [
+        lead.first_name,
+        lead.firstName,
+        lead.contact_name,
+        lead.contactName,
+        lead.manager_name,
+        lead.managerName,
+        lead.dm_name,
+        lead.dmName,
+        lead.contactPerson,
+        lead.contact_person,
+        lead.owner_name,
+        lead.ownerName
+    ];
+
+    const bizKeywords = /\b(inc|ltd|llc|corp|co|clinique|clinic|centre|center|spa|salon|garage|plomberie|toiture|rénovation|renovation|services|service|boutique|groupe|group|auto|esthetique|esthétique|chiro|dentaire|dentist|restaurant|bar|cafe|café|hôtel|hotel|motel|lavage|gym|studio|avocat|notaire|entrepôt|entrepot|tutorat|tutoring|school|academy|learning|wellness|nails|laser|solutions|consulting|marketing|agency|agence|management|transport|logistics|plumbing|roofing|construction|realty|realtor|electric|painting|landscaping|cleaning|security|physio|therapy|medical|dental|optical|florist|bakery|catering)\b/i;
+    const stopWords = /^(the|le|la|les|l'|un|une|des|a|an|du|de|d'|and|et|at|in|on|of|for|pour|par)$/i;
+
+    for (const cand of candidates) {
+        if (!cand || typeof cand !== 'string') continue;
+        const trimmed = cand.trim();
+        if (!trimmed) continue;
+        const lower = trimmed.toLowerCase();
+
+        if (biz && (lower === biz || biz.startsWith(lower) || biz.endsWith(lower) || biz.includes(lower))) continue;
+        if (bizKeywords.test(lower)) continue;
+
+        const firstWord = trimmed.split(/\s+/)[0].replace(/[^a-zA-ZÀ-ÿ-]/g, '');
+        if (!firstWord || firstWord.length < 2) continue;
+        if (stopWords.test(firstWord.toLowerCase())) continue;
+        if (bizKeywords.test(firstWord.toLowerCase())) continue;
+        if (biz && biz.includes(firstWord.toLowerCase())) continue;
+
+        return firstWord.charAt(0).toUpperCase() + firstWord.slice(1);
+    }
+    return null;
+}
+
 window.updateTriggerModalPreview = () => {
     const state = window._triggerModalState;
     if (!state || !state.lead) return;
@@ -3084,21 +3157,39 @@ window.updateTriggerModalPreview = () => {
     const isEn = state.leadLang === 'en';
     const rawTemplate = isEn ? (step1.template_en || step1.template || '') : (step1.template || step1.template_en || '');
 
-    // Variable substitutions
-    const fullName = lead.dm_name || lead.contact_name || lead.business_name || lead.name || '';
-    const firstName = fullName ? fullName.split(' ')[0] : (isEn ? 'there' : 'bonjour');
+    // Variable substitutions - NEVER use company name as person's name!
+    const humanName = extractHumanFirstName(lead);
     const company = lead.business_name || lead.company || lead.name || (isEn ? 'your company' : 'votre entreprise');
     const city = lead.city || (isEn ? 'your area' : 'votre région');
     const industry = lead.industry || lead.category || lead.leadCategory || (isEn ? 'your industry' : 'votre activité');
     const website = lead.website || '';
 
-    const rendered = rawTemplate
-        .replace(/\{\{\s*name\s*\}\}/gi, fullName || firstName)
-        .replace(/\{\{\s*first_name\s*\}\}/gi, firstName)
+    let rendered = rawTemplate;
+    if (humanName) {
+        rendered = rendered
+            .replace(/\{\{\s*name\s*\}\}/gi, humanName)
+            .replace(/\{\{\s*first_name\s*\}\}/gi, humanName);
+    } else {
+        if (isEn) {
+            rendered = rendered
+                .replace(/^(Hey|Hi|Hello)\s+\{\{\s*(name|first_name)\s*\}\},?\s*/i, '$1, ')
+                .replace(/,\s*\{\{\s*(name|first_name)\s*\}\}/gi, '')
+                .replace(/\{\{\s*(name|first_name)\s*\}\},?\s*/gi, '');
+        } else {
+            rendered = rendered
+                .replace(/^(Bonjour|Allo|Salut|Rebonjour)\s+\{\{\s*(name|first_name)\s*\}\},?\s*/i, '$1, ')
+                .replace(/,\s*\{\{\s*(name|first_name)\s*\}\}/gi, '')
+                .replace(/\{\{\s*(name|first_name)\s*\}\},?\s*/gi, '');
+        }
+    }
+
+    rendered = rendered
         .replace(/\{\{\s*company\s*\}\}/gi, company)
         .replace(/\{\{\s*city\s*\}\}/gi, city)
         .replace(/\{\{\s*industry\s*\}\}/gi, industry)
-        .replace(/\{\{\s*website\s*\}\}/gi, website);
+        .replace(/\{\{\s*website\s*\}\}/gi, website)
+        .replace(/\s{2,}/g, ' ')
+        .trim();
 
     const previewEl = document.getElementById('trigger-modal-preview-text');
     if (previewEl) {

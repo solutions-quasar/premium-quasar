@@ -198,7 +198,7 @@ const CONFIG = {
             namePlaceholder: { en: "John Doe", fr: "Jean Dupont" },
             email: { en: "Email Address *", fr: "Adresse Courriel *" },
             emailPlaceholder: { en: "john@example.com", fr: "jean@exemple.com" },
-            phone: { en: "Phone / Mobile *", fr: "Téléphone / Mobile *" },
+            phone: { en: "Phone / Mobile (Optional)", fr: "Téléphone / Mobile (Optionnel)" },
             phonePlaceholder: { en: "+1 (506) 233-7006", fr: "+1 (506) 233-7006" },
             company: { en: "Firm / Company (Optional)", fr: "Cabinet / Entreprise (Optionnel)" },
             companyPlaceholder: { en: "Miller Law Group", fr: "Cabinet Juridique Miller" },
@@ -1349,16 +1349,25 @@ function setupForm() {
         btn.disabled = true;
 
         const formData = new FormData(form);
+        const pagePath = window.location.pathname.toLowerCase();
+        let pageTopic = 'Strategy Call';
+        if (pagePath.includes('websites')) pageTopic = 'Websites';
+        else if (pagePath.includes('mobile')) pageTopic = 'Mobile Apps';
+        else if (pagePath.includes('apps')) pageTopic = 'Custom Software';
+        else if (pagePath.includes('ai')) pageTopic = 'AI Solutions';
+        else if (pagePath.includes('marketing')) pageTopic = 'Marketing & SEO';
+        else if (pagePath.includes('clients')) pageTopic = 'Client Inquiry';
+
         // --- HANDLE SUBMISSION ---
         const payload = {
-            name: formData.get('name'),
-            email: formData.get('email'),
-            phone: formData.get('phone'),
-            company: formData.get('company'),
-            contact_method: formData.get('phone') || formData.get('email') || formData.get('contact_method') || formData.get('contact'),
+            name: (formData.get('name') || '').trim(),
+            email: (formData.get('email') || '').trim(),
+            phone: (formData.get('phone') || '').trim(),
+            company: (formData.get('company') || '').trim(),
+            contact_method: ((formData.get('email') || formData.get('phone') || formData.get('contact_method') || formData.get('contact') || '')).trim(),
             sms_consent: formData.get('sms_consent') === 'on' || formData.get('sms_consent') === 'true',
-            interest: formData.get('interest'),
-            message: formData.get('message'),
+            interest: (formData.get('interest') || '').trim() || pageTopic,
+            message: (formData.get('message') || '').trim(),
             lang: currentLang, // PASS LANGUAGE
             _gotcha: formData.get('_gotcha')
         };

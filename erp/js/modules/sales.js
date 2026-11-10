@@ -353,10 +353,52 @@ window.updateTaxRuleDetail = (ruleIndex, taxIndex, field, value) => {
     saveSalesSettings();
 };
 
+// Add Snippet helper
+window.showPromptModal = window.showPromptModal || function ({ title = 'Saisie', label = '', placeholder = '', defaultValue = '', isTextarea = false, confirmText = 'Confirmer', cancelText = 'Annuler' } = {}) {
+    return new Promise((resolve) => {
+        const existing = document.getElementById('app-native-prompt-modal');
+        if (existing) existing.remove();
+
+        const modalHtml = `
+        <div id="app-native-prompt-modal" class="crm-modal-overlay" style="z-index:10050; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.85); position:fixed; top:0; left:0; width:100vw; height:100vh; backdrop-filter:blur(8px);">
+            <div class="crm-modal-content" style="width:90%; max-width:440px; background:#12141A; border:1px solid rgba(223,165,58,0.4); border-radius:14px; padding:24px; box-shadow:0 20px 60px rgba(0,0,0,0.9);">
+                <h4 style="margin:0 0 12px 0; color:var(--gold); font-size:1.15rem; font-weight:700;">${title}</h4>
+                ${label ? `<div style="color:var(--text-muted); font-size:0.85rem; margin-bottom:10px; white-space:pre-wrap;">${label}</div>` : ''}
+                ${isTextarea
+                    ? `<textarea id="app-prompt-input" class="form-input" rows="4" placeholder="${placeholder}" style="margin-bottom:18px;">${defaultValue}</textarea>`
+                    : `<input type="text" id="app-prompt-input" class="form-input" placeholder="${placeholder}" value="${defaultValue}" style="margin-bottom:18px;">`
+                }
+                <div style="display:flex; justify-content:flex-end; gap:10px;">
+                    <button class="btn btn-secondary" id="app-prompt-cancel-btn">${cancelText}</button>
+                    <button class="btn btn-primary" id="app-prompt-ok-btn">${confirmText}</button>
+                </div>
+            </div>
+        </div>`;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const inputEl = document.getElementById('app-prompt-input');
+        if (inputEl) inputEl.focus();
+
+        const close = (val) => {
+            document.getElementById('app-native-prompt-modal')?.remove();
+            resolve(val);
+        };
+
+        document.getElementById('app-prompt-cancel-btn').onclick = () => close(null);
+        document.getElementById('app-prompt-ok-btn').onclick = () => close(inputEl ? inputEl.value.trim() : null);
+        if (inputEl && !isTextarea) {
+            inputEl.onkeydown = (e) => {
+                if (e.key === 'Enter') close(inputEl.value.trim());
+                if (e.key === 'Escape') close(null);
+            };
+        }
+    });
+};
+
+// Add Snippet helper
 window.addSnippet = async () => {
-    const key = prompt("Enter Snippet Title (e.g. 'Intro'):");
+    const key = await window.showPromptModal({ title: "New Snippet", label: "Enter Snippet Title (e.g. 'Intro'):", placeholder: "Intro" });
     if (!key) return;
-    const val = prompt("Enter Snippet Content:", "...");
+    const val = await window.showPromptModal({ title: "Snippet Content", label: "Enter Snippet Content:", defaultValue: "", isTextarea: true });
     if (!val) return;
 
     if (!window.salesSettings.snippets) window.salesSettings.snippets = {};
@@ -403,7 +445,7 @@ async function loadSalesList() {
             const itemJson = encodeURIComponent(JSON.stringify({ ...data, id })).replace(/'/g, "%27");
 
             // Format Currency
-            const total = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(data.total || 0);
+            const total = new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(data.total || 0);
             const date = data.createdAt ? new Date(data.createdAt).toLocaleDateString() : 'N/A';
 
             html += `
@@ -477,7 +519,7 @@ const SALES_SNIPPETS_DEFAULT = {
 // --- LISTENERS ---
 
 window.saveAsTemplate = async () => {
-    const name = prompt("Enter a name for this template:");
+    const name = await window.showPromptModal({ title: "Save Template", label: "Enter a name for this template:", placeholder: "Standard Web Package" });
     if (!name) return;
 
     const item = {
@@ -500,7 +542,7 @@ window.loadTemplate = async () => {
     const q = query(collection(db, "quote_templates"));
     const snap = await getDocs(q);
 
-    if (snap.empty) return alert("No templates found.");
+    if (snap.empty) return window.showToast("No templates found.", "warning");
 
     let msg = "Type the ID of the template to load:\n";
     const templates = {};
@@ -509,14 +551,14 @@ window.loadTemplate = async () => {
         msg += `- ${doc.data().name} [ID: ${doc.id}]\n`;
     });
 
-    const id = prompt(msg);
+    const id = await window.showPromptModal({ title: "Load Template", label: msg, placeholder: "Template ID" });
     if (id && templates[id]) {
         const t = templates[id];
         window.currentSalesItems = t.items;
         document.getElementById('sales-notes').value = t.notes || '';
         renderSalesItems();
     } else if (id) {
-        alert("Invalid ID");
+        window.showToast("Invalid ID", "error");
     }
 };
 
@@ -1058,7 +1100,7 @@ window.updateTotalDisplay = () => {
     const totalDisplay = document.getElementById('sales-total-display');
     const subtotalDisplay = document.getElementById('sales-subtotal-display');
 
-    const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+    const fmt = new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' });
 
     if (totalDisplay) totalDisplay.innerText = fmt.format(total);
     if (subtotalDisplay) subtotalDisplay.innerText = fmt.format(subtotal);

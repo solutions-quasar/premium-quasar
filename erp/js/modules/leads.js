@@ -38,19 +38,30 @@ export const SVG_ICONS = {
 // --- MODULE STATE & PERSISTENCE ---
 let currentSubfilter = 'ALL';
 let currentMainFilter = 'NEW';
+let currentLeadsPage = 1;
+let leadsPageSize = (() => {
+    try {
+        const stored = parseInt(localStorage.getItem('erp_leads_page_size'), 10);
+        return [25, 50, 100, 250].includes(stored) ? stored : 25;
+    } catch (_) {
+        return 25;
+    }
+})();
 
 export function getLeadsUrlParams() {
     const rawHash = window.location.hash || '';
     const qIndex = rawHash.indexOf('?');
     if (qIndex === -1) {
-        return { filter: null, sub: null, id: null };
+        return { filter: null, sub: null, id: null, page: 1 };
     }
     const queryString = rawHash.slice(qIndex + 1);
     const params = new URLSearchParams(queryString);
+    const pageVal = parseInt(params.get('page'), 10);
     return {
         filter: params.get('filter') ? params.get('filter').toUpperCase() : null,
         sub: params.get('sub') ? params.get('sub').toUpperCase() : null,
-        id: params.get('id') || null
+        id: params.get('id') || null,
+        page: !isNaN(pageVal) && pageVal > 0 ? pageVal : 1
     };
 }
 window.getLeadsUrlParams = getLeadsUrlParams;
@@ -83,6 +94,11 @@ export function updateLeadsUrlParams(newParams = {}, replace = false) {
         nextId = newParams.id;
     }
 
+    let nextPage = current.page;
+    if (newParams.page !== undefined) {
+        nextPage = newParams.page;
+    }
+
     const searchParams = new URLSearchParams();
     if (nextFilter) {
         searchParams.set('filter', nextFilter);
@@ -92,6 +108,9 @@ export function updateLeadsUrlParams(newParams = {}, replace = false) {
     }
     if (nextId) {
         searchParams.set('id', nextId);
+    }
+    if (nextPage && nextPage > 1) {
+        searchParams.set('page', nextPage);
     }
 
     const queryStr = searchParams.toString();
@@ -112,6 +131,7 @@ export function switchLeadsTab(filter, syncUrl = true) {
     const targetFilter = validFilters.includes(filter) ? filter : 'NEW';
 
     currentMainFilter = targetFilter;
+    currentLeadsPage = 1;
     localStorage.setItem('erp_leads_active_tab', targetFilter);
 
     const buttons = document.querySelectorAll('button[data-filter]');
@@ -125,7 +145,7 @@ export function switchLeadsTab(filter, syncUrl = true) {
     });
 
     if (syncUrl) {
-        updateLeadsUrlParams({ filter: targetFilter });
+        updateLeadsUrlParams({ filter: targetFilter, page: 1 });
     }
 
     loadLeads(targetFilter);
@@ -143,7 +163,7 @@ window.addEventListener('hashchange', () => {
     const rawHash = window.location.hash || '';
     if (!rawHash.startsWith('#leads')) return;
 
-    const { filter, sub, id } = getLeadsUrlParams();
+    const { filter, sub, id, page } = getLeadsUrlParams();
     const overlay = document.getElementById('lead-detail-overlay');
 
     // 1. Overlay state sync:
@@ -163,12 +183,22 @@ window.addEventListener('hashchange', () => {
 
     // 2. Tab filter state sync:
     if (filter && filter !== currentMainFilter) {
+        currentLeadsPage = page || 1;
         switchLeadsTab(filter, false);
+        return;
     }
 
     // 3. Subfilter state sync:
     if (sub && sub !== currentSubfilter && typeof window.setLeadsSubfilter === 'function') {
+        currentLeadsPage = page || 1;
         window.setLeadsSubfilter(sub, false);
+        return;
+    }
+
+    // 4. Page change sync:
+    if (page && page !== currentLeadsPage) {
+        currentLeadsPage = page;
+        renderLeads(window.currentFilteredLeads || window.allLeadsCache);
     }
 });
 
@@ -192,26 +222,76 @@ const escapeHtml = (text) => {
         .replace(/'/g, "&#039;");
 };
 
+// Helper: Check if status belongs to the Archived / Rejected / Excluded bucket
+function isArchivedOrExcludedStatus(status) {
+    const s = String(status || '').toUpperCase().trim();
+    return s === 'REJECTED' || s === 'ARCHIVED' || s === 'EXCLUDED / FRANCHISE' || s === 'EXCLUDED_FRANCHISE';
+}
+
+// Helper: Resolve canonical lead pipeline status across legacy, mixed-case, and sequence states
+export function getLeadCanonicalStatus(lead) {
+    if (!lead) return 'NEW';
+    if (typeof lead === 'string') {
+        const s = lead.toUpperCase().trim();
+        if (s === 'REPLIED' || s === 'INTERESTED') return 'INTERESTED';
+        if (s === 'MEETING_SCHEDULED' || s === 'MEETING SCHEDULED') return 'MEETING_SCHEDULED';
+        if (s === 'CONTACTED') return 'CONTACTED';
+        if (s === 'APPROVED') return 'APPROVED';
+        if (s === 'COLD_NURTURE') return 'COLD_NURTURE';
+        if (s === 'CLIENT') return 'CLIENT';
+        if (isArchivedOrExcludedStatus(s)) return 'REJECTED';
+        if (s === 'AUDITED' || s === 'AMBIGUOUS MATCH / REVIEW') return 'AUDITED';
+        return s || 'NEW';
+    }
+
+    const norm = String(lead.status || 'NEW').toUpperCase().trim();
+    const seqStatus = String(lead.sequenceStatus || '').toUpperCase().trim();
+    const smsStatus = String(lead.smsStatus || '').trim();
+
+    if (norm === 'CLIENT') return 'CLIENT';
+    if (norm === 'MEETING_SCHEDULED' || norm === 'MEETING SCHEDULED' || seqStatus === 'STOPPED_MEETING' || smsStatus === 'Appointment Booked') return 'MEETING_SCHEDULED';
+    if (norm === 'INTERESTED' || norm === 'REPLIED' || smsStatus === 'Replied') return 'INTERESTED';
+    if (isArchivedOrExcludedStatus(lead.status)) return 'REJECTED';
+
+    // If an outbound SMS was sent, or step >= 1, or marked Contacted, this lead IS CONTACTED
+    if (norm === 'CONTACTED' || lead.smsStatus === 'Sent' || Boolean(lead.lastSmsSent) || Number(lead.smsSequenceStep || 0) >= 1) {
+        return 'CONTACTED';
+    }
+
+    if (norm === 'COLD_NURTURE') return 'COLD_NURTURE';
+    if (norm === 'APPROVED') return 'APPROVED';
+    if (norm === 'AUDITED' || norm === 'AMBIGUOUS MATCH / REVIEW') return 'AUDITED';
+    return 'NEW';
+}
+window.getLeadCanonicalStatus = getLeadCanonicalStatus;
+
 // Helper: Format status badge styling & label
 function getStatusConfig(status) {
-    const s = (status || 'NEW').toUpperCase();
+    const s = getLeadCanonicalStatus(status);
     switch (s) {
         case 'NEW':
             return { label: 'Nouveau', className: 'lead-status-new', color: 'var(--gold)' };
         case 'AUDITED':
             return { label: 'Audité IA', className: 'lead-status-audited', color: '#C084FC' };
+        case 'AMBIGUOUS MATCH / REVIEW':
+            return { label: 'À Vérifier IA', className: 'lead-status-audited', color: '#FBBF24' };
         case 'APPROVED':
             return { label: 'Approuvé', className: 'lead-status-approved', color: 'var(--success)' };
         case 'CONTACTED':
             return { label: 'Contacté', className: 'lead-status-contacted', color: '#60A5FA' };
         case 'INTERESTED':
+        case 'REPLIED':
             return { label: 'Intéressé', className: 'lead-status-interested', color: '#FB923C' };
         case 'COLD_NURTURE':
             return { label: 'Nurturing', className: 'lead-status-nurture', color: '#10B981' };
         case 'MEETING_SCHEDULED':
+        case 'MEETING SCHEDULED':
             return { label: 'RDV Fixé', className: 'lead-status-meeting', color: '#C084FC' };
         case 'CLIENT':
             return { label: 'Client', className: 'lead-status-client', color: '#22C55E' };
+        case 'EXCLUDED / FRANCHISE':
+        case 'EXCLUDED_FRANCHISE':
+            return { label: 'Franchise Exclue', className: 'lead-status-rejected', color: '#F87171' };
         case 'ARCHIVED':
             return { label: 'Archivé (6 mois)', className: 'lead-status-rejected', color: '#94A3B8' };
         case 'REJECTED':
@@ -298,7 +378,7 @@ function formatScoreBadge(data) {
 function formatSequenceBadge(data) {
     const seqId = data.activeSequenceId || data.sequence_id;
     const seqStatus = data.sequenceStatus || data.sms_sequence_status;
-    const step = data.smsSequenceStep || data.sms_sequence_step || 1;
+    const normStatus = String(data.status || '').toUpperCase().trim();
 
     const seqNames = {
         'seq_directory_only': 'Annuaire Tierce',
@@ -308,7 +388,7 @@ function formatSequenceBadge(data) {
         'seq_modern_no_ai': 'Agent IA 24/7'
     };
 
-    if (seqStatus === 'STOPPED_MEETING' || data.status === 'MEETING_SCHEDULED') {
+    if (seqStatus === 'STOPPED_MEETING' || normStatus === 'MEETING_SCHEDULED') {
         return `<span class="lead-pill-subtle" style="background:rgba(192,132,252,0.15); border-color:rgba(192,132,252,0.3); color:#C084FC;" title="Rendez-vous fixé avec le prospect">${SVG_ICONS.calendar || '📅'} RDV Fixé</span>`;
     }
     if (data.stalledStatus || data.stalledState) {
@@ -335,18 +415,32 @@ function formatSequenceBadge(data) {
             return `<span class="lead-pill-subtle" style="background:rgba(100,116,139,0.15); border-color:rgba(100,116,139,0.3); color:#94A3B8;" title="Archivé automatiquement après 6 mois sans réponse (LCAP/CASL)">📁 Archivé (6 mois)</span>`;
         }
     }
-    if (seqStatus === 'STOPPED_REPLIED' || data.smsStatus === 'Replied' || data.status === 'INTERESTED') {
-        return `<span class="lead-pill-subtle" style="background:rgba(56,189,248,0.1); border-color:rgba(56,189,248,0.3); color:#38BDF8;" title="Le prospect a répondu">${SVG_ICONS.sms} ✋ Répondu</span>`;
+    if (seqStatus === 'STOPPED_REPLIED' || data.smsStatus === 'Replied' || normStatus === 'INTERESTED') {
+        const safePhone = (data.phone || '').replace(/'/g, "\\'");
+        const safeName = (data.business_name || data.name || '').replace(/'/g, "\\'");
+        return `<span class="lead-pill-subtle lead-pill-interactive" onclick="event.stopPropagation(); window.navigateToSmsConversation('${data.id}', '${safePhone}', '${safeName}')" style="background:rgba(56,189,248,0.12); border:1px solid rgba(56,189,248,0.4); color:#38BDF8; cursor:pointer; display:inline-flex; align-items:center; gap:3px;" title="💬 Le prospect a répondu ! Cliquer pour ouvrir la conversation SMS en direct ↗">${SVG_ICONS.sms} ✋ Répondu <span class="material-icons" style="font-size:11px; vertical-align:middle; opacity:0.85;">open_in_new</span></span>`;
     }
     if (seqStatus === 'BLOCKED_LANDLINE') {
         return `<span class="lead-pill-subtle" style="background:rgba(148,163,184,0.1); border-color:rgba(148,163,184,0.25); color:#94A3B8;" title="Ligne fixe : SMS bloqué pour protéger votre réputation">${SVG_ICONS.phone} Fixe (Pas de SMS)</span>`;
     }
+    if (seqStatus === 'COMPLETED') {
+        const shortName = seqNames[seqId] || 'Séquence';
+        const total = data.totalSequenceSteps || 4;
+        return `<span class="lead-pill-subtle" style="background:rgba(16,185,129,0.12); border-color:rgba(16,185,129,0.3); color:#34D399;" title="Séquence SMS complétée (${total}/${total} étapes envoyées)">${SVG_ICONS.sms} Seq: ${shortName} (${total}/${total} finie)</span>`;
+    }
     if (seqStatus === 'ACTIVE') {
         const shortName = seqNames[seqId] || 'Séquence';
+        const sentSteps = Number(data.smsSequenceStep || data.sms_sequence_step || 0);
+        const nextStep = Number(data.nextStepNumber || 1);
+        const totalSteps = Number(data.totalSequenceSteps || 4);
         const modeLabel = data.smsStatus ? ` (${data.smsStatus})` : '';
-        return `<span class="lead-pill-subtle" style="background:rgba(223,165,58,0.12); border-color:rgba(223,165,58,0.3); color:var(--gold);" title="Séquence SMS active : ${shortName} (Étape ${step}/4${modeLabel})">${SVG_ICONS.sms} Seq: ${shortName} (Étape ${step})</span>`;
+        const isAwaitingStep1 = sentSteps === 0 || (nextStep === 1 && normStatus === 'APPROVED');
+        const stepProgressLabel = isAwaitingStep1
+            ? `Étape 1/${totalSteps} prog.`
+            : `Étape ${sentSteps}/${totalSteps} envoyé`;
+        return `<span class="lead-pill-subtle" style="background:rgba(223,165,58,0.12); border-color:rgba(223,165,58,0.3); color:var(--gold);" title="Séquence SMS active : ${shortName} (${stepProgressLabel}${modeLabel})">${SVG_ICONS.sms} Seq: ${shortName} (${stepProgressLabel})</span>`;
     }
-    if (data.status === 'CONTACTED') {
+    if (normStatus === 'CONTACTED') {
         return `<span class="lead-pill-subtle" style="background:rgba(59,130,246,0.1); border-color:rgba(59,130,246,0.2); color:#60A5FA;">${SVG_ICONS.gmail} Contacté</span>`;
     }
     return '';
@@ -381,6 +475,9 @@ function formatLeadScheduleTime(date, timezone) {
 
 // Helper: Format Next Send Badge for Leads Table Row
 function formatNextSendBadge(data) {
+    const normStatus = String(data.status || '').toUpperCase().trim();
+    const isMasterPaused = window.isMasterAutoSmsEnabled === false;
+
     // 0. Lead has an active Autonomous AI Follow-up scheduled (100% Autonome)
     if (data.hasScheduledFollowup && data.nextFollowupDue) {
         const fuDate = new Date(data.nextFollowupDue);
@@ -396,12 +493,32 @@ function formatNextSendBadge(data) {
     }
 
     // 1. Lead has an active next send timestamp
-    if (data.nextStepDue && data.sequenceStatus === 'ACTIVE' && data.status !== 'MEETING_SCHEDULED' && data.status !== 'INTERESTED') {
+    if (data.nextStepDue && data.sequenceStatus === 'ACTIVE' && normStatus !== 'MEETING_SCHEDULED' && normStatus !== 'INTERESTED' && !isArchivedOrExcludedStatus(normStatus)) {
         const d = new Date(data.nextStepDue);
         if (!isNaN(d.getTime())) {
             const timeStr = formatLeadScheduleTime(d, data.timezone);
             const stepNum = data.nextStepNumber || data.smsSequenceStep || 1;
-            const isSimulated = data.smsStatus === 'Simulated' || data.dryRun !== false;
+            const isSimulated = (window.isMasterDryRun === true) || (data.dryRun === true);
+            const isPastOrDue = d.getTime() <= Date.now();
+
+            if (isPastOrDue && isMasterPaused) {
+                return `
+                <div class="lead-schedule-pill" style="display:inline-flex; align-items:center; gap:4px; font-size:0.71rem; font-weight:600; color:#F59E0B; background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.25); border-radius:5px; padding:2px 7px; margin-top:3px; white-space:nowrap;" title="Étape ${stepNum} arrivée à échéance (${timeStr}) mais SMS Auto est en pause">
+                    <span style="font-size:10px;">⏸️</span>
+                    <span>Étape ${stepNum} en pause (${timeStr})</span>
+                </div>
+                `;
+            }
+
+            if (isPastOrDue) {
+                return `
+                <div class="lead-schedule-pill" onclick="event.stopPropagation(); window.runSmsSequenceHeartbeat && window.runSmsSequenceHeartbeat(true)" style="display:inline-flex; align-items:center; gap:4px; font-size:0.71rem; font-weight:600; color:#4ADE80; background:rgba(34,197,94,0.1); border:1px solid rgba(34,197,94,0.3); border-radius:5px; padding:2px 7px; margin-top:3px; white-space:nowrap; cursor:pointer;" title="Échéance atteinte (${timeStr}) — Cliquer pour traiter immédiatement ou en attente du prochain créneau légal">
+                    <span style="font-size:10px;">⚡</span>
+                    <span>Étape ${stepNum} : <strong>Envoi en cours (${timeStr})</strong></span>
+                    ${isSimulated ? `<span style="font-size:0.62rem; padding:0 3px; border-radius:3px; background:rgba(242,192,55,0.18); color:#F2C037; font-weight:700;">SIMU</span>` : ''}
+                </div>
+                `;
+            }
 
             return `
             <div class="lead-schedule-pill" style="display:inline-flex; align-items:center; gap:4px; font-size:0.71rem; font-weight:600; color:#38BDF8; background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.25); border-radius:5px; padding:2px 7px; margin-top:3px; white-space:nowrap;" title="Étape ${stepNum} programmée dans le fuseau du prospect (${data.timezone || 'Local'}) : ${d.toLocaleString()}">
@@ -413,13 +530,20 @@ function formatNextSendBadge(data) {
         }
     }
 
-    // 2. Lead is APPROVED with verified mobile phone, ready for sequence trigger
-    if (data.status === 'APPROVED' && data.phone_type === 'mobile') {
-        const isMasterPaused = window.isMasterAutoSmsEnabled === false;
+    // 2. Lead is APPROVED with verified mobile phone, but no sequence is active yet
+    if (normStatus === 'APPROVED' && data.phone_type === 'mobile' && !data.sequenceStatus) {
+        if (isMasterPaused) {
+            return `
+            <div class="lead-schedule-pill" style="display:inline-flex; align-items:center; gap:4px; font-size:0.7rem; color:#F59E0B; background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.22); border-radius:5px; padding:2px 7px; margin-top:3px; white-space:nowrap;" title="Envois automatiques suspendus (Switch SMS en pause)">
+                <span>⏸️</span>
+                <span>SMS Auto en pause</span>
+            </div>
+            `;
+        }
         return `
-        <div class="lead-schedule-pill" style="display:inline-flex; align-items:center; gap:4px; font-size:0.7rem; color:${isMasterPaused ? '#F59E0B' : '#4ADE80'}; background:${isMasterPaused ? 'rgba(245,158,11,0.08)' : 'rgba(34,197,94,0.08)'}; border:1px solid ${isMasterPaused ? 'rgba(245,158,11,0.22)' : 'rgba(34,197,94,0.22)'}; border-radius:5px; padding:2px 7px; margin-top:3px; white-space:nowrap;" title="${isMasterPaused ? 'Envois automatiques suspendus (Switch SMS en pause)' : 'Mobile qualifié, prêt pour envoi lundi matin'}">
-            <span>${isMasterPaused ? '⏸️' : '⚡'}</span>
-            <span>${isMasterPaused ? 'SMS Auto en pause' : 'Prêt pour Lundi 09h36'}</span>
+        <div class="lead-schedule-pill" onclick="event.stopPropagation(); window.enrollLeadSequenceFromRow && window.enrollLeadSequenceFromRow('${data.id}')" style="display:inline-flex; align-items:center; gap:4px; font-size:0.7rem; color:#FBBF24; background:rgba(251,191,36,0.1); border:1px solid rgba(251,191,36,0.3); border-radius:5px; padding:2px 7px; margin-top:3px; white-space:nowrap; cursor:pointer;" title="Aucune séquence active sur ce mobile qualifié — Cliquer pour programmer la séquence maintenant">
+            <span>⚡</span>
+            <span>Programmer la séquence SMS</span>
         </div>
         `;
     }
@@ -491,11 +615,11 @@ export async function initLeads() {
                     ${SVG_ICONS.plus} <span>Nouveau Lead</span>
                 </button>
                 
-                <button class="btn btn-secondary" onclick="window.openSequencesConfigModal()" style="display:flex; align-items:center; gap:6px; height:36px; padding:0 12px; font-size:0.82rem;" title="Configurer le prompt IA, les séquences SMS et les templates d'accroche">
+                <button class="btn btn-secondary" onclick="window.openSequencesConfigModal('list')" style="display:flex; align-items:center; gap:6px; height:36px; padding:0 12px; font-size:0.82rem;" title="Configurer le prompt IA, les séquences SMS et les templates d'accroche">
                     <span style="color:var(--gold); display:flex;">${SVG_ICONS.settings}</span> <span>Séquences & IA</span>
                 </button>
 
-                <button class="btn btn-outline-gold" onclick="window.location.hash='#leadhunter'" style="display:flex; align-items:center; gap:6px; height:36px; padding:0 14px; font-size:0.82rem; font-weight:600;">
+                <button class="btn btn-outline-gold" onclick="window.openSequencesConfigModal('hunter')" style="display:flex; align-items:center; gap:6px; height:36px; padding:0 14px; font-size:0.82rem; font-weight:600;">
                     ${SVG_ICONS.target} <span>Lead Hunter</span>
                 </button>
             </div>
@@ -601,6 +725,9 @@ export async function initLeads() {
     const validSubs = ['ALL', 'MOBILE', 'LANDLINE', 'UNKNOWN'];
     if (!validSubs.includes(initialSub)) initialSub = 'ALL';
 
+    const initialPage = urlParams.page || 1;
+    currentLeadsPage = initialPage;
+
     currentMainFilter = initialFilter;
     currentSubfilter = initialSub;
     localStorage.setItem('erp_leads_active_tab', initialFilter);
@@ -617,7 +744,7 @@ export async function initLeads() {
     });
 
     // Sync URL with current filters
-    updateLeadsUrlParams({ filter: initialFilter, sub: initialSub, id: urlParams.id }, true);
+    updateLeadsUrlParams({ filter: initialFilter, sub: initialSub, id: urlParams.id, page: initialPage }, true);
 
     const initialBtn = Array.from(buttons).find(b => b.dataset.filter === initialFilter) || buttons[0];
 
@@ -643,6 +770,7 @@ export async function initLeads() {
 
 // Subfilter & Master Toggle State
 window.setLeadsSubfilter = (subfilter, syncUrl = true) => {
+    currentLeadsPage = 1;
     const validSubs = ['ALL', 'MOBILE', 'LANDLINE', 'UNKNOWN'];
     currentSubfilter = validSubs.includes(subfilter) ? subfilter : 'ALL';
     localStorage.setItem('erp_leads_active_subfilter', currentSubfilter);
@@ -657,7 +785,7 @@ window.setLeadsSubfilter = (subfilter, syncUrl = true) => {
     });
 
     if (syncUrl) {
-        updateLeadsUrlParams({ sub: currentSubfilter });
+        updateLeadsUrlParams({ sub: currentSubfilter, page: 1 });
     }
 
     applyCurrentSubfilter();
@@ -701,8 +829,128 @@ function updateSubfilterCounts(leads) {
     if (elUnknown) elUnknown.textContent = countUnknown;
 }
 
-// Master Switch: Load, Update UI, Toggle
+// Master Switch: Load, Update UI, Toggle & Sequence Heartbeat
 window.isMasterAutoSmsEnabled = true;
+window.isMasterDryRun = false;
+let smsHeartbeatInterval = null;
+let isRunningSmsHeartbeat = false;
+
+window.enrollLeadSequenceFromRow = async (leadId, silent = false) => {
+    if (!leadId) return false;
+    const lead = (masterLeadsCache || []).find(l => l.id === leadId) || (window.allLeadsCache || []).find(l => l.id === leadId);
+    if (!lead) return false;
+
+    try {
+        // Heal legacy CASL REVIEW status on public GMB/directory leads without anti-solicitation restriction
+        if (lead.casl && lead.casl.status === 'REVIEW' && lead.casl.no_solicitation_restriction_found !== true) {
+            const updatedCasl = {
+                ...lead.casl,
+                status: 'ELIGIBLE',
+                notes: 'Numéro d\'affaires publié publiquement sur sa fiche Google Business officielle sans restriction de sollicitation. Conforme LCAP art. 10(9)(b).'
+            };
+            await updateDoc(doc(db, "leads", leadId), { casl: updatedCasl });
+            syncLeadInAllCaches(leadId, { casl: updatedCasl });
+        }
+
+        const validSeqCats = ['missing_gmb_website', 'directory_only', 'no_website', 'outdated_website', 'modern_no_ai', 'social_only'];
+        const rawCat = String(lead.leadCategory || lead.auditProfile || lead.sequenceCategory || '').toLowerCase().trim();
+        const hasWeb = Boolean(lead.website && String(lead.website).trim() !== '');
+        let cat = validSeqCats.includes(rawCat)
+            ? rawCat
+            : (lead.has_directory_only ? 'directory_only' : (hasWeb ? 'modern_no_ai' : 'no_website'));
+        if (!hasWeb && (cat === 'modern_no_ai' || cat === 'outdated_website')) cat = 'no_website';
+        if (hasWeb && !lead.has_directory_only && cat === 'no_website') cat = 'modern_no_ai';
+        const sequenceId = `seq_${cat}`;
+        const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+
+        const resp = await fetch(`${API_BASE}/api/sequences/trigger`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ leadId, sequenceId })
+        });
+        const resData = await resp.json();
+        if (resData && resData.success) {
+            syncLeadInAllCaches(leadId, {
+                activeSequenceId: sequenceId,
+                sequenceName: resData.sequenceName || sequenceId,
+                sequenceInstanceId: resData.instanceId,
+                sequenceStatus: 'ACTIVE',
+                smsSequenceStep: 0,
+                nextStepDue: resData.firstStepDue,
+                nextStepNumber: 1
+            });
+            if (!silent && window.showToast) {
+                window.showToast(`Séquence SMS programmée pour ${lead.business_name || 'ce prospect'} !`, 'success');
+            }
+            renderLeads(window.currentFilteredLeads || window.allLeadsCache);
+            return true;
+        } else if (!silent && window.showToast) {
+            window.showToast(resData?.reason || resData?.error || "Impossible de programmer la séquence", "warning");
+        }
+    } catch (err) {
+        console.warn("[Enroll Sequence Error]:", err.message);
+        if (!silent && window.showToast) {
+            window.showToast("Erreur lors de la programmation de la séquence", "error");
+        }
+    }
+    return false;
+};
+
+window.runSmsSequenceHeartbeat = async (manualNotify = false) => {
+    if (isRunningSmsHeartbeat) return;
+    if (window.isMasterAutoSmsEnabled === false && !manualNotify) return;
+    isRunningSmsHeartbeat = true;
+
+    try {
+        const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+        if (!token) return;
+
+        // 1. Trigger server-side due sequence processor & auto-enroller
+        try {
+            const resp = await fetch(`${API_BASE}/api/sequences/process-due`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            if (resp.ok) {
+                const data = await resp.json();
+                if (manualNotify && window.showToast) {
+                    window.showToast(`Synchronisation SMS terminée (${data.processedCount || 0} envoyé(s), ${data.enrolledCount || 0} programmé(s))`, 'success');
+                }
+            }
+        } catch (_) {}
+
+        // 2. Client-side safety net: auto-enroll up to 4 APPROVED mobile leads missing a sequence
+        if (window.isMasterAutoSmsEnabled !== false && Array.isArray(masterLeadsCache)) {
+            const unsequenced = masterLeadsCache.filter(l => {
+                const st = String(l.status || '').toUpperCase().trim();
+                return st === 'APPROVED' &&
+                    l.phone_type === 'mobile' &&
+                    l.sms_eligible !== false &&
+                    !l.sequenceStatus &&
+                    !l.sequenceInstanceId &&
+                    !l.isFranchise &&
+                    l.category !== 'franchise' &&
+                    l.leadCategory !== 'franchise' &&
+                    !l.smsOptOut &&
+                    !l.doNotContact &&
+                    l.casl?.status !== 'INELIGIBLE' &&
+                    Boolean(l.phone || l.phone_number);
+            }).slice(0, 4);
+
+            for (const item of unsequenced) {
+                await window.enrollLeadSequenceFromRow(item.id, true);
+            }
+        }
+    } finally {
+        isRunningSmsHeartbeat = false;
+    }
+};
 
 window.loadMasterAutoSmsStatus = async () => {
     try {
@@ -713,7 +961,18 @@ window.loadMasterAutoSmsStatus = async () => {
         const data = await resp.json();
         const isEnabled = data.success ? data.autoSendEnabled : true;
         window.isMasterAutoSmsEnabled = isEnabled;
+        window.isMasterDryRun = data.success ? (data.dryRun === true) : false;
         window.updateMasterAutoSmsUI(isEnabled);
+
+        if (isEnabled) {
+            window.runSmsSequenceHeartbeat(false);
+        }
+        if (smsHeartbeatInterval) clearInterval(smsHeartbeatInterval);
+        smsHeartbeatInterval = setInterval(() => {
+            if (window.isMasterAutoSmsEnabled !== false) {
+                window.runSmsSequenceHeartbeat(false);
+            }
+        }, 60000);
     } catch (_) {
         window.updateMasterAutoSmsUI(true);
     }
@@ -849,6 +1108,7 @@ window.allLeadsCache = [];
 window.currentFilteredLeads = null;
 
 window.handleLeadSearch = (query) => {
+    currentLeadsPage = 1;
     if (!query || !query.trim()) {
         window.currentFilteredLeads = window.allLeadsCache;
         renderLeads(window.allLeadsCache);
@@ -877,6 +1137,113 @@ window.handleLeadSearch = (query) => {
     renderLeads(filtered);
 };
 
+window.setLeadsPage = (page) => {
+    const list = window.currentFilteredLeads || window.allLeadsCache || [];
+    const totalLeads = list.length;
+    const totalPages = Math.max(1, Math.ceil(totalLeads / leadsPageSize));
+    const targetPage = Math.max(1, Math.min(page, totalPages));
+
+    currentLeadsPage = targetPage;
+    updateLeadsUrlParams({ page: targetPage });
+    renderLeads(list);
+
+    const mainContent = document.getElementById('main-content');
+    if (mainContent) {
+        mainContent.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+};
+
+window.setLeadsPageSize = (size) => {
+    const parsed = parseInt(size, 10);
+    if (![25, 50, 100, 250].includes(parsed)) return;
+
+    leadsPageSize = parsed;
+    try {
+        localStorage.setItem('erp_leads_page_size', parsed);
+    } catch (_) {}
+
+    currentLeadsPage = 1;
+    updateLeadsUrlParams({ page: 1 });
+    renderLeads(window.currentFilteredLeads || window.allLeadsCache);
+
+    const mainContent = document.getElementById('main-content');
+    if (mainContent) {
+        mainContent.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+};
+
+function renderLeadsPagination(totalLeads) {
+    if (!totalLeads || totalLeads <= 0) return '';
+
+    const totalPages = Math.max(1, Math.ceil(totalLeads / leadsPageSize));
+    if (currentLeadsPage > totalPages) {
+        currentLeadsPage = totalPages;
+    }
+    if (currentLeadsPage < 1) {
+        currentLeadsPage = 1;
+    }
+
+    const startIndex = (currentLeadsPage - 1) * leadsPageSize;
+    const endIndex = Math.min(startIndex + leadsPageSize, totalLeads);
+    const displayStart = startIndex + 1;
+    const displayEnd = endIndex;
+
+    let pagesHtml = '';
+    if (totalPages <= 7) {
+        for (let i = 1; i <= totalPages; i++) {
+            const isActive = i === currentLeadsPage;
+            pagesHtml += `<button type="button" class="leads-pagination-btn ${isActive ? 'active' : ''}" onclick="window.setLeadsPage(${i})" ${isActive ? 'aria-current="page"' : ''}>${i}</button>`;
+        }
+    } else {
+        let pageNums = [];
+        if (currentLeadsPage <= 4) {
+            pageNums = [1, 2, 3, 4, 5, '...', totalPages];
+        } else if (currentLeadsPage >= totalPages - 3) {
+            pageNums = [1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+        } else {
+            pageNums = [1, '...', currentLeadsPage - 1, currentLeadsPage, currentLeadsPage + 1, '...', totalPages];
+        }
+
+        pagesHtml = pageNums.map(p => {
+            if (p === '...') {
+                return `<span class="leads-pagination-ellipsis">…</span>`;
+            }
+            const isActive = p === currentLeadsPage;
+            return `<button type="button" class="leads-pagination-btn ${isActive ? 'active' : ''}" onclick="window.setLeadsPage(${p})" ${isActive ? 'aria-current="page"' : ''}>${p}</button>`;
+        }).join('');
+    }
+
+    return `
+        <div class="leads-pagination-bar">
+            <div class="leads-pagination-left">
+                <div class="leads-pagination-info">
+                    Affichage de <strong>${displayStart}</strong> à <strong>${displayEnd}</strong> sur <strong class="text-gold">${totalLeads}</strong> leads
+                </div>
+                <div class="leads-pagination-size">
+                    <span class="leads-pagination-size-label">Afficher par :</span>
+                    <select class="leads-pagination-select" onchange="window.setLeadsPageSize(this.value)" aria-label="Nombre de leads par page">
+                        <option value="25" ${leadsPageSize === 25 ? 'selected' : ''}>25</option>
+                        <option value="50" ${leadsPageSize === 50 ? 'selected' : ''}>50</option>
+                        <option value="100" ${leadsPageSize === 100 ? 'selected' : ''}>100</option>
+                        <option value="250" ${leadsPageSize === 250 ? 'selected' : ''}>250</option>
+                    </select>
+                </div>
+            </div>
+            <div class="leads-pagination-controls">
+                <button type="button" class="leads-pagination-btn nav-btn" onclick="window.setLeadsPage(1)" ${currentLeadsPage === 1 ? 'disabled' : ''} title="Première page" aria-label="Première page">«</button>
+                <button type="button" class="leads-pagination-btn nav-btn" onclick="window.setLeadsPage(${currentLeadsPage - 1})" ${currentLeadsPage === 1 ? 'disabled' : ''} title="Page précédente" aria-label="Page précédente">‹</button>
+                <div class="leads-pagination-pages">
+                    ${pagesHtml}
+                </div>
+                <button type="button" class="leads-pagination-btn nav-btn" onclick="window.setLeadsPage(${currentLeadsPage + 1})" ${currentLeadsPage === totalPages ? 'disabled' : ''} title="Page suivante" aria-label="Page suivante">›</button>
+                <button type="button" class="leads-pagination-btn nav-btn" onclick="window.setLeadsPage(${totalPages})" ${currentLeadsPage === totalPages ? 'disabled' : ''} title="Dernière page" aria-label="Dernière page">»</button>
+            </div>
+        </div>
+    `;
+}
+
 function renderLeads(leads) {
     const listContainer = document.getElementById('leads-list-container');
     if (!listContainer) return;
@@ -891,7 +1258,7 @@ function renderLeads(leads) {
                 </div>
                 <div class="text-h" style="font-size:1.1rem; color:var(--text-main); margin-bottom:0.25rem;">Aucun prospect dans cette vue</div>
                 <p class="text-xs text-muted" style="margin-bottom:1.25rem;">Ajustez vos filtres ci-dessus ou lancez le Lead Hunter pour sourcer de nouvelles entreprises.</p>
-                <button class="btn btn-primary btn-sm" onclick="window.location.hash='#leadhunter'" style="display:inline-flex; align-items:center; gap:6px;">
+                <button class="btn btn-primary btn-sm" onclick="window.openSequencesConfigModal('hunter')" style="display:inline-flex; align-items:center; gap:6px;">
                     ${SVG_ICONS.sparkles} Ouvrir le Lead Hunter
                 </button>
             </div>
@@ -899,10 +1266,25 @@ function renderLeads(leads) {
         return;
     }
 
+    const totalLeads = leads.length;
+    const totalPages = Math.max(1, Math.ceil(totalLeads / leadsPageSize));
+    if (currentLeadsPage > totalPages) {
+        currentLeadsPage = totalPages;
+    }
+    if (currentLeadsPage < 1) {
+        currentLeadsPage = 1;
+    }
+
+    const startIndex = (currentLeadsPage - 1) * leadsPageSize;
+    const endIndex = Math.min(startIndex + leadsPageSize, totalLeads);
+    const pagedLeads = leads.slice(startIndex, endIndex);
+
+    const paginationHtml = renderLeadsPagination(totalLeads);
+
     // LIST VIEW MODE (Strict CSS Grid alignment across all rows)
     if (currentViewMode === 'list') {
         let rowsHtml = '';
-        leads.forEach((data) => {
+        pagedLeads.forEach((data) => {
             const statusCfg = getStatusConfig(data.status);
             const regionBadge = formatRegionBadge(data);
             const catBadge = formatCategoryBadge(data);
@@ -921,6 +1303,7 @@ function renderLeads(leads) {
             const isLandline = data.phone_type === 'landline' || data.sms_eligible === false;
             const hasPhone = Boolean(data.phone && String(data.phone).trim());
             const carrierLabel = (data.carrier_name || data.phone_carrier || 'Ligne Fixe').replace(/'/g, "\\'");
+            const hasReplied = data.status === 'REPLIED' || data.status === 'INTERESTED' || data.last_event === 'lead_replied' || (data.sequence_history && Object.values(data.sequence_history).some(h => h.event === 'lead_replied'));
 
             rowsHtml += `
                 <div class="lead-row-clean" data-lead-id="${data.id}" onclick="openLeadDetail('${data.id}')">
@@ -964,6 +1347,10 @@ function renderLeads(leads) {
                             <button class="lead-action-btn sms-btn" style="opacity:0.35; cursor:not-allowed;" onclick="window.showToast('Aucun numéro de téléphone enregistré pour ce lead.', 'warning')" title="Aucun numéro disponible">
                                 ${SVG_ICONS.sms} <span>SMS</span>
                             </button>
+                        ` : hasReplied ? `
+                            <button class="lead-action-btn sms-btn has-conversation" onclick="window.navigateToSmsConversation('${data.id}', '${safePhone}', '${safeName}')" title="💬 Conversation SMS en direct (Réponse reçue)" style="background:rgba(33, 186, 69, 0.16); border-color:rgba(33, 186, 69, 0.5); color:#21BA45; font-weight:600; box-shadow:0 0 10px rgba(33,186,69,0.2);">
+                                <span class="material-icons" style="font-size:14px; color:#21BA45;">textsms</span> <span>Conversation</span>
+                            </button>
                         ` : isLandline ? `
                             <button class="lead-action-btn sms-btn landline-blocked" style="opacity:0.45; cursor:not-allowed; border-color:rgba(239,68,68,0.25);" onclick="window.showToast('☎️ Ligne Fixe détectée (${carrierLabel}) : les SMS ne peuvent être reçus. Privilégiez un appel direct.', 'warning')" title="☎️ Ligne fixe (${carrierLabel}) : SMS indisponible">
                                 ${SVG_ICONS.sms} <span style="text-decoration:line-through; opacity:0.75;">SMS</span>
@@ -1003,13 +1390,14 @@ function renderLeads(leads) {
                     ${rowsHtml}
                 </div>
             </div>
+            ${paginationHtml}
         `;
         return;
     }
 
     // GRID VIEW MODE
     let html = '';
-    leads.forEach((data) => {
+    pagedLeads.forEach((data) => {
         const statusCfg = getStatusConfig(data.status);
         const regionBadge = formatRegionBadge(data);
         const catBadge = formatCategoryBadge(data);
@@ -1030,6 +1418,7 @@ function renderLeads(leads) {
         const isLandline = data.phone_type === 'landline' || data.sms_eligible === false;
         const hasPhone = Boolean(data.phone && String(data.phone).trim());
         const carrierLabel = (data.carrier_name || data.phone_carrier || 'Ligne Fixe').replace(/'/g, "\\'");
+        const hasReplied = data.status === 'REPLIED' || data.status === 'INTERESTED' || data.last_event === 'lead_replied' || (data.sequence_history && Object.values(data.sequence_history).some(h => h.event === 'lead_replied'));
 
         html += `
             <div class="lead-card-clean" data-lead-id="${data.id}" onclick="openLeadDetail('${data.id}')">
@@ -1072,6 +1461,10 @@ function renderLeads(leads) {
                         <button class="lead-action-btn sms-btn" style="opacity:0.35; cursor:not-allowed;" onclick="window.showToast('Aucun numéro de téléphone enregistré pour ce lead.', 'warning')" title="Aucun numéro disponible">
                             ${SVG_ICONS.sms} <span>SMS</span>
                         </button>
+                    ` : hasReplied ? `
+                        <button class="lead-action-btn sms-btn has-conversation" onclick="window.navigateToSmsConversation('${data.id}', '${safePhone}', '${safeName}')" title="💬 Conversation SMS en direct (Réponse reçue)" style="background:rgba(33, 186, 69, 0.16); border-color:rgba(33, 186, 69, 0.5); color:#21BA45; font-weight:600; box-shadow:0 0 10px rgba(33,186,69,0.2);">
+                            <span class="material-icons" style="font-size:14px; color:#21BA45;">textsms</span> <span>Conversation</span>
+                        </button>
                     ` : isLandline ? `
                         <button class="lead-action-btn sms-btn landline-blocked" style="opacity:0.45; cursor:not-allowed; border-color:rgba(239,68,68,0.25);" onclick="window.showToast('☎️ Ligne Fixe détectée (${carrierLabel}) : les SMS ne peuvent être reçus. Privilégiez un appel direct.', 'warning')" title="☎️ Ligne fixe (${carrierLabel}) : SMS indisponible">
                             ${SVG_ICONS.sms} <span style="text-decoration:line-through; opacity:0.75;">SMS</span>
@@ -1102,6 +1495,7 @@ function renderLeads(leads) {
         <div id="leads-grid-wrapper" class="leads-grid-clean">
             ${html}
         </div>
+        ${paginationHtml}
     `;
 }
 
@@ -1146,7 +1540,7 @@ function updateFilterCounts(leads) {
     };
 
     list.forEach(l => {
-        const status = (l.status || 'NEW').toUpperCase();
+        const status = getLeadCanonicalStatus(l);
         if (status === 'NEW') counts.NEW++;
         else if (status === 'APPROVED') counts.APPROVED++;
         else if (status === 'CONTACTED') counts.CONTACTED++;
@@ -1154,7 +1548,7 @@ function updateFilterCounts(leads) {
         else if (status === 'COLD_NURTURE') counts.COLD_NURTURE++;
         else if (status === 'MEETING_SCHEDULED') counts.MEETING_SCHEDULED++;
         else if (status === 'CLIENT') counts.CLIENT++;
-        else if (status === 'REJECTED' || status === 'ARCHIVED') counts.REJECTED++;
+        else if (isArchivedOrExcludedStatus(status)) counts.REJECTED++;
 
         if (l.lastAudit || l.audit_date || l.confidence_score !== undefined || l.leadCategory) {
             counts.AUDITED++;
@@ -1180,6 +1574,10 @@ export function cleanupLeadsRealtime() {
         leadsSnapshotUnsubscribe = null;
         console.log("[Leads Module] Real-time Firestore listener successfully detached.");
     }
+    if (smsHeartbeatInterval) {
+        clearInterval(smsHeartbeatInterval);
+        smsHeartbeatInterval = null;
+    }
 }
 window.cleanupLeadsRealtime = cleanupLeadsRealtime;
 
@@ -1191,8 +1589,16 @@ function filterAndRenderActiveLeads(statusFilter) {
         window.allLeadsCache = [...masterLeadsCache];
     } else if (statusFilter === 'AUDITED') {
         window.allLeadsCache = masterLeadsCache.filter(l => Boolean(l.lastAudit || l.audit_date || l.confidence_score !== undefined || l.leadCategory));
+    } else if (statusFilter === 'REJECTED') {
+        window.allLeadsCache = masterLeadsCache.filter(l => isArchivedOrExcludedStatus(l.status));
+    } else if (statusFilter === 'INTERESTED') {
+        window.allLeadsCache = masterLeadsCache.filter(l => getLeadCanonicalStatus(l) === 'INTERESTED');
+    } else if (statusFilter === 'MEETING_SCHEDULED') {
+        window.allLeadsCache = masterLeadsCache.filter(l => getLeadCanonicalStatus(l) === 'MEETING_SCHEDULED');
+    } else if (statusFilter === 'CONTACTED') {
+        window.allLeadsCache = masterLeadsCache.filter(l => getLeadCanonicalStatus(l) === 'CONTACTED');
     } else {
-        window.allLeadsCache = masterLeadsCache.filter(l => (l.status || 'NEW').toUpperCase() === statusFilter);
+        window.allLeadsCache = masterLeadsCache.filter(l => getLeadCanonicalStatus(l) === statusFilter);
     }
 
     currentMainFilter = statusFilter;
@@ -1395,6 +1801,7 @@ window.openLeadDetail = async (data, updateUrl = true) => {
     const hasEnrichment = Object.keys(enriched).length > 0;
     const savedSidebarWidth = localStorage.getItem('erp_lead_detail_sidebar_width') || '520px';
     const leadLang = lead.preferredLanguage || (window.detectLeadLanguage ? window.detectLeadLanguage(lead) : 'en');
+    const normStatus = getLeadCanonicalStatus(lead);
 
     overlay.innerHTML = `
         <div class="detail-overlay" data-lead-detail-id="${lead.id}" style="flex-direction: row; padding:0; height: 100%; max-height: 100vh; overflow: hidden;">
@@ -1819,6 +2226,10 @@ window.openLeadDetail = async (data, updateUrl = true) => {
                             <button class="btn btn-sm" onclick="window.showToast('☎️ Ligne fixe détectée (${escapeHtml(lead.carrier_name || 'Fixe')}) : SMS non supporté. Privilégiez un appel direct.', 'warning')" style="display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 0.75rem; font-weight: 600; opacity: 0.55; border: 1px solid rgba(239,68,68,0.3); color: #FCA5A5; background: rgba(239,68,68,0.06); white-space: nowrap; height: 34px; padding: 0 6px; border-radius: 8px; cursor: not-allowed;" title="Ligne fixe : SMS non supporté">
                                 ${SVG_ICONS.sms} <span style="text-decoration:line-through;">SMS IA</span>
                             </button>
+                        ` : (lead && (lead.status === 'REPLIED' || lead.status === 'INTERESTED' || lead.last_event === 'lead_replied')) ? `
+                            <button class="btn btn-sm" onclick="window.navigateToSmsConversation('${lead.id}', document.getElementById('edit-phone')?.value || '${(lead.phone || '').replace(/'/g, "\\'")}', document.getElementById('edit-business-name')?.value || '${(lead.business_name || lead.name || '').replace(/'/g, "\\'")}')" style="display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 0.75rem; font-weight: 700; white-space: nowrap; height: 34px; padding: 0 6px; border-radius: 8px; border: 1px solid rgba(33,186,69,0.5); color: #21BA45; background: rgba(33,186,69,0.14); box-shadow: 0 0 10px rgba(33,186,69,0.25); transition: all 0.2s;" title="💬 Accéder directement à la conversation SMS (Réponse reçue)">
+                                <span class="material-icons" style="font-size: 15px; color: #21BA45;">textsms</span> <span>Conversation</span>
+                            </button>
                         ` : `
                             <button class="btn btn-sm btn-outline-gold" onclick="window.openSmsOutreachModal('${lead.id}', document.getElementById('edit-phone')?.value || '${(lead.phone || '').replace(/'/g, "\\'")}', document.getElementById('edit-business-name')?.value || '${(lead.business_name || lead.name || '').replace(/'/g, "\\'")}', '${lead.preferredLanguage || (window.detectLeadLanguage ? window.detectLeadLanguage(lead) : 'en')}')" style="display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; height: 34px; padding: 0 6px; border-radius: 8px; transition: all 0.2s;" title="Envoyer un SMS IA via Twilio/Telnyx">
                                 ${SVG_ICONS.sms} <span>SMS IA</span>
@@ -1855,15 +2266,20 @@ window.openLeadDetail = async (data, updateUrl = true) => {
                                 <div class="text-h truncate" style="font-size: 1.18rem; font-weight: 700; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-main);" title="${escapeHtml(lead.business_name)}">${escapeHtml(lead.business_name)}</div>
                                 
                                 <div style="display: flex; gap: 8px; align-items: center; flex-shrink: 0;">
-                                <select id="edit-lead-status" class="badge status-${lead.status ? lead.status.toLowerCase() : 'new'}" style="font-size: 0.75rem; padding: 4px 22px 4px 10px; font-weight: 600; border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; background: #14171D; color: var(--text-main); cursor: pointer;" onchange="this.className='badge status-'+this.value.toLowerCase();">
-                                    <option value="NEW" ${lead.status === 'NEW' ? 'selected' : ''}>NOUVEAU</option>
-                                    <option value="AUDITED" ${lead.status === 'AUDITED' ? 'selected' : ''}>AUDITÉ IA</option>
-                                    <option value="APPROVED" ${lead.status === 'APPROVED' ? 'selected' : ''}>APPROUVÉ</option>
-                                    <option value="CONTACTED" ${lead.status === 'CONTACTED' ? 'selected' : ''}>CONTACTÉ</option>
-                                    <option value="INTERESTED" ${lead.status === 'INTERESTED' ? 'selected' : ''}>INTÉRESSÉ</option>
-                                    <option value="MEETING_SCHEDULED" ${lead.status === 'MEETING_SCHEDULED' ? 'selected' : ''}>RDV FIXÉ</option>
-                                    <option value="CLIENT" ${lead.status === 'CLIENT' ? 'selected' : ''}>CLIENT</option>
-                                    <option value="REJECTED" ${lead.status === 'REJECTED' ? 'selected' : ''}>ARCHIVÉ</option>
+                                ${lead.phone ? `
+                                    <button class="btn btn-xs" onclick="window.navigateToSmsConversation('${lead.id}', document.getElementById('edit-phone')?.value || '${(lead.phone || '').replace(/'/g, "\\'")}', document.getElementById('edit-business-name')?.value || '${(lead.business_name || lead.name || '').replace(/'/g, "\\'")}')" title="💬 Ouvrir la conversation SMS" style="background: rgba(33,186,69,0.12); border: 1px solid rgba(33,186,69,0.35); color: #21BA45; border-radius: 8px; padding: 4px 9px; display: inline-flex; align-items: center; gap: 4px; font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                                        <span class="material-icons" style="font-size: 14px;">textsms</span> <span>SMS</span>
+                                    </button>
+                                ` : ''}
+                                <select id="edit-lead-status" class="badge status-${normStatus ? normStatus.toLowerCase() : 'new'}" style="font-size: 0.75rem; padding: 4px 22px 4px 10px; font-weight: 600; border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; background: #14171D; color: var(--text-main); cursor: pointer;" onchange="this.className='badge status-'+this.value.toLowerCase();">
+                                    <option value="NEW" ${normStatus === 'NEW' ? 'selected' : ''}>NOUVEAU</option>
+                                    <option value="AUDITED" ${normStatus === 'AUDITED' ? 'selected' : ''}>AUDITÉ IA</option>
+                                    <option value="APPROVED" ${normStatus === 'APPROVED' ? 'selected' : ''}>APPROUVÉ</option>
+                                    <option value="CONTACTED" ${normStatus === 'CONTACTED' ? 'selected' : ''}>CONTACTÉ</option>
+                                    <option value="INTERESTED" ${normStatus === 'INTERESTED' ? 'selected' : ''}>INTÉRESSÉ</option>
+                                    <option value="MEETING_SCHEDULED" ${normStatus === 'MEETING_SCHEDULED' ? 'selected' : ''}>RDV FIXÉ</option>
+                                    <option value="CLIENT" ${normStatus === 'CLIENT' ? 'selected' : ''}>CLIENT</option>
+                                    <option value="REJECTED" ${normStatus === 'REJECTED' ? 'selected' : ''}>ARCHIVÉ</option>
                                 </select>
                                 
                                 <div style="display:flex; align-items:center; gap:5px; background:#14171D; border:1px solid rgba(255,255,255,0.15); border-radius:12px; padding:2px 8px;" title="Langue de contact & des SMS du lead">
@@ -1886,7 +2302,7 @@ window.openLeadDetail = async (data, updateUrl = true) => {
                     </div>
 
                     <!-- ROW 2: Actions (Compact) -->
-                    ${lead.status === 'NEW' || lead.lastAudit ? `
+                    ${normStatus === 'NEW' || lead.lastAudit ? `
                     <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 8px; width: 100%; box-sizing: border-box;">
                             <!-- Left: Audit Action -->
                             <div>
@@ -1898,7 +2314,7 @@ window.openLeadDetail = async (data, updateUrl = true) => {
                             </div>
 
                             <!-- Right: Workflow Actions -->
-                        ${lead.status === 'NEW' ? `
+                        ${normStatus === 'NEW' ? `
                             <div style="display:flex; align-items:center; gap:10px;">
                                     <div style="display:flex; gap:6px;">
                                     <button class="btn btn-sm btn-success" onclick="approveWithSelectedPain('${lead.id}')" style="padding: 2px 12px; font-size: 0.75rem; display:flex; align-items:center;">
@@ -2738,8 +3154,7 @@ window.lastAuditReport = null;
 function getOpenAIKey() {
     let key = localStorage.getItem('openai_api_key');
     if (!key) {
-        key = prompt("Enter your OpenAI API Key to enable Deep SEO Audits:");
-        if (key) localStorage.setItem('openai_api_key', key);
+        window.showToast("Clé OpenAI locale absente — utilisez l'Audit IA serveur.", "warn");
     }
     return key;
 }
@@ -3051,7 +3466,7 @@ window.openAuditPopup = () => {
 window.openFullReportPage = () => {
     const report = window.lastAuditReport;
     if (!report) {
-        alert('No audit report available. Please run an audit first.');
+        window.showToast('Aucun rapport d\'audit disponible. Lancez d\'abord un audit.', 'warn');
         return;
     }
 
@@ -3201,15 +3616,15 @@ window.downloadAuditPDF = async () => {
             <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px;">
                 <div style="padding: 25px; background: rgba(255,255,255,0.02); border: 1px solid ${COLORS.border}; border-radius: 15px; text-align: center;">
                     <div style="font-size: 0.65rem; opacity: 0.5; margin-bottom: 8px; letter-spacing: 1px; text-transform: uppercase;">Load Estimate</div>
-                    <div style="font-size: 1.5rem; font-weight: bold; color: white;">${report.performance?.fcp_estimate || '4.6s'}</div>
+                    <div style="font-size: 1.5rem; font-weight: bold; color: white;">${report.performance?.fcp_estimate || 'N/A'}</div>
                 </div>
                 <div style="padding: 25px; background: rgba(255,255,255,0.02); border: 1px solid ${COLORS.border}; border-radius: 15px; text-align: center;">
                     <div style="font-size: 0.65rem; opacity: 0.5; margin-bottom: 8px; letter-spacing: 1px; text-transform: uppercase;">Search Presence</div>
-                    <div style="font-size: 1.5rem; font-weight: bold; color: white;">${report.search_visibility || 'Invisible'}</div>
+                    <div style="font-size: 1.5rem; font-weight: bold; color: white;">${report.search_visibility || 'N/A'}</div>
                 </div>
                 <div style="padding: 25px; background: rgba(255,255,255,0.02); border: 1px solid ${COLORS.border}; border-radius: 15px; text-align: center;">
                     <div style="font-size: 0.65rem; opacity: 0.5; margin-bottom: 8px; letter-spacing: 1px; text-transform: uppercase;">DOM Complexity</div>
-                    <div style="font-size: 1.5rem; font-weight: bold; color: ${COLORS.warning};">${report.performance?.dom_complexity || 'High'}</div>
+                    <div style="font-size: 1.5rem; font-weight: bold; color: ${COLORS.warning};">${report.performance?.dom_complexity || 'N/A'}</div>
                 </div>
             </div>
             <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
@@ -3223,7 +3638,7 @@ window.downloadAuditPDF = async () => {
                 </div>
                 <div style="padding: 25px; background: rgba(255,255,255,0.02); border: 1px solid ${COLORS.border}; border-radius: 15px; text-align: center;">
                     <div style="font-size: 0.65rem; opacity: 0.5; margin-bottom: 8px; letter-spacing: 1px; text-transform: uppercase;">Mobile Score</div>
-                    <div style="font-size: 1.5rem; font-weight: bold; color: white;">${report.performance?.mobile_score || '62%'}</div>
+                    <div style="font-size: 1.5rem; font-weight: bold; color: white;">${report.performance?.mobile_score || 'N/A'}</div>
                 </div>
             </div>
         `;
@@ -3434,13 +3849,51 @@ function renderActionButtons(id, status) {
 
 window.updateLeadStatus = async (id, newStatus, category = null) => {
     try {
+        const normStatus = String(newStatus || '').toUpperCase().trim();
+        const shouldStopSequence = [
+            'REJECTED',
+            'ARCHIVED',
+            'CLIENT',
+            'MEETING_SCHEDULED',
+            'MEETING SCHEDULED',
+            'INTERESTED',
+            'REPLIED',
+            'EXCLUDED / FRANCHISE',
+            'EXCLUDED_FRANCHISE'
+        ].includes(normStatus);
+
+        const nowIso = new Date().toISOString();
         let updateData = {
-            status: newStatus,
-            updated_at: new Date().toISOString()
+            status: normStatus === 'EXCLUDED / FRANCHISE' ? 'Excluded / Franchise' : normStatus,
+            updated_at: nowIso,
+            updatedAt: nowIso
         };
 
         if (category) {
             updateData.lead_quality_category = category;
+        }
+
+        if (shouldStopSequence) {
+            updateData.nextStepDue = null;
+            updateData.nextStepNumber = null;
+            updateData.sequenceStatus = (normStatus === 'MEETING_SCHEDULED' || normStatus === 'MEETING SCHEDULED')
+                ? 'STOPPED_MEETING'
+                : ((normStatus === 'INTERESTED' || normStatus === 'REPLIED') ? 'STOPPED_REPLIED' : 'STOPPED_MANUAL');
+
+            // Also stop active sequence instance on backend (non-blocking)
+            (async () => {
+                try {
+                    const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
+                    await fetch(`${API_BASE}/api/sequences/stop`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({ leadId: id })
+                    });
+                } catch (_) {}
+            })();
         }
 
         const ref = doc(db, "leads", id);
@@ -3448,8 +3901,17 @@ window.updateLeadStatus = async (id, newStatus, category = null) => {
 
         // Update local cache across all memory layers
         syncLeadInAllCaches(id, updateData);
+        updateFilterCounts(masterLeadsCache);
 
-        window.showToast ? window.showToast(`Statut mis à jour : ${newStatus}`, "success") : null;
+        // Trigger sequence enrollment if manually approved on a mobile number
+        if (normStatus === 'APPROVED' && window.isMasterAutoSmsEnabled !== false) {
+            const targetLead = (masterLeadsCache || []).find(l => l.id === id);
+            if (targetLead && targetLead.phone_type === 'mobile' && !targetLead.sequenceStatus) {
+                window.enrollLeadSequenceFromRow(id, true);
+            }
+        }
+
+        window.showToast ? window.showToast(`Statut mis à jour : ${getStatusConfig(updateData.status).label}`, "success") : null;
 
         // Close overlay if open
         window.closeLeadDetailOverlay();
@@ -3517,7 +3979,7 @@ window.assignLead = async () => {
 
     } catch (e) {
         console.error(e);
-        alert('Error updating status');
+        window.showToast('Erreur lors de la mise à jour du statut', 'error');
     }
 };
 
@@ -3530,7 +3992,7 @@ window.handleCSVImport = async (input) => {
         const text = e.target.result;
         const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
         if (lines.length < 2) {
-            alert("CSV file seems empty or has no data rows.");
+            window.showToast("Le fichier CSV semble vide.", "warn");
             return;
         }
 
@@ -3547,7 +4009,7 @@ window.handleCSVImport = async (input) => {
         const idxCat = findIdx(['category', 'industry', 'type']);
 
         if (idxName === -1) {
-            alert("Could not detect a 'Name' or 'Business Name' column in CSV.");
+            window.showToast("Colonne 'Name' ou 'Business Name' introuvable dans le CSV.", "error");
             return;
         }
 
@@ -3585,7 +4047,7 @@ window.handleCSVImport = async (input) => {
             }
         }
 
-        alert(`Successfully imported ${addedCount} leads!`);
+        window.showToast(`${addedCount} leads importés avec succès !`, "success");
         input.value = ''; // Reset
         if (btn && btn.innerText === 'Importing...') btn.innerHTML = '<span class="material-icons" style="font-size:1.1rem;">upload_file</span> Import CSV';
 
@@ -3673,7 +4135,7 @@ window.applyEmailTemplate = (templateKey, companyName) => {
 window.openEmailComposer = (email, name) => {
     // Only open if email exists
     if (!email || email === 'undefined') {
-        alert("No valid email address found for this lead.");
+        window.showToast("Aucune adresse courriel valide pour ce prospect.", "warn");
         return;
     }
 
@@ -4668,13 +5130,13 @@ window.sendLeadToSelf = async (leadId) => {
     const notes = document.getElementById('edit-notes').value;
 
     if (!phone && !email) {
-        alert("This lead has no phone or email to send.");
+        window.showToast("Ce prospect n'a ni téléphone ni courriel.", "warn");
         return;
     }
 
     const user = auth.currentUser;
     if (!user) {
-        alert("You must be logged in.");
+        window.showToast("Vous devez être connecté.", "error");
         return;
     }
 
@@ -4743,7 +5205,7 @@ window.saveNewLead = async () => {
     const notes = document.getElementById('new-lead-notes').value.trim();
 
     if (!name) {
-        alert('Business Name is required');
+        window.showToast('Le nom de l\'entreprise est requis.', 'warn');
         return;
     }
 
@@ -4773,7 +5235,7 @@ window.saveNewLead = async () => {
 
     } catch (e) {
         console.error("Error adding lead: ", e);
-        alert("Error saving lead: " + e.message);
+        window.showToast("Erreur lors de la sauvegarde : " + e.message, "error");
     }
 }
 
@@ -4939,7 +5401,7 @@ window.approveWithSelectedPain = async (id) => {
 
     } catch (e) {
         console.error(e);
-        alert('Error approving lead: ' + e.message);
+        window.showToast('Erreur lors de l\'approbation : ' + e.message, 'error');
     }
 };
 
@@ -5415,7 +5877,7 @@ window.enrichLeadContactsFromWebsite = async (leadId) => {
     try {
         window.showToast("Scan du site web en cours (extraction téléphone & email)...", "info");
         const token = await auth.currentUser?.getIdToken() || localStorage.getItem('authToken');
-        const resp = await fetch(`http://localhost:5000/api/leads/${leadId}/enrich-contacts`, {
+        const resp = await fetch(`${API_BASE}/api/leads/${leadId}/enrich-contacts`, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -5462,7 +5924,7 @@ window.enrichLeadDecisionMakerWithPerplexity = async (leadId) => {
     try {
         window.showToast("🔎 Perplexity Agent API recherche le dirigeant sur le web en direct...", "info");
         const token = await (window.auth?.currentUser?.getIdToken() || Promise.resolve(localStorage.getItem('authToken') || ''));
-        const resp = await fetch(`http://localhost:5000/api/leads/${leadId}/enrich-decision-maker`, {
+        const resp = await fetch(`${API_BASE}/api/leads/${leadId}/enrich-decision-maker`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
@@ -5497,5 +5959,32 @@ window.enrichLeadDecisionMakerWithPerplexity = async (leadId) => {
         }
     }
 };
+
+window.navigateToSmsConversation = function(leadId, phone, name) {
+    const cleanPhone = (phone || '').replace(/[^\d+]/g, '');
+    const encodedName = encodeURIComponent(name || '');
+    const encodedPhone = encodeURIComponent(cleanPhone || '');
+    const targetHash = `#sms?leadId=${encodeURIComponent(leadId || '')}&phone=${encodedPhone}&name=${encodedName}`;
+    
+    // Close lead detail drawer if open so it doesn't obstruct the SMS view
+    const drawer = document.getElementById('lead-detail-drawer');
+    if (drawer && drawer.classList.contains('open')) {
+        drawer.classList.remove('open');
+    }
+    const overlay = document.getElementById('lead-drawer-overlay');
+    if (overlay) {
+        overlay.classList.remove('active');
+    }
+
+    if (window.location.hash.split('?')[0] === '#sms') {
+        if (typeof window.openSmsThreadForLead === 'function') {
+            window.openSmsThreadForLead(leadId, cleanPhone, name);
+        }
+        window.location.hash = targetHash;
+    } else {
+        window.location.hash = targetHash;
+    }
+};
+
 
 

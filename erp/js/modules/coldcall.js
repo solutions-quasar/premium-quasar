@@ -1,5 +1,5 @@
 import { db, auth } from '../firebase-config.js';
-import { collection, query, where, getDocs, doc, getDoc, updateDoc, addDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { collection, query, where, getDocs, doc, getDoc, updateDoc, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { t } from '../services/translationService.js';
 import { erpConfirm, erpAlert } from '../services/uiService.js';
 
@@ -176,7 +176,7 @@ async function loadSettings() {
     if (saved) currentSettings = JSON.parse(saved);
 }
 
-function renderStats() {
+async function renderStats() {
     const bar = document.getElementById('cc-stats-bar');
     if (!bar) return;
 
@@ -189,23 +189,64 @@ function renderStats() {
         </div>
         <div class="stat-item" style="padding: 0 10px;">
             <div class="text-xs text-muted">Calls</div>
-            <div class="text-h" style="font-size:1rem;">0 / <span class="text-gold edit-target" onclick="editTargets()">${currentSettings.targetCalls}</span></div>
+            <div class="text-h" style="font-size:1rem;"><span id="cc-stat-calls">0</span> / <span class="text-gold edit-target" onclick="editTargets()">${currentSettings.targetCalls}</span></div>
         </div>
         <div class="stat-item" style="padding: 0 10px;">
             <div class="text-xs text-muted">Meetings</div>
-            <div class="text-h" style="font-size:1rem;">0 / <span class="text-gold edit-target" onclick="editTargets()">${currentSettings.targetMeetings}</span></div>
+            <div class="text-h" style="font-size:1rem;"><span id="cc-stat-meetings">0</span> / <span class="text-gold edit-target" onclick="editTargets()">${currentSettings.targetMeetings}</span></div>
         </div>
         <div class="stat-item" style="padding: 0 10px;">
             <div class="text-xs text-muted">Sales</div>
-            <div class="text-h" style="font-size:1rem;">0 / <span class="text-gold edit-target" onclick="editTargets()">${currentSettings.targetSales}</span></div>
+            <div class="text-h" style="font-size:1rem;"><span id="cc-stat-sales">0</span> / <span class="text-gold edit-target" onclick="editTargets()">${currentSettings.targetSales}</span></div>
         </div>
         <div class="stat-item" style="padding: 0 10px;">
             <div class="text-xs text-muted">Revenue</div>
-            <div class="text-h" style="font-size:1rem;">$0 / <span class="text-gold edit-target" onclick="editTargets()">${currentSettings.targetRevenue}</span></div>
+            <div class="text-h" style="font-size:1rem;">$<span id="cc-stat-revenue">0</span> / <span class="text-gold edit-target" onclick="editTargets()">${currentSettings.targetRevenue}</span></div>
+        </div>
+    `;
+
+    try {
+        const leadsSnap = await getDocs(collection(db, "leads"));
+        let callsCount = 0;
+        let meetingsCount = 0;
+        let salesCount = 0;
+        let revenueTotal = 0;
+
+        leadsSnap.forEach(docSnap => {
+            const d = docSnap.data();
+            const status = (d.status || '').toUpperCase();
+            if (d.lastCallDate || d.last_contacted || ['CONTACTED', 'INTERESTED', 'CALLBACK', 'NOT_INTERESTED', 'MEETING_BOOKED', 'MEETING_SCHEDULED', 'CLIENT'].includes(status)) {
+                callsCount++;
+            }
+            if (['MEETING_BOOKED', 'MEETING_SCHEDULED'].includes(status)) {
+                meetingsCount++;
+            }
+            if (['CLIENT', 'CONVERTED', 'CLOSED_WON'].includes(status)) {
+                salesCount++;
+                revenueTotal += parseFloat(d.revenue || d.deal_value || d.value || 0) || 0;
+            }
+        });
+
+        const callsEl = document.getElementById('cc-stat-calls');
+        const meetingsEl = document.getElementById('cc-stat-meetings');
+        const salesEl = document.getElementById('cc-stat-sales');
+        const revenueEl = document.getElementById('cc-stat-revenue');
+
+        if (callsEl) callsEl.innerText = callsCount;
+        if (meetingsEl) meetingsEl.innerText = meetingsCount;
+        if (salesEl) salesEl.innerText = salesCount;
+        if (revenueEl) revenueEl.innerText = revenueTotal.toLocaleString('en-CA', { maximumFractionDigits: 0 });
+    } catch (err) {
+        console.warn("Error computing coldcall performance stats:", err);
+    }
+}
+const renderPerformanceHeader = renderStats;
+/*
         </div>
     `;
 }
 
+*/
 async function loadApprovedLeads(categoryFilter) {
     const list = document.getElementById('cc-lead-list');
     list.innerHTML = '<div class="text-center text-muted mt-3"><div class="spinner-border"></div></div>';
@@ -742,10 +783,29 @@ window.saveScript = async () => {
 
 window.deleteScript = async () => {
     const id = document.getElementById('edit-script-id').value;
+    if (id && window.showConfirmModal) {
+        return window.showConfirmModal({
+            title: 'Supprimer le script',
+            message: 'Êtes-vous sûr de vouloir supprimer ce script ?',
+            confirmText: 'Supprimer',
+            cancelText: 'Annuler',
+            onConfirm: async () => {
+                try {
+                    await deleteDoc(doc(db, "scripts", id));
+                    if (window.showToast) window.showToast('Script supprimé', 'success');
+                    openScriptsManager();
+                } catch (e) {
+                    console.error("Error deleting script:", e);
+                    if (window.showToast) window.showToast("Erreur lors de la suppression", "error");
+                }
+            }
+        });
+    }
     if (id && await erpConfirm("Delete script?")) {
         // Deletion logic omitted for brevity (Firebase deleteDoc needed in import)
         // Ideally: await deleteDoc(doc(db, "scripts", id));
-        alert('Deleted (simulated)');
+        await deleteDoc(doc(db, "scripts", id));
+        if (window.showToast) window.showToast('Script supprimé', 'success');
         openScriptsManager();
     }
 };
@@ -756,7 +816,7 @@ window.openMeetingModal = () => {
 
     // Current Lead Data
     if (!currentLeadId) {
-        alert("No lead selected. Please select a lead first.");
+        if (window.showToast) window.showToast("No lead selected. Please select a lead first.", "warning");
         return;
     }
 
@@ -808,7 +868,7 @@ window.confirmMeetingBooking = async () => {
     const duration = parseInt(document.getElementById('meeting-duration').value);
 
     if (!dateInput) {
-        alert("Please select a date and time.");
+        if (window.showToast) window.showToast("Please select a date and time.", "warning");
         return;
     }
 
@@ -846,7 +906,7 @@ window.confirmMeetingBooking = async () => {
 
     } catch (e) {
         console.error("Error saving internal meeting:", e);
-        alert("Saved to Google Calendar, but failed to save to ERP: " + e.message);
+        if (window.showToast) window.showToast("Saved to Google Calendar, but failed to save to ERP: " + e.message, "error");
     }
 
     // 2. Open Google Calendar Link
@@ -906,7 +966,7 @@ window.logOutcome = async (outcome) => {
 
     } catch (e) {
         console.error("Error logging outcome:", e);
-        alert("Error saving outcome: " + e.message);
+        if (window.showToast) window.showToast("Error saving outcome: " + e.message, "error");
         // Revert UI changes if needed, but for now simple error is enough
     }
 };
@@ -927,7 +987,7 @@ window.changeLeadCategory = async (id, newCategory) => {
 
     } catch (e) {
         console.error(e);
-        alert('Error updating category.');
+        if (window.showToast) window.showToast('Error updating category.', 'error');
     }
 };
 
@@ -1047,7 +1107,7 @@ window.updateLeadField = async (id, field, value) => {
 
     } catch (e) {
         console.error(e);
-        alert('Error saving change.');
+        if (window.showToast) window.showToast('Error saving change.', 'error');
     }
 };
 
