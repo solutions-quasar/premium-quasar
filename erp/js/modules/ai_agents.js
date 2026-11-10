@@ -1,4 +1,6 @@
 import { db, auth } from '../firebase-config.js';
+// FR/EN text for the client Messaging links (follows the ERP EN/FR toggle)
+const mpL = (fr, en) => { try { return (localStorage.getItem('erp_lang') || 'en') !== 'fr' ? en : fr; } catch (_) { return fr; } };
 import { collection, query, where, orderBy, limit, onSnapshot, getDocs, getDoc, addDoc, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 // --- CONFIG ---
@@ -78,8 +80,8 @@ export async function initAiAgents() {
                     const gmailResult = params.get('gmail');
                     if (gmailResult) {
                         const msg = gmailResult === 'connected'
-                            ? `Gmail connecté : ${params.get('email') || ''}`
-                            : `Connexion Gmail impossible : ${params.get('message') || 'erreur inconnue'}`;
+                            ? `${mpL('Gmail connecté', 'Gmail connected')} : ${params.get('email') || ''}`
+                            : `${mpL('Connexion Gmail impossible', 'Gmail connection failed')} : ${params.get('message') || mpL('erreur inconnue', 'unknown error')}`;
                         if (window.showToast) window.showToast(msg.replace(/[<>&]/g, ''), gmailResult === 'connected' ? 'success' : 'error');
                         const clean = `${window.location.pathname}${window.location.search}#ai-agents?projectId=${urlProjectId}`;
                         if (window.history.replaceState) window.history.replaceState(null, '', clean);
@@ -184,8 +186,8 @@ window.selectProject = async (id, json) => {
              <button class="btn" id="ai-tab-agents" onclick="showProjectTab('agents')" title="Agents IA">
                 <span class="material-icons" style="font-size:1.1rem; vertical-align:text-bottom;">smart_toy</span> Agents
              </button>
-             <button class="btn" id="ai-tab-messaging" onclick="showProjectTab('messaging')" title="Messagerie Meta + SMS de ce client">
-                <span class="material-icons" style="font-size:1.1rem; vertical-align:text-bottom;">forum</span> Messagerie
+             <button class="btn" id="ai-tab-messaging" onclick="showProjectTab('messaging')" title="${mpL('Messagerie Meta, SMS et courriel de ce client', 'This client\'s Meta, SMS and email messaging')}">
+                <span class="material-icons" style="font-size:1.1rem; vertical-align:text-bottom;">forum</span> ${mpL('Messagerie', 'Messaging')}
              </button>
              <button class="btn btn-primary" onclick="openAgentModal()">
                 <span class="material-icons" style="font-size:1.2rem; vertical-align:text-bottom; margin-right:5px;">add</span>
@@ -1496,8 +1498,8 @@ window.openAgentModal = (agentJson = null) => {
                                     <label class="form-label">System Personality / Instructions</label>
                                     <textarea id="ag-personality" class="form-input" rows="24" placeholder="You are a helpful assistant...">${agent?.personality || 'You are a helpful assistant for ' + (currentProject?.clientName || 'our company') + '.'}</textarea>
                                     <div class="text-xs text-muted mt-1">Define the agent's core behavior and tone here.
-                                        <a href="#" style="color:var(--gold); margin-left:8px;" onclick="event.preventDefault(); window.agent_openPromptGenerator(${agent?.id ? `'${agent.id}'` : 'null'})"><span class="material-icons" style="font-size:.9rem; vertical-align:text-bottom;">auto_awesome</span> Générer avec l'IA</a>
-                                        ${agent?.id ? `<a href="#" style="color:var(--gold); margin-left:8px;" onclick="event.preventDefault(); window.agent_showPromptPreview('${agent.id}')"><span class="material-icons" style="font-size:.9rem; vertical-align:text-bottom;">visibility</span> Voir le prompt final (Messagerie clients)</a>` : ''}
+                                        <a href="#" style="color:var(--gold); margin-left:8px;" onclick="event.preventDefault(); window.agent_openPromptGenerator(${agent?.id ? `'${agent.id}'` : 'null'})"><span class="material-icons" style="font-size:.9rem; vertical-align:text-bottom;">auto_awesome</span> ${mpL('Générer avec l\'IA', 'Generate with AI')}</a>
+                                        ${agent?.id ? `<a href="#" style="color:var(--gold); margin-left:8px;" onclick="event.preventDefault(); window.agent_showPromptPreview('${agent.id}')"><span class="material-icons" style="font-size:.9rem; vertical-align:text-bottom;">visibility</span> ${mpL('Voir le prompt final (Messagerie clients)', 'View final prompt (client Messaging)')}</a>` : ''}
                                     </div>
                                 </div>
                                 <div class="form-group">
@@ -1520,8 +1522,8 @@ window.openAgentModal = (agentJson = null) => {
                                     return usesLegacyMeta ? '' : `
                                 <div id="ag-meta-hint" class="text-sm text-muted" style="margin-bottom:1rem;">
                                     <span class="material-icons" style="font-size:1rem; vertical-align:text-bottom; color:var(--gold);">forum</span>
-                                    Messenger, Instagram, WhatsApp et SMS se configurent dans l'onglet <strong>Messagerie › Canaux</strong> du projet.
-                                    <a href="#" style="color:var(--text-muted); text-decoration:underline; margin-left:6px;" onclick="event.preventDefault(); document.getElementById('ag-legacy-meta').style.display='block'; this.remove();">Afficher l'intégration Meta Quasar</a>
+                                    ${mpL('Messenger, Instagram, WhatsApp et SMS se configurent dans l\'onglet <strong>Messagerie › Canaux</strong> du projet.', 'Messenger, Instagram, WhatsApp and SMS are set up in the project\'s <strong>Messaging › Channels</strong> tab.')}
+                                    <a href="#" style="color:var(--text-muted); text-decoration:underline; margin-left:6px;" onclick="event.preventDefault(); document.getElementById('ag-legacy-meta').style.display='block'; this.remove();">${mpL('Afficher l\'intégration Meta Quasar', 'Show the Quasar Meta integration')}</a>
                                 </div>`;
                                 })()}
                                 <div id="ag-legacy-meta" style="display:${(agent?.facebookPageId || agent?.facebookAccessToken || agent?.instagramAccountId || agent?.instagramAccessToken) ? 'block' : 'none'};">
