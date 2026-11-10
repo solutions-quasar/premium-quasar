@@ -19,12 +19,15 @@ const SUPPORT_EMAIL = 'info@solutionsquasar.ca';
 
 const STYLES = `
 .mpc { display:flex; flex-direction:column; gap:14px; }
+/* The portal shrinks cards while pressed: not this one (it holds buttons) */
+.portal-card:has(.mpc):active { transform:none; }
 .mpc-head { display:flex; align-items:flex-start; gap:12px; }
 .mpc-title { font-weight:700; font-size:1.05rem; }
 .mpc-dim { color:var(--text-dim, var(--text-muted, #94a3b8)); font-size:.8rem; line-height:1.45; }
-.mpc-tiles { display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:10px; }
+.mpc-tiles { display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:10px; }
 .mpc-tile { display:flex; flex-direction:column; gap:10px; padding:14px; border-radius:12px; background:rgba(0,0,0,.2); border:1px solid var(--border, #2d3139); }
-.mpc-tile-top { display:flex; align-items:center; gap:10px; }
+.mpc-tile-top { display:flex; align-items:flex-start; gap:10px; flex:1; }
+.mpc-tile > .mpc-btn { margin-top:auto; width:100%; height:40px; box-sizing:border-box; white-space:nowrap; overflow:hidden; }
 .mpc-ico { width:38px; height:38px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
 .mpc-btn { border:0; border-radius:9px; padding:9px 12px; font-weight:700; font-size:.82rem; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; }
 .mpc-btn:disabled { opacity:.45; cursor:not-allowed; }
@@ -239,7 +242,10 @@ export function renderChannelConnect(container, opts) {
                 <button class="mpc-btn" data-ok style="background:var(--gold, #dfa53a); color:#000;">${L('Connecter', 'Connect')}</button>
             </div>
         </div>`;
-        (container.querySelector('.mpc') || container).appendChild(ov);
+        // On <body>: inside the portal card, a transformed ancestor would trap the fixed overlay and its clicks
+        document.querySelectorAll('.mpc-modal').forEach(m => m.remove());
+        document.body.appendChild(ov);
+        ov.addEventListener('click', (ev) => { if (ev.target === ov) ov.remove(); });
         ov.querySelector('[data-cancel]').addEventListener('click', () => ov.remove());
         ov.querySelector('[data-ok]').addEventListener('click', async (e) => {
             const picked = (kind) => [...ov.querySelectorAll(`input[data-kind=${kind}]:checked`)].map(i => i.value);
