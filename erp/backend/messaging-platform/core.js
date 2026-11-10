@@ -12,10 +12,11 @@ const OpenAI = require('openai');
 const { db } = require('../firebase-admin');
 const providers = require('./providers');
 const { buildPrompt } = require('./prompt');
+const gmail = require('./gmail');
 
-const CHANNEL_TYPES = ['facebook', 'instagram', 'whatsapp', 'sms'];
+const CHANNEL_TYPES = ['facebook', 'instagram', 'whatsapp', 'sms', 'email'];
 const MAX_MESSAGES = 100;
-const CHANNEL_LABELS = { facebook: 'Messenger', instagram: 'Instagram', whatsapp: 'WhatsApp', sms: 'SMS' };
+const CHANNEL_LABELS = { facebook: 'Messenger', instagram: 'Instagram', whatsapp: 'WhatsApp', sms: 'SMS', email: 'Courriel' };
 const OPT_OUT = /^\s*(stop|arret|arrêt|unsubscribe|desabonner|désabonner)\s*$/i;
 
 let deps = { processAiChat: null };
@@ -59,8 +60,10 @@ function publicChannel(ch, { withWebhookKey = false } = {}) {
         label: ch.label || null,
         active: ch.active !== false,
         aiEnabled: ch.aiEnabled !== false,
-        hasToken: !!ch.accessToken,
+        hasToken: !!(ch.accessToken || ch.gmailTokens?.refresh_token),
         hasTwilioCredentials: !!(ch.twilioAccountSid && ch.twilioAuthToken),
+        lastSyncAt: ch.lastSyncAt || null,
+        lastError: ch.lastError || null,
         createdAt: ch.createdAt || null,
         updatedAt: ch.updatedAt || null
     };
@@ -78,6 +81,7 @@ async function saveChannel(projectId, input) {
     if (!CHANNEL_TYPES.includes(type)) throw new Error(`Type de canal invalide : ${type}`);
     let externalId = String(input.externalId || '').trim();
     if (type === 'sms') externalId = externalId.replace(/[^\d+]/g, '');
+    if (type === 'email') externalId = externalId.toLowerCase();
     if (!externalId) throw new Error('Identifiant du canal requis (ID de Page, ID Instagram, phone_number_id ou numéro).');
 
     const id = channelId(type, externalId);
@@ -85,6 +89,10 @@ async function saveChannel(projectId, input) {
     const existing = await ref.get();
     if (existing.exists && existing.data().projectId !== projectId) {
         throw new Error('Ce canal est déjà relié à un autre projet.');
+    }
+    // A Gmail channel is created by the Google sign-in flow only (it needs OAuth tokens)
+    if (type === 'email' && !existing.exists) {
+        throw new Error('Utilisez « Connecter Gmail » pour ajouter une adresse courriel.');
     }
 
     const data = {
@@ -226,8 +234,10 @@ async function previewPrompt({ projectId, agentId, channelType = 'sms' }) {
 
 // ---------- Sending ----------
 
-async function sendOnChannel(channel, contactId, text) {
+async function sendOnChannel(channel, contactId, text, conv = {}) {
     switch (channel.type) {
+        case 'email':
+            return gmail.sendEmail({ channel, to: contactId, text, conv });
         case 'facebook':
         case 'instagram':
             return providers.sendMetaDM({ token: channel.accessToken, recipientId: contactId, text });
@@ -253,7 +263,7 @@ async function sendOnChannel(channel, contactId, text) {
  * @param {string} [p.contactName]
  * @param {boolean} [p.dryRun]   record the AI reply without sending it (tests)
  */
-async function handleInbound({ channel, contactId, text, isRealText = true, messageId = null, contactName = null, timestamp = null, dryRun = false }) {
+async function handleInbound({ channel, contactId, text, isRealText = true, messageId = null, contactName = null, timestamp = null, dryRun = false, extraFields = {} }) {
     const projectId = channel.projectId;
     const convId = `${channel.type}_${contactId}`;
     const ref = conversationsRef(projectId).doc(convId);
@@ -286,6 +296,7 @@ async function handleInbound({ channel, contactId, text, isRealText = true, mess
         contactName: name || existing.contactName || null,
         unread: true,
         lastCustomerMessageAt: nowIso(),
+        ...extraFields, // e.g. email thread: subject, gmailThreadId, Message-ID headers
         ...(optOut ? { optedOut: true, aiEnabled: false } : {}),
         ...(snap.exists ? {} : { createdAt: nowIso(), aiEnabled: !optOut })
     });
@@ -318,7 +329,7 @@ async function handleInbound({ channel, contactId, text, isRealText = true, mess
     let sentId = null;
     if (!dryRun) {
         try {
-            sentId = await sendOnChannel(channel, contactId, reply);
+            sentId = await sendOnChannel(channel, contactId, reply, fresh.data() || {});
         } catch (e) {
             console.error(`[MP] Send failed on ${convId}:`, e.message);
             await appendMessage(projectId, convId, {
@@ -362,7 +373,7 @@ async function sendManualReply({ projectId, convId, text, user }) {
     if (conv.optedOut) throw new Error('Ce contact s\'est désabonné (STOP).');
     const channel = await getChannelById(conv.channelId);
     if (!channel || channel.projectId !== projectId) throw new Error('Canal de la conversation introuvable.');
-    const sentId = await sendOnChannel(channel, conv.contactId, text);
+    const sentId = await sendOnChannel(channel, conv.contactId, text, conv);
     await appendMessage(projectId, convId, {
         role: 'assistant',
         author: 'human',
@@ -374,7 +385,35 @@ async function sendManualReply({ projectId, convId, text, user }) {
     return sentId;
 }
 
+/** Imports new emails of one Gmail channel (or all of them) into the project inboxes. */
+async function syncEmailChannel(channel) {
+    return gmail.syncChannel(channel, (m) => handleInbound({
+        channel,
+        contactId: m.contactId,
+        contactName: m.contactName,
+        text: m.text,
+        messageId: m.messageId,
+        timestamp: m.timestamp,
+        extraFields: m.threadFields
+    }));
+}
+
+async function syncAllEmailChannels() {
+    const snap = await db.collection('mp_channels').where('type', '==', 'email').get();
+    let imported = 0;
+    for (const d of snap.docs) {
+        const ch = { id: d.id, ...d.data() };
+        if (ch.active === false || !ch.gmailTokens) continue;
+        try { imported += (await syncEmailChannel(ch)).imported; }
+        catch (e) { console.error(`[MP Gmail] Sync failed for ${ch.externalId}:`, e.message); }
+    }
+    if (imported) console.log(`[MP Gmail] ${imported} new email(s) imported.`);
+    return { channels: snap.size, imported };
+}
+
 module.exports = {
+    syncEmailChannel,
+    syncAllEmailChannels,
     CHANNEL_TYPES,
     setDeps,
     channelId,

@@ -7,6 +7,7 @@ const stalledRecoveryService = require("./stalled-recovery-service");
 const leadAuditService = require("./lead-audit-service");
 const calendarReminderService = require("./calendar-reminder-service");
 const gmailInbox = require("./gmail-inbox-service");
+const messagingPlatform = require("./messaging-platform");
 
 // Export the Express app as a Firebase Cloud Function (2nd Gen)
 // Timeout set to 120s and Memory to 1GiB to support AI / Puppeteer / Stripe operations
@@ -30,4 +31,6 @@ exports.sequenceWorker = onSchedule({
     await stalledRecoveryService.processStalledConversations().catch(err => console.error("[Cron Stalled Error]", err.message));
     await calendarReminderService.reconcileActiveAppointments().catch(err => console.error("[Cron Calendar Reconcile Error]", err.message));
     await gmailInbox.syncInbox().catch(err => console.error("[Cron Gmail Inbox Error]", err.message));
+    // Client Messaging Platform: Gmail channels of client projects (separate from the Quasar Gmail inbox above)
+    await messagingPlatform.syncAllEmailChannels().catch(err => console.error("[Cron MP Gmail Error]", err.message));
 });

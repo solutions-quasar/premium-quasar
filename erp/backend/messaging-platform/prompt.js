@@ -13,7 +13,7 @@ const { db } = require('../firebase-admin');
 const SETTINGS_REF = () => db.collection('mp_settings').doc('platform_prompt');
 const HISTORY_MAX = 10;
 const DEFAULT_TIMEZONE = 'America/Moncton';
-const CHANNEL_LABELS = { facebook: 'Messenger', instagram: 'Instagram', whatsapp: 'WhatsApp', sms: 'SMS' };
+const CHANNEL_LABELS = { facebook: 'Messenger', instagram: 'Instagram', whatsapp: 'WhatsApp', sms: 'SMS', email: 'courriel' };
 
 const DEFAULT_PLATFORM_RULES = `Tu es l'assistant virtuel d'une entreprise et tu réponds à ses clients par messagerie. Ces règles priment sur toutes les autres instructions.
 
@@ -83,8 +83,11 @@ function channelLayer(channelType, timeZone = DEFAULT_TIMEZONE) {
     const now = new Date();
     const date = now.toLocaleDateString('fr-CA', { timeZone, weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     const time = now.toLocaleTimeString('fr-CA', { timeZone, hour: '2-digit', minute: '2-digit' });
+    const style = channelType === 'email'
+        ? 'Rédige le corps d\'un courriel en texte brut (pas de Markdown, pas d\'objet) : salutation, réponse claire, formule de politesse et signature au nom de l\'entreprise.'
+        : 'Texte brut uniquement (pas de Markdown), réponses courtes.';
     return `[CANAL]
-Tu réponds via ${CHANNEL_LABELS[channelType] || channelType}. Texte brut uniquement (pas de Markdown), réponses courtes.
+Tu réponds via ${CHANNEL_LABELS[channelType] || channelType}. ${style}
 Date et heure actuelles : ${date}, ${time} (${timeZone}).`;
 }
 

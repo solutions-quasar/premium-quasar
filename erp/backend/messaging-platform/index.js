@@ -18,6 +18,14 @@ const twilio = require('twilio');
 const core = require('./core');
 const promptLayers = require('./prompt');
 const { db } = require('../firebase-admin');
+const gmail = require('./gmail');
+
+// Local dev uses http://localhost:<port>; production uses the public hosting URL
+function serverUrlFor(req) {
+    const host = req.get('host') || '';
+    if (/localhost|127\.0\.0\.1/.test(host)) return `http://${host}`;
+    return process.env.MP_PUBLIC_BASE_URL || process.env.SERVER_URL || 'https://quasar-erp-b26d5.web.app';
+}
 
 const DEFAULT_BASE_URL = 'https://quasar-erp-b26d5.web.app';
 
@@ -292,10 +300,52 @@ function createRouter({ verifyToken }) {
             const ch = await core.getChannelById(req.params.channelId);
             if (!ch || ch.projectId !== req.params.projectId) return res.status(404).json({ success: false, error: 'Canal introuvable.' });
             if (ch.type === 'sms') return res.json({ success: true, info: 'Canal SMS : envoyez un SMS au numéro pour tester.' });
+            if (ch.type === 'email') {
+                // "Test" on a Gmail channel = sync now
+                const { imported } = await core.syncEmailChannel(ch);
+                return res.json({ success: true, info: `Gmail synchronisé : ${imported} nouveau(x) courriel(s).` });
+            }
             const me = await require('./providers').inspectMetaToken(ch.accessToken);
             res.json({ success: true, account: me });
         } catch (e) {
             res.status(400).json({ success: false, error: e.response?.data?.error?.message || e.message });
+        }
+    });
+
+    // ----- Gmail per project -----
+    // Returns the Google sign-in URL; the signed state carries the project, agent and return page.
+    router.get('/projects/:projectId/gmail/auth-url', staff, (req, res) => {
+        try {
+            const url = gmail.getAuthUrl({
+                projectId: req.params.projectId,
+                agentId: req.query.agentId || null,
+                aiEnabled: req.query.aiEnabled === 'true',
+                label: req.query.label || null,
+                returnTo: req.query.returnTo || null,
+                serverUrl: serverUrlFor(req)
+            });
+            res.json({ success: true, url });
+        } catch (e) {
+            res.status(500).json({ success: false, error: e.message });
+        }
+    });
+
+    // Google redirects here (no ERP session): the state signature identifies the project.
+    router.get('/gmail/callback', async (req, res) => {
+        const back = (returnTo, params) => {
+            const target = returnTo && /^https?:\/\//.test(returnTo) ? returnTo : `${DEFAULT_BASE_URL}/erp/index.html#ai-agents`;
+            const sep = target.includes('?') ? '&' : (target.includes('#') ? '?' : '?');
+            return `${target}${sep}${params}`;
+        };
+        let returnTo = null;
+        try {
+            if (req.query.error) throw new Error(`Google : ${req.query.error}`);
+            const r = await gmail.handleCallback({ code: req.query.code, state: req.query.state, serverUrl: serverUrlFor(req) });
+            returnTo = r.returnTo;
+            res.redirect(back(returnTo, `gmail=connected&email=${encodeURIComponent(r.email)}`));
+        } catch (e) {
+            console.error('[MP Gmail] Callback error:', e.message);
+            res.redirect(back(returnTo, `gmail=error&message=${encodeURIComponent(e.message)}`));
         }
     });
 
@@ -328,7 +378,7 @@ function createRouter({ verifyToken }) {
             const preview = await core.previewPrompt({
                 projectId: req.params.projectId,
                 agentId: req.params.agentId,
-                channelType: ['facebook', 'instagram', 'whatsapp', 'sms'].includes(req.query.channel) ? req.query.channel : 'sms'
+                channelType: core.CHANNEL_TYPES.includes(req.query.channel) ? req.query.channel : 'sms'
             });
             res.json({ success: true, ...preview });
         } catch (e) {
@@ -395,4 +445,4 @@ function mountMessagingPlatform(app, { verifyToken, processAiChat }) {
     console.log('[Messaging Platform] Routes mounted on /api/mp');
 }
 
-module.exports = { mountMessagingPlatform };
+module.exports = { mountMessagingPlatform, syncAllEmailChannels: core.syncAllEmailChannels };

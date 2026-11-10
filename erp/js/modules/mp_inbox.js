@@ -38,6 +38,18 @@ const CHANNELS = {
             'Jeton permanent : Business Manager › Utilisateurs système, avec l\'app et le compte WhatsApp assignés.'
         ]
     },
+    email: {
+        label: 'Courriel', icon: 'mail', color: '#ea4335',
+        tagline: 'Boîte Gmail / Google Workspace',
+        idLabel: 'Adresse Gmail', idPlaceholder: 'connectée via Google',
+        tokenLabel: null, oauth: true,
+        help: [
+            'Cliquez sur « Connecter Gmail » : la fenêtre de Google s\'ouvre, choisissez la boîte du client et acceptez.',
+            'Seuls les nouveaux courriels de la boîte de réception sont importés (pas l\'historique), toutes les 2 minutes. Promotions, réseaux sociaux et notifications sont ignorés.',
+            'Les réponses partent de cette adresse, dans le même fil de discussion.',
+            'Réponse IA désactivée par défaut sur le courriel : activez-la seulement si l\'agent est bien configuré.'
+        ]
+    },
     sms: {
         label: 'SMS', icon: 'sms', color: '#dfa53a',
         tagline: 'Numéro de texto Twilio',
@@ -299,6 +311,18 @@ const STYLES = `
 #mp-root .mp-conv:hover { background:rgba(255,255,255,.03); }
 #mp-root .mp-conv.active { background:rgba(223,165,58,.1); box-shadow:inset 3px 0 0 var(--gold); }
 #mp-root details.mp-tech summary { cursor:pointer; color:var(--text-muted); font-size:.8rem; }
+#mp-root .mp-inbox { display:flex; gap:14px; height:100%; min-height:420px; }
+#mp-root .mp-pane-list { width:340px; flex-shrink:0; }
+#mp-root .mp-back { display:none; }
+@media (max-width: 760px) {
+  #mp-root .mp-topbar > span { display:none; }
+  #mp-root .mp-inbox { gap:0; }
+  #mp-root .mp-pane-list { width:100%; }
+  #mp-root .mp-pane-thread { display:none !important; }
+  #mp-root .mp-inbox.has-thread .mp-pane-list { display:none !important; }
+  #mp-root .mp-inbox.has-thread .mp-pane-thread { display:flex !important; }
+  #mp-root .mp-back { display:inline-flex; }
+}
 `;
 
 /**
@@ -307,7 +331,7 @@ const STYLES = `
  */
 export function renderProjectMessaging(container, opts) {
     const state = {
-        ...opts, tab: 'inbox', conversations: [], channels: [], activeConvId: null, poll: null,
+        ...opts, tab: opts.initialTab || 'inbox', conversations: [], channels: [], activeConvId: null, poll: null,
         filter: 'all', wizard: null // { step: 'type'|'form'|'done', type, editing, saved }
     };
 
@@ -346,7 +370,7 @@ export function renderProjectMessaging(container, opts) {
                     ${state.isStaff ? `<button data-tab="channels"><span class="material-icons">hub</span> Canaux <span class="mp-badge-count" id="mp-ch-count" style="display:none;"></span></button>` : ''}
                     ${state.isStaff ? `<button data-tab="rules" title="Règles communes à tous les agents clients"><span class="material-icons">gavel</span> Règles IA</button>` : ''}
                 </div>
-                <span class="mp-muted" style="margin-left:auto; font-size:.75rem;">Messagerie clients · séparée de la boîte Quasar</span>
+                ${state.isStaff ? `<span class="mp-muted" style="margin-left:auto; font-size:.75rem;">Messagerie clients · séparée de la boîte Quasar</span>` : ''}
             </div>
             <div id="mp-body" style="flex:1; min-height:0;"></div>
         </div>`;
@@ -479,15 +503,15 @@ export function renderProjectMessaging(container, opts) {
     async function renderInbox() {
         const body = container.querySelector('#mp-body');
         body.innerHTML = `
-            <div style="display:flex; gap:14px; height:100%; min-height:460px;">
-                <div style="width:340px; display:flex; flex-direction:column; border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--bg-dark);">
+            <div class="mp-inbox ${state.activeConvId ? 'has-thread' : ''}">
+                <div class="mp-pane-list" style="display:flex; flex-direction:column; border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--bg-dark);">
                     <div style="padding:10px; border-bottom:1px solid var(--border);">
                         <input id="mp-search" class="form-input" placeholder="Rechercher un contact ou un message…" style="width:100%;">
                     </div>
                     <div class="mp-filters" id="mp-filters"></div>
                     <div id="mp-conv-list" style="flex:1; overflow-y:auto;"><div class="mp-muted" style="padding:1rem; font-size:.85rem;">Chargement…</div></div>
                 </div>
-                <div id="mp-thread" style="flex:1; display:flex; flex-direction:column; border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--bg-dark);">
+                <div id="mp-thread" class="mp-pane-thread" style="flex:1; display:flex; flex-direction:column; border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--bg-dark);">
                     ${emptyThread()}
                 </div>
             </div>`;
@@ -617,6 +641,7 @@ export function renderProjectMessaging(container, opts) {
 
         thread.innerHTML = `
             <div style="padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px;">
+                <button class="mp-iconbtn mp-back" id="mp-back" title="Retour aux conversations"><span class="material-icons">arrow_back</span></button>
                 <div class="mp-avatar">${esc(initials(name))}<span class="mp-dot" style="background:${ch.color};"><span class="material-icons">${ch.icon}</span></span></div>
                 <div style="flex:1; min-width:0;">
                     <div style="font-weight:700;">${esc(name)}</div>
@@ -630,9 +655,17 @@ export function renderProjectMessaging(container, opts) {
             </div>
             <div id="mp-msgs" style="flex:1; overflow-y:auto; padding:14px 18px;">${msgs || '<div class="mp-muted" style="font-size:.85rem;">Aucun message.</div>'}</div>
             <div style="padding:10px 12px; border-top:1px solid var(--border); display:flex; gap:8px; align-items:flex-end;">
-                <textarea id="mp-reply" class="form-input" rows="2" style="flex:1; resize:none;" placeholder="${conv.optedOut ? 'Ce contact s\'est désabonné' : `Répondre via ${ch.label}… (Entrée pour envoyer, Maj+Entrée pour une ligne)`}" ${conv.optedOut ? 'disabled' : ''}></textarea>
+                <textarea id="mp-reply" class="form-input" rows="2" style="flex:1; resize:none;" placeholder="${conv.optedOut ? 'Ce contact s\'est désabonné' : `Répondre via ${ch.label}…`}" ${conv.optedOut ? 'disabled' : ''}></textarea>
                 <button id="mp-send" class="btn btn-primary" style="height:44px;" ${conv.optedOut ? 'disabled' : ''} title="Envoyer"><span class="material-icons" style="vertical-align:middle;">send</span></button>
             </div>`;
+
+        container.querySelector('.mp-inbox')?.classList.add('has-thread');
+        thread.querySelector('#mp-back').addEventListener('click', () => {
+            state.activeConvId = null;
+            container.querySelector('.mp-inbox')?.classList.remove('has-thread');
+            thread.innerHTML = emptyThread();
+            renderConvList();
+        });
 
         const box = thread.querySelector('#mp-msgs');
         if (wasAtBottom) box.scrollTop = box.scrollHeight;
@@ -701,7 +734,10 @@ export function renderProjectMessaging(container, opts) {
         const cards = state.channels.map(c => {
             const ch = CHANNELS[c.type];
             const agent = agentName(c.agentId);
-            const credOk = c.type === 'sms' ? true : c.hasToken;
+            const credOk = c.type === 'sms' ? true : (c.type === 'email' ? c.hasToken && !c.lastError : c.hasToken);
+            const credLabel = c.type === 'sms' ? (c.hasTwilioCredentials ? 'Twilio du client' : 'Twilio Quasar')
+                : c.type === 'email' ? (!c.hasToken ? 'À reconnecter' : (c.lastError ? 'Erreur de synchro' : 'Gmail connecté'))
+                : (c.hasToken ? 'Jeton enregistré' : 'Jeton manquant');
             const smsUrl = c.type === 'sms' ? smsWebhookUrl(c) : '';
             return `
                 <div class="mp-card ${c.active ? '' : 'paused'}" style="--mp-accent:${ch.color};" data-id="${esc(c.id)}">
@@ -714,7 +750,7 @@ export function renderProjectMessaging(container, opts) {
                             </div>
                         </div>
                         <div class="mp-col-opt"><span class="mp-chip ${agent ? 'ok' : 'warn'}"><span class="material-icons">smart_toy</span>${agent ? esc(agent) : 'Aucun agent'}</span></div>
-                        <div class="mp-col-opt"><span class="mp-chip ${credOk ? 'ok' : 'warn'}"><span class="material-icons">${credOk ? 'key' : 'key_off'}</span>${c.type === 'sms' ? (c.hasTwilioCredentials ? 'Twilio du client' : 'Twilio Quasar') : (c.hasToken ? 'Jeton enregistré' : 'Jeton manquant')}</span></div>
+                        <div class="mp-col-opt"><span class="mp-chip ${credOk ? 'ok' : 'warn'}"><span class="material-icons">${credOk ? 'key' : 'key_off'}</span>${credLabel}</span></div>
                         <div class="mp-col-opt"><span class="mp-chip ${c.active ? 'ok' : 'off'}">${c.active ? 'Actif' : 'En pause'}</span></div>
                         <label class="mp-col-opt" style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:.8rem;" title="L'agent répond automatiquement aux messages de ce canal">
                             <span class="mp-switch"><input type="checkbox" class="mp-quick-ai" ${c.aiEnabled ? 'checked' : ''} ${agent ? '' : 'disabled'}><span></span></span>
@@ -724,7 +760,8 @@ export function renderProjectMessaging(container, opts) {
                             ${smsUrl ? `<button class="mp-iconbtn mp-copy-btn" data-copy="${esc(smsUrl)}" title="Copier le webhook Twilio (« A message comes in », HTTP POST)"><span class="material-icons">link</span></button>` : ''}
                             ${agent ? `<button class="mp-iconbtn mp-prompt" title="Voir le prompt final de l'agent sur ce canal"><span class="material-icons">visibility</span></button>` : ''}
                             <button class="mp-iconbtn mp-sim" title="Simuler un message entrant"><span class="material-icons">play_arrow</span></button>
-                            ${c.type !== 'sms' ? `<button class="mp-iconbtn mp-test" title="Vérifier le jeton"><span class="material-icons">verified</span></button>` : ''}
+                            ${c.type === 'email' ? `<button class="mp-iconbtn mp-test" title="Synchroniser Gmail maintenant"><span class="material-icons">sync</span></button>`
+                                : c.type !== 'sms' ? `<button class="mp-iconbtn mp-test" title="Vérifier le jeton"><span class="material-icons">verified</span></button>` : ''}
                             <button class="mp-iconbtn mp-edit" title="Modifier"><span class="material-icons">edit</span></button>
                             <button class="mp-iconbtn danger mp-del" title="Supprimer"><span class="material-icons">delete_outline</span></button>
                         </div>
@@ -793,7 +830,11 @@ export function renderProjectMessaging(container, opts) {
                 try {
                     const r = await api(`/channels/${encodeURIComponent(c.id)}/test`, { method: 'POST' });
                     toast(r.account ? `Jeton valide · ${r.account.name || ''}` : (r.info || 'OK'), 'success');
-                } catch (err) { toast(`Jeton invalide : ${err.message}`, 'error'); }
+                    if (c.type === 'email') renderChannels();
+                } catch (err) {
+                    toast(c.type === 'email' ? `Synchronisation impossible : ${err.message}` : `Jeton invalide : ${err.message}`, 'error');
+                    if (c.type === 'email') renderChannels();
+                }
                 finally { btn.disabled = false; }
             });
 
@@ -936,11 +977,13 @@ export function renderProjectMessaging(container, opts) {
                         <div class="mp-ico" style="background:${ch.color}1f; color:${ch.color};"><span class="material-icons">${ch.icon}</span></div>
                         <div style="font-weight:700;">${ch.label}</div>
                     </div>
+                    ${ch.oauth && !ed ? `
+                    <div class="mp-help" style="margin-bottom:14px;">L'adresse sera celle du compte Google choisi à l'étape suivante.</div>` : `
                     <div class="mp-field">
                         <label>${ch.idLabel}</label>
                         <input id="mp-f-id" class="form-input" placeholder="${esc(ch.idPlaceholder)}" value="${esc(ed?.externalId || '')}" ${ed ? 'disabled' : 'required'}>
                         ${ed ? '<small>L\'identifiant ne peut pas être modifié. Supprimez le canal pour en changer.</small>' : ''}
-                    </div>
+                    </div>`}
                     <div class="mp-field">
                         <label>Nom affiché <span class="mp-muted" style="font-weight:400;">(optionnel)</span></label>
                         <input id="mp-f-label" class="form-input" placeholder="ex. Page Clinique ABC" value="${esc(ed?.label || '')}">
@@ -953,7 +996,12 @@ export function renderProjectMessaging(container, opts) {
                         </select>
                         ${state.agents.length ? '' : '<small>Ce projet n\'a pas encore d\'agent : créez-en un dans l\'onglet Agents pour activer les réponses IA.</small>'}
                     </div>
-                    ${ch.tokenLabel ? `
+                    ${ch.oauth ? (ed ? `
+                    <div class="mp-field">
+                        <label>Connexion Google</label>
+                        <div class="mp-muted" style="font-size:.8rem;">${ed.hasToken ? `Connectée · dernière synchro : ${ed.lastSyncAt ? new Date(ed.lastSyncAt).toLocaleString('fr-CA') : 'jamais'}` : 'Non connectée'}${ed.lastError ? `<br><span style="color:#f5a524;">Erreur : ${esc(ed.lastError)}</span>` : ''}</div>
+                        <button type="button" class="btn" id="mp-f-reconnect" style="margin-top:6px; align-self:flex-start;">Reconnecter Gmail</button>
+                    </div>` : '') : ch.tokenLabel ? `
                     <div class="mp-field">
                         <label>${ch.tokenLabel}</label>
                         <input id="mp-f-token" class="form-input" type="password" autocomplete="off" placeholder="${ed?.hasToken ? 'Jeton enregistré · laisser vide pour le conserver' : esc(ch.tokenPlaceholder)}" ${ed?.hasToken ? '' : 'required'}>
@@ -971,14 +1019,14 @@ export function renderProjectMessaging(container, opts) {
                     </details>`}
                     <div style="display:flex; flex-direction:column; gap:10px; margin:6px 0 18px;">
                         <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:.85rem;">
-                            <span class="mp-switch"><input type="checkbox" id="mp-f-ai" ${ed ? (ed.aiEnabled ? 'checked' : '') : 'checked'}><span></span></span> L'agent répond automatiquement
+                            <span class="mp-switch"><input type="checkbox" id="mp-f-ai" ${ed ? (ed.aiEnabled ? 'checked' : '') : (ch.oauth ? '' : 'checked')}><span></span></span> L'agent répond automatiquement
                         </label>
                         <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:.85rem;">
                             <span class="mp-switch"><input type="checkbox" id="mp-f-active" ${ed ? (ed.active ? 'checked' : '') : 'checked'}><span></span></span> Canal actif
                         </label>
                     </div>
                     <div style="display:flex; gap:10px;">
-                        <button type="submit" class="btn btn-primary" style="flex:1;">${ed ? 'Enregistrer' : `Connecter ${ch.label}`}</button>
+                        <button type="submit" class="btn btn-primary" style="flex:1;">${ed ? 'Enregistrer' : (ch.oauth ? 'Connecter Gmail' : `Connecter ${ch.label}`)}</button>
                         <button type="button" class="btn" id="mp-wz-cancel">Annuler</button>
                     </div>
                 </form>
@@ -991,10 +1039,28 @@ export function renderProjectMessaging(container, opts) {
 
         back(() => { state.wizard = ed ? null : { step: 'type' }; ed ? renderChannels() : renderWizard(); });
         body.querySelector('#mp-wz-cancel').addEventListener('click', () => { state.wizard = null; renderChannels(); });
+        // Gmail: send the user to Google; the callback brings them back to this page
+        const startGmailOAuth = async (btn) => {
+            const f = (id) => body.querySelector(id);
+            btn.disabled = true;
+            try {
+                const params = new URLSearchParams({
+                    agentId: f('#mp-f-agent').value || '',
+                    aiEnabled: String(f('#mp-f-ai').checked),
+                    label: f('#mp-f-label').value.trim(),
+                    returnTo: window.location.href.split('&gmail=')[0]
+                });
+                const { url } = await api(`/gmail/auth-url?${params}`);
+                window.location.href = url;
+            } catch (err) { toast(err.message, 'error'); btn.disabled = false; }
+        };
+        body.querySelector('#mp-f-reconnect')?.addEventListener('click', (e) => startGmailOAuth(e.currentTarget));
+
         body.querySelector('#mp-wz-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const f = (id) => body.querySelector(id);
             const btn = e.submitter || f('button[type=submit]');
+            if (ch.oauth && !ed) return startGmailOAuth(btn);
             const payload = {
                 type: wz.type,
                 externalId: ed ? ed.externalId : f('#mp-f-id').value.trim(),
@@ -1017,7 +1083,7 @@ export function renderProjectMessaging(container, opts) {
                 btn.disabled = false;
             }
         });
-        if (!ed) body.querySelector('#mp-f-id').focus();
+        if (!ed) body.querySelector('#mp-f-id')?.focus();
     }
 
     render();
