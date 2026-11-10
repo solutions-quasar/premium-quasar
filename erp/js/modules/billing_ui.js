@@ -4,7 +4,7 @@
  */
 import { tip, bindTips } from './mp_help.js';
 
-const isEn = () => { try { return (localStorage.getItem('erp_lang') || 'en') !== 'fr'; } catch (_) { return true; } };
+const isEn = () => { if (window.MP_LANG) return window.MP_LANG !== 'fr'; try { return (localStorage.getItem('erp_lang') || 'en') !== 'fr'; } catch (_) { return true; } };
 const L = (fr, en) => (isEn() ? en : fr);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money = (n) => new Intl.NumberFormat(isEn() ? 'en-CA' : 'fr-CA', { style: 'currency', currency: 'CAD' }).format(Number(n || 0));
@@ -51,10 +51,10 @@ const STYLES = `
 
 function api(apiBase, getToken) {
     return async (path, { method = 'GET', body } = {}) => {
-        const token = await getToken();
+        const token = getToken ? await getToken() : null;
         const res = await fetch(`${apiBase}/api/billing${path}`, {
             method,
-            headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+            headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body ? { 'Content-Type': 'application/json' } : {}) },
             body: body ? JSON.stringify(body) : undefined
         });
         const data = await res.json().catch(() => ({}));
@@ -73,13 +73,66 @@ const STATUS = () => ({
     paused: ['off', L('En pause', 'Paused')]
 });
 
+// ---------- Offer view (client portal, proposal page, staff preview) ----------
+
+/** Monthly total, one-time total and included conversations for an offer + chosen optional add-ons. */
+function totals(offer, chosen) {
+    const opts = offer.options.filter(o => o.mode === 'included' || (o.mode === 'optional' && chosen.has(o.key)));
+    const monthly = offer.base.monthly + opts.reduce((n, o) => n + o.monthly, 0) + offer.customItems.filter(i => i.type === 'monthly').reduce((n, i) => n + i.amount, 0);
+    const once = offer.setupFee + offer.customItems.filter(i => i.type === 'once').reduce((n, i) => n + i.amount, 0);
+    const included = offer.base.includedConversations + opts.reduce((n, o) => n + (o.extraConversations || 0), 0);
+    const pct = offer.discount?.percent || 0;
+    // Stripe applies the coupon to the whole first invoice (subscription + one-time fees)
+    const off = (n) => Math.round(n * (100 - pct)) / 100;
+    return { monthly, once, included, pct, discounted: off(monthly), first: off(monthly + once) };
+}
+
+function offerHtml(offer, chosen, { cta, staffExtra = '' } = {}) {
+    const t = totals(offer, chosen);
+    const d = offer.discount || {};
+    const discountLabel = d.percent ? (d.months ? L(`-${d.percent} % pendant ${d.months} mois`, `-${d.percent}% for ${d.months} months`) : L(`-${d.percent} % en permanence`, `-${d.percent}% ongoing`)) : '';
+    const included = offer.options.filter(o => o.mode === 'included');
+    const optional = offer.options.filter(o => o.mode === 'optional');
+    return `
+        ${offer.note ? `<div class="bl-note info" style="white-space:pre-wrap;">${esc(offer.note)}</div>` : ''}
+        <div class="bl-card">
+            <div class="bl-row" data-tip-host><div class="bl-title" style="flex:1;">${esc(offer.base.name)}</div>${tip(L(`Votre forfait inclut ${t.included} conversations IA par mois. Une conversation IA = un client à qui l'assistant a répondu pendant le mois, quel que soit le nombre de messages. Au-delà, chaque conversation coûte ${money(offer.overageUnitPrice)}.`, `Your plan includes ${t.included} AI conversations per month. One AI conversation = one customer the assistant replied to during the month, whatever the number of messages. Beyond that, each conversation costs ${money(offer.overageUnitPrice)}.`))}</div>
+            ${offer.base.description ? `<div class="bl-dim" style="margin-top:4px;">${esc(offer.base.description)}</div>` : ''}
+            <div style="margin-top:10px;"><span class="bl-big">${money(offer.base.monthly)}</span> <span class="bl-dim">/ ${L('mois', 'month')}</span></div>
+            <div class="bl-dim">${L(`${offer.base.includedConversations} conversations IA incluses, puis ${money(offer.overageUnitPrice)} par conversation`, `${offer.base.includedConversations} AI conversations included, then ${money(offer.overageUnitPrice)} per conversation`)}</div>
+            ${included.length || offer.customItems.length ? `<div style="margin-top:12px;">${[
+                ...included.map(o => `<div class="bl-total"><span>✓ ${esc(o.name)}</span><strong>${o.monthly ? `+${money(o.monthly)}` : L('Inclus', 'Included')}</strong></div>`),
+                ...offer.customItems.map(i => `<div class="bl-total"><span>✓ ${esc(i.name)}${i.description ? `<br><span class="bl-dim">${esc(i.description)}</span>` : ''}</span><strong style="white-space:nowrap;">${money(i.amount)}${i.type === 'monthly' ? `/${L('mois', 'mo')}` : ` (${L('une fois', 'once')})`}</strong></div>`)
+            ].join('')}</div>` : ''}
+        </div>
+        ${optional.length ? `
+        <div class="bl-card">
+            <div class="bl-title" style="margin-bottom:6px;">${L('Options', 'Add-ons')}</div>
+            ${optional.map(o => `
+                <label class="bl-opt" style="cursor:pointer;">
+                    <span class="bl-switch"><input type="checkbox" data-pick="${esc(o.key)}" ${chosen.has(o.key) ? 'checked' : ''}><span></span></span>
+                    <span style="flex:1; min-width:0;"><strong>${esc(o.name)}</strong><br><span class="bl-dim">${esc(o.description)}</span></span>
+                    <strong style="white-space:nowrap;">+${money(o.monthly)}</strong>
+                </label>`).join('')}
+        </div>` : ''}
+        <div class="bl-card">
+            ${staffExtra}
+            <div class="bl-total"><span>${L('Abonnement mensuel', 'Monthly subscription')}</span><strong>${money(t.monthly)}</strong></div>
+            ${t.pct ? `<div class="bl-total" style="color:#3ecf8e;"><span>${L('Remise', 'Discount')} (${discountLabel})</span><strong>${money(t.discounted)}</strong></div>` : ''}
+            ${t.once ? `<div class="bl-total"><span>${L('Frais uniques (installation…)', 'One-time fees (setup…)')}</span><strong>${money(t.once)}</strong></div>` : ''}
+            <div class="bl-total" style="border-top:1px solid var(--border, #2d3139); margin-top:6px; padding-top:10px;"><span>${L('Premier paiement', 'First payment')}${t.pct && t.once ? ` <span class="bl-dim">(${L('remise incluse', 'discount included')})</span>` : ''}</span><strong>${money(t.first)} <span class="bl-dim">+ ${L('taxes', 'taxes')}</span></strong></div>
+            <div class="bl-dim" style="margin:6px 0 12px;">${L('Paiement sécurisé par Stripe. Résiliable en tout temps, sans frais.', 'Secure payment by Stripe. Cancel anytime, no fees.')}</div>
+            <div class="bl-row">${cta}</div>
+        </div>`;
+}
+
 /**
- * Subscription of one project.
+ * Subscription of one project (portal "Subscription" tab, ERP "Plan" tab).
  * @param {{ projectId, apiBase, getToken, isStaff }} opts
  */
 export function renderProjectBilling(container, opts) {
     const call = api(opts.apiBase, opts.getToken);
-    const state = { data: null, picked: new Set(), withSetup: true };
+    const state = { data: null, picked: new Set(), withSetup: true, editing: false };
 
     const params = new URLSearchParams(window.location.search);
     const back = params.get('billing');
@@ -109,75 +162,67 @@ export function renderProjectBilling(container, opts) {
         const body = container.querySelector('#bl-body');
         body.className = '';
         if (!d.stripe) { body.innerHTML = `<div class="bl-note info">${L('La facturation n\'est pas encore activée.', 'Billing is not set up yet.')}</div>`; return; }
-        body.innerHTML = d.subscription && d.subscription.status !== 'canceled' ? subscribedView(d) : offerView(d);
+        const subscribed = d.subscription && d.subscription.status !== 'canceled';
+        if (opts.isStaff && state.editing) { renderOfferEditor(body, d); return; }
+        body.innerHTML = (opts.isStaff ? staffBar(d, subscribed) : '') + (subscribed ? subscribedView(d) : notSubscribedView(d));
         bind(d);
     }
 
-    // ----- Not subscribed: the offer -----
-    function offerView(d) {
-        const c = d.catalog;
-        if (!c.ready) return `<div class="bl-card"><div class="bl-title">${L('Abonnement', 'Subscription')}</div><div class="bl-dim" style="margin-top:6px;">${L('L\'offre n\'est pas encore publiée.', 'The offer is not published yet.')} ${opts.isStaff ? L('Publiez le catalogue ci-dessous.', 'Publish the catalog below.') : L('Contactez l\'équipe Quasar.', 'Contact the Quasar team.')}</div></div>`;
-        const opt = c.options.filter(o => state.picked.has(o.key));
-        const monthly = c.base.monthly + opt.reduce((n, o) => n + o.monthly, 0);
-        const setup = state.withSetup ? c.setupFee.amount : 0;
+    function staffBar(d, subscribed) {
         return `
-            <div class="bl-card">
-                <div class="bl-row" data-tip-host><div class="bl-title" style="flex:1;">${esc(c.base.name)}</div>${tip(L(`Le forfait inclut ${c.base.includedConversations} conversations IA par mois. Une conversation IA = un client à qui l'assistant a répondu pendant le mois, quel que soit le nombre de messages. Au-delà, chaque conversation coûte ${money(c.overage.unitPrice)}.`, `The plan includes ${c.base.includedConversations} AI conversations per month. One AI conversation = one customer the assistant replied to during the month, whatever the number of messages. Beyond that, each conversation costs ${money(c.overage.unitPrice)}.`))}</div>
-                <div class="bl-dim" style="margin-top:4px;">${esc(c.base.description)}</div>
-                <div style="margin-top:10px;"><span class="bl-big">${money(c.base.monthly)}</span> <span class="bl-dim">/ ${L('mois', 'month')}</span></div>
-                <div class="bl-dim">${L(`${c.base.includedConversations} conversations IA incluses, puis ${money(c.overage.unitPrice)} par conversation`, `${c.base.includedConversations} AI conversations included, then ${money(c.overage.unitPrice)} per conversation`)}</div>
-            </div>
-            ${c.options.length ? `
-            <div class="bl-card">
-                <div class="bl-title" style="margin-bottom:6px;">${L('Options', 'Add-ons')}</div>
-                ${c.options.map(o => `
-                    <label class="bl-opt" style="cursor:pointer;">
-                        <span class="bl-switch"><input type="checkbox" data-pick="${esc(o.key)}" ${state.picked.has(o.key) ? 'checked' : ''}><span></span></span>
-                        <span style="flex:1; min-width:0;"><strong>${esc(o.name)}</strong><br><span class="bl-dim">${esc(o.description)}</span></span>
-                        <strong style="white-space:nowrap;">+${money(o.monthly)}</strong>
-                    </label>`).join('')}
-            </div>` : ''}
-            <div class="bl-card">
-                ${opts.isStaff ? `<label class="bl-row" style="cursor:pointer; margin-bottom:10px;"><span class="bl-switch"><input type="checkbox" id="bl-setup" ${state.withSetup ? 'checked' : ''}><span></span></span><span>${L('Inclure les frais d\'installation', 'Include the setup fee')}</span></label>` : ''}
-                <div class="bl-total"><span>${L('Abonnement mensuel', 'Monthly subscription')}</span><strong>${money(monthly)}</strong></div>
-                ${setup ? `<div class="bl-total"><span>${esc(c.setupFee.name)} (${L('une fois', 'one time')})</span><strong>${money(setup)}</strong></div>` : ''}
-                <div class="bl-total" style="border-top:1px solid var(--border, #2d3139); margin-top:6px; padding-top:10px;"><span>${L('Premier paiement', 'First payment')}</span><strong>${money(monthly + setup)} <span class="bl-dim">+ ${L('taxes', 'taxes')}</span></strong></div>
-                <div class="bl-dim" style="margin:6px 0 12px;">${L('Paiement sécurisé par Stripe. Résiliable en tout temps, sans frais.', 'Secure payment by Stripe. Cancel anytime, no fees.')}</div>
-                <div class="bl-row">
-                    <button class="bl-btn" id="bl-subscribe"><span class="material-icons">lock</span> ${opts.isStaff ? L('Ouvrir le paiement', 'Open checkout') : L('S\'abonner', 'Subscribe')}</button>
-                    ${opts.isStaff ? `<button class="bl-btn ghost" id="bl-copy"><span class="material-icons">link</span> ${L('Copier le lien pour le client', 'Copy the link for the client')}</button>` : ''}
+            <div class="bl-card" style="border-color:rgba(223,165,58,.4);">
+                <div class="bl-row" data-tip-host>
+                    <div style="flex:1; min-width:200px;"><div class="bl-title">${L('Offre de ce client', 'This client\'s offer')}</div>
+                        <div class="bl-dim">${d.offer.isDefault ? L('Basée sur la grille publique. Personnalisez-la pour ce client.', 'Based on the public price list. Customise it for this client.') : L(`Personnalisée${d.offer.updatedAt ? ` le ${date(d.offer.updatedAt)}` : ''}.`, `Customised${d.offer.updatedAt ? ` on ${date(d.offer.updatedAt)}` : ''}.`)}${subscribed ? ` ${L('Les changements s\'appliquent aux nouveaux paiements, pas à l\'abonnement en cours.', 'Changes apply to new checkouts, not to the current subscription.')}` : ''}</div></div>
+                    ${tip(L('1. Personnalisez l\'offre (prix, quota, options incluses, lignes sur mesure, remise). 2. Copiez le lien de proposition et envoyez-le au client : il voit son offre et paie en ligne. Il la voit aussi dans son portail, onglet Subscription.', '1. Customise the offer (prices, quota, included add-ons, custom lines, discount). 2. Copy the proposal link and send it to the client: they see their offer and pay online. They also see it in their portal, Subscription tab.'))}
+                </div>
+                <div class="bl-row" style="margin-top:12px;">
+                    <button class="bl-btn" id="bl-edit"><span class="material-icons">tune</span> ${L('Personnaliser l\'offre', 'Customise the offer')}</button>
+                    ${!subscribed ? `<button class="bl-btn ghost" id="bl-link"><span class="material-icons">link</span> ${L('Copier le lien de proposition', 'Copy the proposal link')}</button>` : ''}
                 </div>
             </div>`;
     }
 
-    // ----- Subscribed -----
+    function notSubscribedView(d) {
+        if (!d.ready) return `<div class="bl-card"><div class="bl-title">${L('Abonnement', 'Subscription')}</div><div class="bl-dim" style="margin-top:6px;">${L('L\'offre n\'est pas encore publiée.', 'The offer is not published yet.')} ${opts.isStaff ? L('Publiez la grille ci-dessous dans Stripe.', 'Publish the price list below to Stripe.') : L('Contactez l\'équipe Quasar.', 'Contact the Quasar team.')}</div></div>`;
+        const staffExtra = opts.isStaff ? `<label class="bl-row" style="cursor:pointer; margin-bottom:10px;"><span class="bl-switch"><input type="checkbox" id="bl-setup" ${state.withSetup ? 'checked' : ''}><span></span></span><span>${L('Inclure les frais uniques', 'Include the one-time fees')}</span></label>` : '';
+        const offer = state.withSetup ? d.offer : { ...d.offer, setupFee: 0, customItems: d.offer.customItems.filter(i => i.type === 'monthly') };
+        return offerHtml(offer, state.picked, {
+            staffExtra,
+            cta: `<button class="bl-btn" id="bl-subscribe"><span class="material-icons">lock</span> ${opts.isStaff ? L('Ouvrir le paiement', 'Open checkout') : L('S\'abonner', 'Subscribe')}</button>`
+        });
+    }
+
     function subscribedView(d) {
-        const s = d.subscription, c = d.catalog, u = d.usage;
+        const s = d.subscription, o = d.offer, u = d.usage;
         const [cls, label] = STATUS()[s.status] || ['off', s.status];
         const pct = u.included ? Math.min(100, Math.round(u.used / u.included * 100)) : 0;
         const barColor = u.used > u.included ? '#ef4444' : pct >= 80 ? '#f5a524' : '#3ecf8e';
+        const optional = o.options.filter(x => x.mode === 'optional');
+        const included = o.options.filter(x => x.mode === 'included');
         return `
             <div class="bl-card">
-                <div class="bl-row"><div class="bl-title" style="flex:1;">${esc(c.base.name)}</div><span class="bl-chip ${cls}">${label}</span></div>
+                <div class="bl-row"><div class="bl-title" style="flex:1;">${esc(o.base.name)}</div><span class="bl-chip ${cls}">${label}</span></div>
                 <div style="margin-top:8px;"><span class="bl-big">${money(s.monthly)}</span> <span class="bl-dim">/ ${L('mois', 'month')} + ${L('taxes', 'taxes')}</span></div>
+                ${included.length ? `<div class="bl-dim" style="margin-top:6px;">${L('Inclus', 'Included')} : ${included.map(x => esc(x.name)).join(', ')}</div>` : ''}
                 ${s.cancelAtPeriodEnd ? `<div class="bl-note info" style="margin-top:10px;">${L(`L'abonnement se termine le ${date(s.periodEnd)}.`, `The subscription ends on ${date(s.periodEnd)}.`)}</div>` : ''}
                 ${s.status === 'past_due' || s.status === 'unpaid' ? `<div class="bl-note err" style="margin-top:10px;">${L('Le dernier paiement a échoué. Mettez à jour votre carte pour éviter une interruption du service.', 'The last payment failed. Update your card to avoid a service interruption.')}</div>` : ''}
                 ${d.upcoming ? `<div class="bl-dim" style="margin-top:8px;">${L('Prochaine facture', 'Next invoice')} : <strong style="color:var(--text-main,#fff);">${money(d.upcoming.total)}</strong> ${L('le', 'on')} ${date(d.upcoming.date)}</div>` : ''}
                 <div class="bl-row" style="margin-top:14px;"><button class="bl-btn" id="bl-portal"><span class="material-icons">credit_card</span> ${L('Paiement, factures et résiliation', 'Payment, invoices and cancellation')}</button></div>
             </div>
             <div class="bl-card">
-                <div class="bl-row" data-tip-host><div class="bl-title" style="flex:1;">${L('Utilisation ce mois-ci', 'Usage this month')}</div>${tip(L(`Une conversation IA = un client à qui l'assistant a répondu pendant la période de facturation, peu importe le nombre de messages. Au-delà de ${u.included} conversations, chacune coûte ${money(c.overage.unitPrice)}, ajouté à la facture suivante.`, `One AI conversation = one customer the assistant replied to during the billing period, whatever the number of messages. Beyond ${u.included} conversations, each one costs ${money(c.overage.unitPrice)}, added to the next invoice.`))}</div>
+                <div class="bl-row" data-tip-host><div class="bl-title" style="flex:1;">${L('Utilisation ce mois-ci', 'Usage this month')}</div>${tip(L(`Une conversation IA = un client à qui l'assistant a répondu pendant la période de facturation, peu importe le nombre de messages. Au-delà de ${u.included} conversations, chacune coûte ${money(o.overageUnitPrice)}, ajouté à la facture suivante.`, `One AI conversation = one customer the assistant replied to during the billing period, whatever the number of messages. Beyond ${u.included} conversations, each one costs ${money(o.overageUnitPrice)}, added to the next invoice.`))}</div>
                 <div style="margin:10px 0 6px;"><span class="bl-big">${u.used}</span> <span class="bl-dim">/ ${u.included} ${L('conversations IA', 'AI conversations')}</span></div>
                 <div class="bl-bar"><div style="width:${pct}%; background:${barColor};"></div></div>
                 <div class="bl-dim" style="margin-top:8px;">${s.periodEnd ? `${L('Remise à zéro le', 'Resets on')} ${date(s.periodEnd)}. ` : ''}${u.overage ? `<span style="color:#ef4444; font-weight:600;">${L(`${u.overage} conversations au-delà du quota : environ ${money(u.overageEstimate)} sur la prochaine facture.`, `${u.overage} conversations over the quota: about ${money(u.overageEstimate)} on the next invoice.`)}</span>` : pct >= 80 ? `<span style="color:#f5a524; font-weight:600;">${L('Vous approchez de votre quota.', 'You are close to your quota.')}</span>` : ''}</div>
             </div>
-            ${c.options.length ? `
+            ${optional.length ? `
             <div class="bl-card">
                 <div class="bl-row" data-tip-host style="margin-bottom:6px;"><div class="bl-title" style="flex:1;">${L('Options', 'Add-ons')}</div>${tip(L('Ajoutez ou retirez une option à tout moment. Le montant est ajusté au prorata sur votre prochaine facture.', 'Add or remove an add-on at any time. The amount is prorated on your next invoice.'))}</div>
-                ${c.options.map(o => `
+                ${optional.map(x => `
                     <div class="bl-opt">
-                        <span style="flex:1; min-width:0;"><strong>${esc(o.name)}</strong><br><span class="bl-dim">${esc(o.description)} · ${money(o.monthly)}/${L('mois', 'mo')}</span></span>
-                        <label class="bl-switch"><input type="checkbox" data-opt="${esc(o.key)}" ${s.options.includes(o.key) ? 'checked' : ''}><span></span></label>
+                        <span style="flex:1; min-width:0;"><strong>${esc(x.name)}</strong><br><span class="bl-dim">${esc(x.description)} · ${money(x.monthly)}/${L('mois', 'mo')}</span></span>
+                        <label class="bl-switch"><input type="checkbox" data-opt="${esc(x.key)}" ${s.options.includes(x.key) ? 'checked' : ''}><span></span></label>
                     </div>`).join('')}
             </div>` : ''}
             <div class="bl-card">
@@ -198,22 +243,32 @@ export function renderProjectBilling(container, opts) {
             render();
         }));
         container.querySelector('#bl-setup')?.addEventListener('change', (e) => { state.withSetup = e.target.checked; render(); });
-        const checkout = async (btn, copy) => {
+        container.querySelector('#bl-edit')?.addEventListener('click', () => { state.editing = true; render(); });
+        container.querySelector('#bl-link')?.addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            btn.disabled = true;
+            try {
+                let url = d.proposalUrl;
+                if (!url) { // first link: save the offer as it is to create the proposal id
+                    await call(`/projects/${opts.projectId}/offer`, { method: 'PUT', body: d.offer });
+                    url = (await call(`/projects/${opts.projectId}`)).proposalUrl;
+                }
+                await navigator.clipboard.writeText(url).catch(() => { });
+                notice('ok', `${L('Lien de proposition copié. Envoyez-le à votre client :', 'Proposal link copied. Send it to your client:')}<br><a href="${esc(url)}" target="_blank" rel="noopener" style="word-break:break-all; font-size:.78rem; color:var(--gold);">${esc(url)}</a>`);
+            } catch (err) { notice('err', esc(err.message)); }
+            btn.disabled = false;
+        });
+        container.querySelector('#bl-subscribe')?.addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
             btn.disabled = true;
             try {
                 const { url } = await call(`/projects/${opts.projectId}/checkout`, {
                     method: 'POST',
-                    body: { options: [...state.picked], withSetup: state.withSetup, returnTo: opts.returnTo || `${window.location.origin}${window.location.pathname}` }
+                    body: { options: [...state.picked], withSetup: state.withSetup, returnTo: `${window.location.origin}${window.location.pathname}` }
                 });
-                if (copy) {
-                    await navigator.clipboard.writeText(url).catch(() => { });
-                    notice('ok', `${L('Lien de paiement copié. Envoyez-le à votre client :', 'Checkout link copied. Send it to your client:')}<br><code style="word-break:break-all; font-size:.75rem;">${esc(url)}</code>`);
-                    btn.disabled = false;
-                } else window.location.href = url;
-            } catch (e) { notice('err', esc(e.message)); btn.disabled = false; }
-        };
-        container.querySelector('#bl-subscribe')?.addEventListener('click', (e) => checkout(e.currentTarget, false));
-        container.querySelector('#bl-copy')?.addEventListener('click', (e) => checkout(e.currentTarget, true));
+                window.location.href = url;
+            } catch (err) { notice('err', esc(err.message)); btn.disabled = false; }
+        });
         container.querySelector('#bl-portal')?.addEventListener('click', async (e) => {
             const btn = e.currentTarget;
             btn.disabled = true;
@@ -223,7 +278,7 @@ export function renderProjectBilling(container, opts) {
             } catch (err) { notice('err', esc(err.message)); btn.disabled = false; }
         });
         container.querySelectorAll('[data-opt]').forEach(input => input.addEventListener('change', async () => {
-            const o = d.catalog.options.find(x => x.key === input.dataset.opt);
+            const o = d.offer.options.find(x => x.key === input.dataset.opt);
             input.disabled = true;
             try {
                 await call(`/projects/${opts.projectId}/options`, { method: 'POST', body: { key: o.key, enabled: input.checked } });
@@ -235,7 +290,140 @@ export function renderProjectBilling(container, opts) {
         }));
     }
 
+    // ----- Staff: edit this client's offer -----
+    function renderOfferEditor(body, d) {
+        const o = d.offer;
+        const f = (label, name, value, type = 'text', step = '') => `<label class="bl-field">${label}<input class="bl-input" name="${name}" type="${type}" ${step ? `step="${step}"` : ''} value="${esc(value)}"></label>`;
+        const modeSel = (opt) => `<select class="bl-input" name="mode">${[['optional', L('Proposée (le client choisit)', 'Offered (client chooses)')], ['included', L('Incluse dans l\'offre', 'Included in the offer')], ['hidden', L('Masquée', 'Hidden')]].map(([v, l]) => `<option value="${v}" ${opt.mode === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+        const itemRow = (i) => `
+            <div data-item class="bl-opt" style="flex-wrap:wrap; align-items:flex-end;">
+                <div class="bl-grid" style="flex:1;">
+                    <label class="bl-field">${L('Nom', 'Name')}<input class="bl-input" name="name" value="${esc(i.name)}" placeholder="${L('ex. Intégration CRM', 'e.g. CRM integration')}"></label>
+                    <label class="bl-field">${L('Montant ($)', 'Amount ($)')}<input class="bl-input" name="amount" type="number" step="0.01" value="${esc(i.amount)}"></label>
+                    <label class="bl-field">${L('Facturation', 'Billing')}<select class="bl-input" name="type"><option value="monthly" ${i.type === 'monthly' ? 'selected' : ''}>${L('Mensuelle', 'Monthly')}</option><option value="once" ${i.type === 'once' ? 'selected' : ''}>${L('Une fois', 'One time')}</option></select></label>
+                    <label class="bl-field" style="grid-column:1/-1;">${L('Description', 'Description')}<input class="bl-input" name="description" value="${esc(i.description || '')}"></label>
+                    <input type="hidden" name="id" value="${esc(i.id || '')}">
+                </div>
+                <button type="button" class="bl-btn ghost" data-remove style="min-height:40px;"><span class="material-icons">delete_outline</span></button>
+            </div>`;
+        body.innerHTML = `
+            <form id="bo-form" class="bl" style="max-width:none;">
+                <div class="bl-card" style="border-color:rgba(223,165,58,.4);">
+                    <div class="bl-title">${L('Personnaliser l\'offre de ce client', 'Customise this client\'s offer')}</div>
+                    <div class="bl-dim">${L('Seul ce client voit ces conditions. La grille publique ne change pas.', 'Only this client sees these terms. The public price list does not change.')}</div>
+                </div>
+                <div class="bl-card">
+                    <div class="bl-title" style="margin-bottom:10px;">${L('Forfait', 'Plan')}</div>
+                    <div class="bl-grid">
+                        ${f(L('Nom affiché', 'Display name'), 'base.name', o.base.name)}
+                        ${f(L('Prix mensuel ($)', 'Monthly price ($)'), 'base.monthly', o.base.monthly, 'number', '0.01')}
+                        ${f(L('Conversations IA incluses / mois', 'AI conversations included / month'), 'base.includedConversations', o.base.includedConversations, 'number', '1')}
+                        ${f(L('Frais d\'installation ($)', 'Setup fee ($)'), 'setupFee', o.setupFee, 'number', '0.01')}
+                        ${f(L('Prix par conversation en dépassement ($)', 'Price per overage conversation ($)'), 'overageUnitPrice', o.overageUnitPrice, 'number', '0.01')}
+                    </div>
+                    <label class="bl-field" style="margin-top:10px;">${L('Description', 'Description')}<textarea class="bl-input" name="base.description" rows="2">${esc(o.base.description)}</textarea></label>
+                </div>
+                <div class="bl-card">
+                    <div class="bl-title" style="margin-bottom:6px;">${L('Options', 'Add-ons')}</div>
+                    ${o.options.map(opt => `
+                        <div data-option="${esc(opt.key)}" class="bl-opt" style="flex-wrap:wrap;">
+                            <div class="bl-grid" style="flex:1;">
+                                <label class="bl-field">${L('Nom', 'Name')}<input class="bl-input" name="name" value="${esc(opt.name)}"></label>
+                                <label class="bl-field">${L('Prix mensuel ($, 0 = offert)', 'Monthly price ($, 0 = free)')}<input class="bl-input" name="monthly" type="number" step="0.01" value="${esc(opt.monthly)}"></label>
+                                <label class="bl-field">${L('Pour ce client', 'For this client')}${modeSel(opt)}</label>
+                                <input type="hidden" name="description" value="${esc(opt.description)}"><input type="hidden" name="extra" value="${esc(opt.extraConversations || 0)}">
+                            </div>
+                        </div>`).join('') || `<div class="bl-dim">${L('Aucune option dans la grille.', 'No add-on in the price list.')}</div>`}
+                </div>
+                <div class="bl-card">
+                    <div class="bl-row" style="margin-bottom:6px;"><div class="bl-title" style="flex:1;">${L('Lignes sur mesure', 'Custom lines')}</div><button type="button" class="bl-btn ghost" id="bo-add" style="min-height:38px;"><span class="material-icons">add</span> ${L('Ajouter', 'Add')}</button></div>
+                    <div class="bl-dim" style="margin-bottom:6px;">${L('Pour ce qui n\'est pas dans la grille : intégration spéciale, agent multilingue, formation…', 'For anything not in the price list: special integration, multilingual agent, training…')}</div>
+                    <div id="bo-items">${o.customItems.map(itemRow).join('')}</div>
+                </div>
+                <div class="bl-card">
+                    <div class="bl-title" style="margin-bottom:10px;">${L('Remise et message', 'Discount and message')}</div>
+                    <div class="bl-grid">
+                        ${f(L('Remise (%)', 'Discount (%)'), 'discount.percent', o.discount?.percent || 0, 'number', '1')}
+                        ${f(L('Pendant (mois, 0 = toujours)', 'For (months, 0 = always)'), 'discount.months', o.discount?.months || 0, 'number', '1')}
+                    </div>
+                    <label class="bl-field" style="margin-top:10px;">${L('Message au client (affiché en haut de sa proposition)', 'Message to the client (shown at the top of the proposal)')}<textarea class="bl-input" name="note" rows="3" placeholder="${L('ex. Comme convenu lors de notre rencontre…', 'e.g. As discussed in our meeting…')}">${esc(o.note || '')}</textarea></label>
+                </div>
+                <div class="bl-row">
+                    <button type="submit" class="bl-btn"><span class="material-icons">save</span> ${L('Enregistrer l\'offre', 'Save the offer')}</button>
+                    <button type="button" class="bl-btn ghost" id="bo-cancel">${L('Annuler', 'Cancel')}</button>
+                    ${!o.isDefault ? `<button type="button" class="bl-btn ghost" id="bo-reset">${L('Revenir à la grille publique', 'Back to the public price list')}</button>` : ''}
+                </div>
+            </form>`;
+        const form = body.querySelector('#bo-form');
+        body.querySelector('#bo-add').addEventListener('click', () => body.querySelector('#bo-items').insertAdjacentHTML('beforeend', itemRow({ name: '', amount: 0, type: 'monthly' })));
+        body.querySelector('#bo-items').addEventListener('click', (e) => { if (e.target.closest('[data-remove]')) e.target.closest('[data-item]').remove(); });
+        body.querySelector('#bo-cancel').addEventListener('click', () => { state.editing = false; render(); });
+        body.querySelector('#bo-reset')?.addEventListener('click', async () => {
+            try { await call(`/projects/${opts.projectId}/offer`, { method: 'DELETE' }); state.editing = false; notice('ok', L('Offre remise à la grille publique.', 'Offer reset to the public price list.')); load(); }
+            catch (e) { notice('err', esc(e.message)); }
+        });
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const v = (n) => form.querySelector(`[name="${n}"]`).value;
+            const payload = {
+                base: { name: v('base.name'), description: v('base.description'), monthly: v('base.monthly'), includedConversations: v('base.includedConversations') },
+                setupFee: v('setupFee'), overageUnitPrice: v('overageUnitPrice'),
+                options: [...form.querySelectorAll('[data-option]')].map(r => ({
+                    key: r.dataset.option, name: r.querySelector('[name=name]').value, monthly: r.querySelector('[name=monthly]').value,
+                    mode: r.querySelector('[name=mode]').value, description: r.querySelector('[name=description]').value, extraConversations: r.querySelector('[name=extra]').value
+                })),
+                customItems: [...form.querySelectorAll('[data-item]')].map(r => ({
+                    id: r.querySelector('[name=id]').value, name: r.querySelector('[name=name]').value, description: r.querySelector('[name=description]').value,
+                    amount: r.querySelector('[name=amount]').value, type: r.querySelector('[name=type]').value
+                })),
+                discount: { percent: v('discount.percent'), months: v('discount.months') },
+                note: v('note')
+            };
+            const btn = e.submitter;
+            if (btn) btn.disabled = true;
+            try {
+                await call(`/projects/${opts.projectId}/offer`, { method: 'PUT', body: payload });
+                state.editing = false;
+                notice('ok', L('Offre enregistrée. Copiez le lien de proposition pour l\'envoyer au client.', 'Offer saved. Copy the proposal link to send it to the client.'));
+                await load();
+            } catch (err) { notice('err', esc(err.message)); if (btn) btn.disabled = false; }
+        });
+    }
+
     load();
+}
+
+/** Public proposal page (offer.html?p=…): the client sees their offer and pays, without an account. */
+export function renderProposal(container, { apiBase, proposalId }) {
+    const call = api(apiBase, null);
+    const state = { data: null, picked: new Set() };
+    const params = new URLSearchParams(window.location.search);
+    const back = params.get('billing');
+    container.innerHTML = `<style>${STYLES}</style><div class="bl" style="margin:0 auto;"><div id="bl-notice"></div><div id="bl-body" class="bl-dim">${L('Chargement…', 'Loading…')}</div></div>`;
+    bindTips(container);
+    const notice = (type, html) => { container.querySelector('#bl-notice').innerHTML = html ? `<div class="bl-note ${type}">${html}</div>` : ''; };
+    if (back === 'cancelled') notice('info', L('Paiement annulé : aucun montant n\'a été prélevé.', 'Payment cancelled: nothing was charged.'));
+
+    const render = () => {
+        const d = state.data;
+        const body = container.querySelector('#bl-body');
+        body.className = '';
+        const head = `<div><div class="bl-dim" style="text-transform:uppercase; letter-spacing:.08em; font-size:.72rem;">${L('Proposition pour', 'Proposal for')}</div><div style="font-size:1.5rem; font-weight:800;">${esc(d.clientName || d.projectName)}</div></div>`;
+        if (d.subscribed || back === 'success') {
+            body.innerHTML = `${head}<div class="bl-note ok">${L('Merci ! Votre abonnement est actif. Vous recevrez vos accès et vos factures par courriel.', 'Thank you! Your subscription is active. You will receive your access and invoices by email.')}</div>`;
+            return;
+        }
+        body.innerHTML = head + offerHtml(d.offer, state.picked, { cta: `<button class="bl-btn" id="bl-accept" style="flex:1;"><span class="material-icons">lock</span> ${L('Accepter et payer', 'Accept and pay')}</button>` });
+        body.querySelectorAll('[data-pick]').forEach(i => i.addEventListener('change', () => { i.checked ? state.picked.add(i.dataset.pick) : state.picked.delete(i.dataset.pick); render(); }));
+        body.querySelector('#bl-accept').addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            btn.disabled = true;
+            try { window.location.href = (await call(`/proposals/${proposalId}/checkout`, { method: 'POST', body: { options: [...state.picked] } })).url; }
+            catch (err) { notice('err', esc(err.message)); btn.disabled = false; }
+        });
+    };
+    call(`/proposals/${proposalId}`).then(d => { state.data = d; render(); })
+        .catch(e => { container.querySelector('#bl-body').innerHTML = `<div class="bl-note err">${esc(e.message)}</div>`; });
 }
 
 /** ERP staff: edit the offer and publish it to Stripe. */
@@ -254,7 +442,7 @@ export function renderCatalogEditor(container, opts) {
         body.innerHTML = `
             <form id="bc-form" class="bl" style="max-width:none;">
                 <div class="bl-card">
-                    <div class="bl-row" data-tip-host><div class="bl-title" style="flex:1;">${L('Catalogue de l\'offre (tous les clients)', 'Offer catalog (all clients)')}</div>
+                    <div class="bl-row" data-tip-host><div class="bl-title" style="flex:1;">${L('Grille publique (site web) et point de départ des offres', 'Public price list (website) and starting point of offers')}</div>
                         <span class="bl-chip ${cat.stripe?.basePrice ? 'ok' : 'warn'}">${cat.stripe?.basePrice ? L('Publié dans Stripe', 'Published to Stripe') : L('Non publié', 'Not published')}</span>
                         ${tip(L('Modifiez les prix puis cliquez « Enregistrer et publier ». Un prix modifié crée un nouveau prix Stripe pour les nouveaux abonnements ; les abonnements existants gardent leur prix tant que vous ne les migrez pas.', 'Edit the prices then click "Save and publish". A changed price creates a new Stripe price for new subscriptions; existing subscriptions keep their price until you migrate them.'))}</div>
                 </div>

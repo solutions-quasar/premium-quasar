@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="robots" content="noindex">
+    <title>Inbox</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        /* Embedded Quasar inbox (loaded by /embed/sdk.js inside another app) */
+        :root {
+            --bg-card: #121418; --bg-dark: #0d0f12; --border: #2d3139; --gold: #dfa53a;
+            --text-main: #ffffff; --text-muted: #94a3b8; --text-dim: #94a3b8;
+        }
+        html, body { margin: 0; height: 100%; background: var(--page-bg, #08090a); color: var(--text-main); font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+        #app { height: 100%; box-sizing: border-box; padding: 8px; }
+        .btn { background: transparent; border: 1px solid var(--border); color: inherit; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+        .btn-primary { background: var(--gold); color: #000; border-color: var(--gold); }
+        .form-input { background: var(--bg-dark); border: 1px solid var(--border); color: inherit; padding: 9px 11px; border-radius: 8px; font-size: .9rem; font-family: inherit; box-sizing: border-box; }
+        .text-danger { color: #ef4444; }
+        .wait { height: 100%; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: .9rem; }
+    </style>
+</head>
+<body>
+    <div id="app"><div class="wait">…</div></div>
+    <script type="module">
+        // The parent app sends { type: 'quasar:init' | 'quasar:token', token, lang, theme } via postMessage.
+        let token = null;
+        let waiting = [];
+        let mounted = false;
+        const parentWin = window.parent !== window ? window.parent : null;
+        const expOf = (t) => { try { return JSON.parse(atob(t.slice(4).split('.')[0].replace(/-/g, '+').replace(/_/g, '/'))).exp * 1000; } catch (_) { return 0; } };
+
+        const askToken = () => new Promise((resolve) => {
+            waiting.push(resolve);
+            parentWin?.postMessage({ type: 'quasar:need-token' }, '*');
+        });
+        // Fresh token for each API call; renewed by the parent 2 minutes before it expires
+        const getToken = async () => (token && expOf(token) - Date.now() > 120000) ? token : askToken();
+
+        function applyTheme(theme = {}) {
+            const r = document.documentElement.style;
+            if (theme.accent) r.setProperty('--gold', theme.accent);
+            if (theme.background) r.setProperty('--page-bg', theme.background);
+            if (theme.card) { r.setProperty('--bg-card', theme.card); r.setProperty('--bg-dark', theme.card); }
+            if (theme.border) r.setProperty('--border', theme.border);
+            if (theme.text) r.setProperty('--text-main', theme.text);
+        }
+
+        window.addEventListener('message', async (e) => {
+            if (!parentWin || e.source !== parentWin) return;
+            const d = e.data || {};
+            if (!['quasar:init', 'quasar:token'].includes(d.type) || !/^emb_/.test(d.token || '')) return;
+            token = d.token;
+            waiting.splice(0).forEach(r => r(token));
+            if (d.type !== 'quasar:init' || mounted) return;
+            mounted = true;
+            if (d.lang) window.MP_LANG = d.lang === 'fr' ? 'fr' : 'en';
+            document.documentElement.lang = window.MP_LANG || 'en';
+            applyTheme(d.theme);
+            const projectId = JSON.parse(atob(token.slice(4).split('.')[0].replace(/-/g, '+').replace(/_/g, '/'))).p;
+            const { renderProjectMessaging } = await import('/erp/js/modules/mp_inbox.js?v=20261110');
+            renderProjectMessaging(document.getElementById('app'), { projectId, apiBase: '', getToken, agents: [], isStaff: false });
+        });
+
+        if (parentWin) parentWin.postMessage({ type: 'quasar:ready' }, '*');
+        else document.querySelector('.wait').textContent = 'This page is meant to be embedded with /embed/sdk.js.';
+    </script>
+</body>
+</html>

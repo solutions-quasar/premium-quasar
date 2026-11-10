@@ -20,6 +20,7 @@ const promptLayers = require('./prompt');
 const { db } = require('../firebase-admin');
 const gmail = require('./gmail');
 const connect = require('./connect');
+const embed = require('./embed');
 
 // Local dev uses http://localhost:<port>; production uses the public hosting URL
 function serverUrlFor(req) {
@@ -228,6 +229,29 @@ function createRouter({ verifyToken }) {
     // ----- Authenticated inbox API -----
     const auth = [verifyToken, requireProjectAccess];
 
+    // Inbox routes also accept an embed session token (Bearer emb_…) from the widget in another app.
+    const verifyTokenOrEmbed = async (req, res, next) => {
+        const bearer = (req.get('authorization') || '').replace(/^Bearer\s+/i, '');
+        if (!bearer.startsWith('emb_')) return verifyToken(req, res, next);
+        const s = await embed.verifySession(bearer).catch(() => null);
+        if (!s) return res.status(401).json({ success: false, error: 'Session expirée : rechargez la page.', code: 'embed_expired' });
+        req.user = { role: 'client', projectId: s.projectId, email: s.userName, embed: true };
+        next();
+    };
+    const inboxAuth = [verifyTokenOrEmbed, requireProjectAccess];
+
+    // ----- Embeddable inbox: session tokens and integration keys -----
+    // Called by the other app's BACKEND with its integration key (never from a browser).
+    router.post('/embed/session', async (req, res) => {
+        try {
+            const raw = (req.get('authorization') || '').replace(/^Bearer\s+/i, '') || req.body?.key;
+            const { projectId, keyId } = await embed.checkKey(raw);
+            res.json({ success: true, ...(await embed.createSession({ projectId, keyId, userName: req.body?.userName, ttl: req.body?.ttl })) });
+        } catch (e) {
+            res.status(401).json({ success: false, error: e.message });
+        }
+    });
+
     // Effective AI state of a conversation: its channel must have an agent and AI replies on.
     const channelsById = async (projectId) => new Map((await core.listChannels(projectId)).map(c => [c.id, c]));
     const aiState = (conv, channels) => {
@@ -238,7 +262,7 @@ function createRouter({ verifyToken }) {
         return { channel: true, channelId: ch.id };
     };
 
-    router.get('/projects/:projectId/conversations', auth, async (req, res) => {
+    router.get('/projects/:projectId/conversations', inboxAuth, async (req, res) => {
         try {
             const [snap, channels] = await Promise.all([
                 core.conversationsRef(req.params.projectId).orderBy('lastMessageAt', 'desc').limit(200).get(),
@@ -254,7 +278,7 @@ function createRouter({ verifyToken }) {
         }
     });
 
-    router.get('/projects/:projectId/conversations/:convId', auth, async (req, res) => {
+    router.get('/projects/:projectId/conversations/:convId', inboxAuth, async (req, res) => {
         try {
             const ref = core.conversationsRef(req.params.projectId).doc(req.params.convId);
             const snap = await ref.get();
@@ -267,7 +291,7 @@ function createRouter({ verifyToken }) {
         }
     });
 
-    router.post('/projects/:projectId/conversations/:convId/reply', auth, async (req, res) => {
+    router.post('/projects/:projectId/conversations/:convId/reply', inboxAuth, async (req, res) => {
         const text = String(req.body?.text || '').trim();
         if (!text) return res.status(400).json({ success: false, error: 'Message vide.' });
         try {
@@ -278,7 +302,7 @@ function createRouter({ verifyToken }) {
         }
     });
 
-    router.patch('/projects/:projectId/conversations/:convId', auth, async (req, res) => {
+    router.patch('/projects/:projectId/conversations/:convId', inboxAuth, async (req, res) => {
         try {
             const update = {};
             if (typeof req.body?.aiEnabled === 'boolean') update.aiEnabled = req.body.aiEnabled;
@@ -294,6 +318,24 @@ function createRouter({ verifyToken }) {
 
     // ----- Channel management (ERP staff only: holds provider tokens) -----
     const staff = [verifyToken, requireStaff];
+
+    router.get('/projects/:projectId/embed/keys', staff, async (req, res) => {
+        try { res.json({ success: true, keys: await embed.listKeys(req.params.projectId) }); }
+        catch (e) { res.status(500).json({ success: false, error: e.message }); }
+    });
+    router.post('/projects/:projectId/embed/keys', staff, async (req, res) => {
+        try { res.json({ success: true, ...(await embed.createKey(req.params.projectId, { label: req.body?.label, user: req.user })) }); }
+        catch (e) { res.status(400).json({ success: false, error: e.message }); }
+    });
+    router.delete('/projects/:projectId/embed/keys/:keyId', staff, async (req, res) => {
+        try { await embed.revokeKey(req.params.projectId, req.params.keyId); res.json({ success: true }); }
+        catch (e) { res.status(400).json({ success: false, error: e.message }); }
+    });
+    // Staff preview of the widget, without a key
+    router.post('/projects/:projectId/embed/preview-session', staff, async (req, res) => {
+        try { res.json({ success: true, ...(await embed.createSession({ projectId: req.params.projectId, userName: req.user?.email, ttl: 3600 })) }); }
+        catch (e) { res.status(400).json({ success: false, error: e.message }); }
+    });
 
     router.get('/projects/:projectId/channels', staff, async (req, res) => {
         try {

@@ -223,28 +223,96 @@ async function syncProjectSubscription(project, catalog) {
     return { sub, billing };
 }
 
-const includedFor = (catalog, options) => (catalog.base.includedConversations || 0)
-    + catalog.options.filter(o => options.includes(o.key)).reduce((n, o) => n + (o.extraConversations || 0), 0);
+// ---------- Per-client offer ----------
+// ai_projects/{id}.billingOffer: the client's own offer, derived from the catalog then customised.
+//   options[].mode: 'included' (always billed, price can be 0) | 'optional' (client may add) | 'hidden'
+
+const OPTION_MODES = ['included', 'optional', 'hidden'];
+const newId = () => require('crypto').randomBytes(12).toString('hex');
+
+function defaultOffer(catalog) {
+    return {
+        base: { name: catalog.base.name, description: catalog.base.description, monthly: catalog.base.monthly, includedConversations: catalog.base.includedConversations },
+        setupFee: catalog.setupFee.amount,
+        overageUnitPrice: catalog.overage.unitPrice,
+        options: catalog.options.map(o => ({ key: o.key, name: o.name, description: o.description, monthly: o.monthly, extraConversations: o.extraConversations || 0, mode: 'optional' })),
+        customItems: [],
+        discount: { percent: 0, months: 0 },
+        note: '',
+        isDefault: true
+    };
+}
+
+function cleanOffer(input, catalog) {
+    const num = (v) => Math.max(0, Number(v) || 0);
+    const str = (v, max = 300) => String(v || '').trim().slice(0, max);
+    const known = new Set(catalog.options.map(o => o.key));
+    return {
+        base: { name: str(input.base?.name, 120) || catalog.base.name, description: str(input.base?.description, 500), monthly: num(input.base?.monthly), includedConversations: Math.round(num(input.base?.includedConversations)) },
+        setupFee: num(input.setupFee),
+        overageUnitPrice: num(input.overageUnitPrice),
+        options: (Array.isArray(input.options) ? input.options : []).filter(o => known.has(o.key)).map(o => ({
+            key: o.key, name: str(o.name, 120), description: str(o.description), monthly: num(o.monthly),
+            extraConversations: Math.round(num(o.extraConversations)), mode: OPTION_MODES.includes(o.mode) ? o.mode : 'optional'
+        })),
+        customItems: (Array.isArray(input.customItems) ? input.customItems : []).map(i => ({
+            id: str(i.id, 30) || newId().slice(0, 8), name: str(i.name, 120), description: str(i.description), amount: num(i.amount),
+            type: i.type === 'once' ? 'once' : 'monthly'
+        })).filter(i => i.name),
+        discount: { percent: Math.min(100, num(input.discount?.percent)), months: Math.round(num(input.discount?.months)) },
+        note: str(input.note, 1000)
+    };
+}
+
+const offerOf = (project, catalog) => project.billingOffer ? { ...defaultOffer(catalog), ...project.billingOffer, isDefault: false } : defaultOffer(catalog);
+
+async function saveOffer(projectId, input, user) {
+    const [project, catalog] = await Promise.all([getProject(projectId), getCatalog()]);
+    const offer = cleanOffer(input, catalog);
+    const proposalId = project.billingOffer?.proposalId || newId();
+    // update() replaces the whole field: removed options / items do not linger
+    await db.collection('ai_projects').doc(projectId).update({
+        billingOffer: { ...offer, proposalId, ...(project.billingOffer?.coupon ? { coupon: project.billingOffer.coupon } : {}), updatedAt: nowIso(), updatedBy: user?.email || null }
+    });
+    return offerOf((await getProject(projectId)), catalog);
+}
+
+/** Options billed on top of the base: 'included' ones + the 'optional' ones chosen. */
+const activeOptions = (offer, chosen = []) => offer.options.filter(o => o.mode === 'included' || (o.mode === 'optional' && chosen.includes(o.key)));
+const includedFor = (offer, options) => (offer.base.includedConversations || 0)
+    + offer.options.filter(o => options.includes(o.key) || o.mode === 'included').reduce((n, o) => n + (o.extraConversations || 0), 0);
+const monthlyFor = (offer, options) => (offer.base.monthly || 0)
+    + offer.options.filter(o => o.mode !== 'hidden' && (o.mode === 'included' || options.includes(o.key))).reduce((n, o) => n + o.monthly, 0)
+    + offer.customItems.filter(i => i.type === 'monthly').reduce((n, i) => n + i.amount, 0);
 
 const periodKeyOf = (billing) => billing?.periodStart ? billing.periodStart.slice(0, 10) : new Date().toISOString().slice(0, 7);
 
-async function projectSummary(projectId) {
+/** What the client (or the public proposal page) may see of an offer. */
+const publicOffer = (offer) => ({
+    base: offer.base, setupFee: offer.setupFee, overageUnitPrice: offer.overageUnitPrice,
+    options: offer.options.filter(o => o.mode !== 'hidden').map(({ key, name, description, monthly, extraConversations, mode }) => ({ key, name, description, monthly, extraConversations, mode })),
+    customItems: offer.customItems, discount: offer.discount, note: offer.note
+});
+
+async function projectSummary(projectId, { staff = false } = {}) {
     const [project, catalog] = await Promise.all([getProject(projectId), getCatalog()]);
-    const publicCatalog = {
-        currency: catalog.currency, base: catalog.base, setupFee: catalog.setupFee, overage: catalog.overage,
-        options: catalog.options.map(({ key, name, description, monthly, extraConversations }) => ({ key, name, description, monthly, extraConversations })),
-        ready: !!catalog.stripe?.basePrice
+    const offer = offerOf(project, catalog);
+    const base = {
+        stripe: !!stripe, ready: !!catalog.stripe?.baseProduct,
+        offer: staff ? offer : publicOffer(offer),
+        ...(staff ? { proposalUrl: project.billingOffer?.proposalId ? `${PUBLIC_BASE}/offer.html?p=${project.billingOffer.proposalId}` : null } : {})
     };
-    if (!stripe) return { stripe: false, catalog: publicCatalog, subscription: null, usage: null, invoices: [] };
+    if (!stripe) return { ...base, subscription: null, usage: null, invoices: [] };
 
     const { sub, billing } = await syncProjectSubscription(project, catalog);
     const usageSnap = await db.collection('ai_projects').doc(projectId).collection('billing_usage').doc(periodKeyOf(billing)).get();
     const used = usageSnap.exists ? usageSnap.data().conversations || 0 : 0;
-    const included = includedFor(catalog, billing.options);
+    const included = includedFor(offer, billing.options);
     const overage = Math.max(0, used - included);
 
     let invoices = [];
     let upcoming = null;
+    let monthly = null;
     if (billing.customerId) {
         const list = await stripe.invoices.list({ customer: billing.customerId, limit: 12 }).catch(() => ({ data: [] }));
         invoices = list.data.filter(i => i.status !== 'draft').map(i => ({
@@ -252,6 +320,8 @@ async function projectSummary(projectId) {
             status: i.status, url: i.hosted_invoice_url, pdf: i.invoice_pdf
         }));
         if (sub && ['active', 'trialing', 'past_due'].includes(sub.status)) {
+            // Monthly amount = licensed (non-metered) items of the live subscription
+            monthly = sub.items.data.filter(i => i.price.recurring?.usage_type !== 'metered').reduce((n, i) => n + (i.price.unit_amount || 0) * (i.quantity || 1), 0) / 100;
             try {
                 const preview = stripe.invoices.createPreview
                     ? await stripe.invoices.createPreview({ customer: billing.customerId, subscription: sub.id })
@@ -260,39 +330,71 @@ async function projectSummary(projectId) {
             } catch (_) { /* no upcoming invoice */ }
         }
     }
-
     return {
-        stripe: true,
-        catalog: publicCatalog,
+        ...base,
         subscription: sub ? {
             status: billing.status, options: billing.options, periodStart: billing.periodStart, periodEnd: billing.periodEnd,
-            cancelAtPeriodEnd: billing.cancelAtPeriodEnd,
-            monthly: (catalog.base.monthly || 0) + catalog.options.filter(o => billing.options.includes(o.key)).reduce((n, o) => n + o.monthly, 0)
+            cancelAtPeriodEnd: billing.cancelAtPeriodEnd, monthly: monthly ?? monthlyFor(offer, billing.options)
         } : null,
-        usage: { used, included, overage, overageEstimate: Math.round(overage * catalog.overage.unitPrice * 100) / 100, periodKey: periodKeyOf(billing) },
+        usage: { used, included, overage, overageEstimate: Math.round(overage * offer.overageUnitPrice * 100) / 100, periodKey: periodKeyOf(billing) },
         upcoming,
         invoices
     };
+}
+
+/** Metered overage price for a unit amount (shared by every client with the same price). */
+async function overagePriceFor(catalog, unitPrice) {
+    const decimal = String(Math.round(unitPrice * 100 * 10000) / 10000);
+    const ids = catalog.stripe || {};
+    const cache = { ...(ids.overagePrices || {}) };
+    if (cache[decimal]) return cache[decimal];
+    const price = await stripe.prices.create({
+        product: ids.overageProduct, currency: catalog.currency, unit_amount_decimal: decimal,
+        recurring: { interval: 'month', usage_type: 'metered', meter: ids.meterId }, tax_behavior: 'exclusive'
+    });
+    cache[decimal] = price.id;
+    await CATALOG_REF().set({ stripe: { overagePrices: cache } }, { merge: true });
+    return price.id;
+}
+
+async function couponFor(projectId, offer) {
+    const { percent, months } = offer.discount || {};
+    if (!percent) return null;
+    const key = `${percent}_${months}`;
+    if (offer.coupon?.key === key) return offer.coupon.id;
+    const coupon = await stripe.coupons.create({
+        percent_off: percent, duration: months ? 'repeating' : 'forever', ...(months ? { duration_in_months: months } : {}),
+        name: months ? `-${percent} % (${months} mois)` : `-${percent} %`, metadata: { projectId }
+    });
+    await db.collection('ai_projects').doc(projectId).set({ billingOffer: { coupon: { key, id: coupon.id } } }, { merge: true });
+    return coupon.id;
 }
 
 async function createCheckout(projectId, { options = [], withSetup = true, returnTo, user }) {
     requireStripe();
     const [project, catalog] = await Promise.all([getProject(projectId), getCatalog()]);
     const ids = catalog.stripe || {};
-    if (!ids.basePrice || !ids.overagePrice) throw new Error('Le forfait n\'est pas encore publié dans Stripe : synchronisez le catalogue dans l\'ERP.');
+    if (!ids.baseProduct || !ids.meterId) throw new Error('Le catalogue n\'est pas encore publié dans Stripe : publiez-le dans l\'ERP (onglet Forfait).');
+    const offer = offerOf(project, catalog);
     const { sub } = await syncProjectSubscription(project, catalog);
     if (sub && ['active', 'trialing', 'past_due', 'unpaid'].includes(sub.status)) throw new Error('Ce projet a déjà un abonnement actif.');
 
     const customer = await ensureCustomer(project, user?.email);
-    const chosen = catalog.options.filter(o => options.includes(o.key) && ids.options?.[o.key]?.price);
+    const recurring = { interval: 'month' };
+    const line = (product, amount, rec = true) => ({ price_data: { currency: catalog.currency, product, unit_amount: cents(amount), ...(rec ? { recurring } : {}), tax_behavior: 'exclusive' }, quantity: 1 });
+    const lineNamed = (name, description, amount, rec = true) => ({ price_data: { currency: catalog.currency, product_data: { name, ...(description ? { description } : {}), metadata: { projectId } }, unit_amount: cents(amount), ...(rec ? { recurring } : {}), tax_behavior: 'exclusive' }, quantity: 1 });
+
     const line_items = [
-        { price: ids.basePrice, quantity: 1 },
-        ...chosen.map(o => ({ price: ids.options[o.key].price, quantity: 1 })),
-        { price: ids.overagePrice },
-        ...(withSetup && ids.setupPrice && catalog.setupFee.amount > 0 ? [{ price: ids.setupPrice, quantity: 1 }] : [])
+        offer.base.name === catalog.base.name ? line(ids.baseProduct, offer.base.monthly) : lineNamed(offer.base.name, offer.base.description, offer.base.monthly),
+        ...activeOptions(offer, options).filter(o => ids.options?.[o.key]?.product).map(o => line(ids.options[o.key].product, o.monthly)),
+        ...offer.customItems.map(i => lineNamed(i.name, i.description, i.amount, i.type === 'monthly')),
+        { price: await overagePriceFor(catalog, offer.overageUnitPrice) },
+        ...(withSetup && offer.setupFee > 0 ? [ids.setupProduct ? line(ids.setupProduct, offer.setupFee, false) : lineNamed(catalog.setupFee.name, '', offer.setupFee, false)] : [])
     ];
-    const back = returnTo && /^https:\/\/(www\.)?(solutionsquasar\.ca|quasar-erp-b26d5\.(web|firebaseapp)\.app)\//.test(returnTo)
-        ? returnTo.split('?')[0].split('#')[0] : `${PUBLIC_BASE}/portal.html`;
+    const coupon = await couponFor(projectId, offer);
+    const allowed = /^https:\/\/(www\.)?(solutionsquasar\.ca|quasar-erp-b26d5\.(web|firebaseapp)\.app)\//;
+    const back = returnTo && allowed.test(returnTo) ? returnTo.split('#')[0] : `${PUBLIC_BASE}/portal.html`;
+    const sep = back.includes('?') ? '&' : '?';
     const session = await stripe.checkout.sessions.create({
         mode: 'subscription',
         customer,
@@ -302,10 +404,10 @@ async function createCheckout(projectId, { options = [], withSetup = true, retur
         automatic_tax: { enabled: !!catalog.automaticTax },
         ...(catalog.automaticTax ? { customer_update: { address: 'auto' } } : {}),
         billing_address_collection: 'required',
-        allow_promotion_codes: true,
+        ...(coupon ? { discounts: [{ coupon }] } : { allow_promotion_codes: true }),
         locale: 'auto',
-        success_url: `${back}?billing=success`,
-        cancel_url: `${back}?billing=cancelled`
+        success_url: `${back}${sep}billing=success`,
+        cancel_url: `${back}${sep}billing=cancelled`
     });
     return { url: session.url };
 }
@@ -313,15 +415,18 @@ async function createCheckout(projectId, { options = [], withSetup = true, retur
 async function setOption(projectId, key, enabled) {
     requireStripe();
     const [project, catalog] = await Promise.all([getProject(projectId), getCatalog()]);
-    const price = catalog.stripe?.options?.[key]?.price;
-    if (!price) throw new Error('Option inconnue ou non publiée.');
+    const offer = offerOf(project, catalog);
+    const opt = offer.options.find(o => o.key === key && o.mode === 'optional');
+    const product = catalog.stripe?.options?.[key]?.product;
+    if (!opt || !product) throw new Error('Cette option n\'est pas proposée dans votre offre.');
     const { sub } = await syncProjectSubscription(project, catalog);
     if (!sub || !['active', 'trialing', 'past_due'].includes(sub.status)) throw new Error('Aucun abonnement actif pour ce projet.');
-    const item = sub.items.data.find(i => i.price.id === price || i.price.product === catalog.stripe.options[key].product);
-    if (enabled && item) return { changed: false };
-    if (!enabled && !item) return { changed: false };
+    const item = sub.items.data.find(i => i.price.product === product);
+    if (enabled === !!item) return { changed: false };
     await stripe.subscriptions.update(sub.id, {
-        items: enabled ? [{ price, quantity: 1 }] : [{ id: item.id, deleted: true }],
+        items: enabled
+            ? [{ price_data: { currency: catalog.currency, product, unit_amount: cents(opt.monthly), recurring: { interval: 'month' }, tax_behavior: 'exclusive' }, quantity: 1 }]
+            : [{ id: item.id, deleted: true }],
         proration_behavior: 'create_prorations'
     });
     await syncProjectSubscription(project, catalog);
@@ -336,6 +441,32 @@ async function portalSession(projectId, returnTo) {
     const back = returnTo && /^https:\/\/(www\.)?(solutionsquasar\.ca|quasar-erp-b26d5\.(web|firebaseapp)\.app)\//.test(returnTo) ? returnTo : `${PUBLIC_BASE}/portal.html`;
     const s = await stripe.billingPortal.sessions.create({ customer, return_url: back });
     return { url: s.url };
+}
+
+// ---------- Public: price list for the website, proposal page ----------
+
+async function publicCatalog() {
+    const c = await getCatalog();
+    return {
+        currency: c.currency,
+        base: { name: c.base.name, description: c.base.description, monthly: c.base.monthly, includedConversations: c.base.includedConversations },
+        setupFee: c.setupFee.amount, overageUnitPrice: c.overage.unitPrice,
+        options: c.options.map(({ key, name, description, monthly, extraConversations }) => ({ key, name, description, monthly, extraConversations }))
+    };
+}
+
+async function projectByProposal(proposalId) {
+    if (!/^[a-f0-9]{24}$/.test(String(proposalId || ''))) throw new Error('Proposition introuvable.');
+    const snap = await db.collection('ai_projects').where('billingOffer.proposalId', '==', proposalId).limit(1).get();
+    if (snap.empty) throw new Error('Proposition introuvable ou expirée.');
+    return { id: snap.docs[0].id, ...snap.docs[0].data() };
+}
+
+async function proposal(proposalId) {
+    const project = await projectByProposal(proposalId);
+    const catalog = await getCatalog();
+    const subscribed = ['active', 'trialing', 'past_due'].includes(project.billing?.status);
+    return { projectName: project.name || '', clientName: project.clientName || '', offer: publicOffer(offerOf(project, catalog)), subscribed };
 }
 
 // ---------- Usage (called by the Messaging Platform after each AI reply) ----------
@@ -357,18 +488,18 @@ async function recordAiConversation(projectId, convId) {
         const convRef = projectRef.collection('mp_conversations').doc(convId);
         const usageRef = projectRef.collection('billing_usage').doc(periodKey);
 
-        const result = await db.runTransaction(async (tx) => {
+        const count = await db.runTransaction(async (tx) => {
             const [conv, usage] = await Promise.all([tx.get(convRef), tx.get(usageRef)]);
             if (conv.exists && conv.data().aiCountedPeriod === periodKey) return null;
-            const count = (usage.exists ? usage.data().conversations || 0 : 0) + 1;
-            tx.set(usageRef, { conversations: count, updatedAt: nowIso() }, { merge: true });
+            const n = (usage.exists ? usage.data().conversations || 0 : 0) + 1;
+            tx.set(usageRef, { conversations: n, updatedAt: nowIso() }, { merge: true });
             tx.set(convRef, { aiCountedPeriod: periodKey }, { merge: true });
-            return count;
+            return n;
         });
-        if (!result || !stripe || !billing.customerId || !['active', 'trialing', 'past_due'].includes(billing.status)) return;
+        if (!count || !stripe || !billing.customerId || !['active', 'trialing', 'past_due'].includes(billing.status)) return;
 
-        const catalog = await getCatalog();
-        if (result <= includedFor(catalog, billing.options || [])) return;
+        const offer = offerOf({ id: projectId, ...project }, await getCatalog());
+        if (count <= includedFor(offer, billing.options || [])) return;
         await stripe.billing.meterEvents.create({
             event_name: METER_EVENT,
             identifier: `${projectId}_${convId}_${periodKey}`,
@@ -397,10 +528,30 @@ function mountBilling(app, { verifyToken }) {
     };
 
     router.use(express.json());
+
+    // Public (no login): the website price list and the proposal page
+    router.get('/public-catalog', (req, res, next) => { res.set('Access-Control-Allow-Origin', '*'); res.set('Cache-Control', 'public, max-age=300'); next(); }, handle(async () => ({ catalog: await publicCatalog() })));
+    router.get('/proposals/:proposalId', handle(async (req) => proposal(req.params.proposalId)));
+    router.post('/proposals/:proposalId/checkout', handle(async (req) => {
+        const project = await projectByProposal(req.params.proposalId);
+        return createCheckout(project.id, {
+            options: Array.isArray(req.body?.options) ? req.body.options.map(String) : [],
+            withSetup: true, returnTo: `${PUBLIC_BASE}/offer.html?p=${req.params.proposalId}`
+        });
+    }));
+
+    // Staff
     router.get('/catalog', verifyToken, staff, handle(async () => ({ catalog: await getCatalog(), stripeConfigured: !!stripe })));
     router.put('/catalog', verifyToken, staff, handle(async (req) => ({ catalog: await saveCatalog(req.body || {}, req.user) })));
     router.post('/catalog/sync', verifyToken, staff, handle(async () => ({ catalog: await syncCatalog() })));
-    router.get('/projects/:projectId', verifyToken, projectAccess, handle(async (req) => projectSummary(req.params.projectId)));
+    router.put('/projects/:projectId/offer', verifyToken, staff, handle(async (req) => ({ offer: await saveOffer(req.params.projectId, req.body || {}, req.user) })));
+    router.delete('/projects/:projectId/offer', verifyToken, staff, handle(async (req) => {
+        await db.collection('ai_projects').doc(req.params.projectId).update({ billingOffer: FieldValue.delete() });
+        return {};
+    }));
+
+    // Staff + the project's client
+    router.get('/projects/:projectId', verifyToken, projectAccess, handle(async (req) => projectSummary(req.params.projectId, { staff: isStaff(req) })));
     router.post('/projects/:projectId/checkout', verifyToken, projectAccess, handle(async (req) => createCheckout(req.params.projectId, {
         options: Array.isArray(req.body?.options) ? req.body.options.map(String) : [],
         withSetup: isStaff(req) ? req.body?.withSetup !== false : true,

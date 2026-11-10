@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="robots" content="noindex">
+    <title>Votre proposition | Solutions Quasar</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        :root { --bg-card: #121418; --bg-dark: #0d0f12; --border: #2d3139; --gold: #dfa53a; --text-main: #fff; --text-dim: #94a3b8; --text-muted: #94a3b8; }
+        html, body { margin: 0; background: #08090a; color: #fff; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+        header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--border); }
+        .brand { font-weight: 800; letter-spacing: -.5px; font-size: 1.2rem; color: #fff; text-decoration: none; }
+        .brand span { color: var(--gold); }
+        .lang a { color: var(--text-dim); text-decoration: none; font-size: .85rem; margin-left: 10px; }
+        .lang a.on { color: var(--gold); font-weight: 700; }
+        main { max-width: 860px; margin: 0 auto; padding: 24px 16px 60px; }
+        footer { text-align: center; color: var(--text-dim); font-size: .75rem; padding: 20px; }
+        footer a { color: var(--text-dim); }
+    </style>
+</head>
+<body>
+    <header>
+        <a class="brand" href="/">Solutions <span>Quasar</span></a>
+        <div class="lang"><a href="#" data-lang="fr">FR</a><a href="#" data-lang="en">EN</a></div>
+    </header>
+    <main id="offer"></main>
+    <footer>Solutions Quasar Inc. · <a href="/privacy.html">Confidentialité / Privacy</a> · <a href="/terms.html">Conditions / Terms</a></footer>
+    <script type="module">
+        const params = new URLSearchParams(location.search);
+        let lang = params.get('lang') || (() => { try { return localStorage.getItem('lang'); } catch (_) { return null; } })() || (navigator.language || 'fr').slice(0, 2);
+        window.MP_LANG = lang === 'en' ? 'en' : 'fr';
+        document.documentElement.lang = window.MP_LANG;
+        document.title = window.MP_LANG === 'en' ? 'Your proposal | Solutions Quasar' : 'Votre proposition | Solutions Quasar';
+        document.querySelectorAll('[data-lang]').forEach(a => {
+            a.classList.toggle('on', a.dataset.lang === window.MP_LANG);
+            a.addEventListener('click', (e) => { e.preventDefault(); params.set('lang', a.dataset.lang); location.search = params.toString(); });
+        });
+        const { renderProposal } = await import('/erp/js/modules/billing_ui.js?v=20261110');
+        renderProposal(document.getElementById('offer'), { apiBase: '', proposalId: params.get('p') || '' });
+    </script>
+</body>
+</html>
