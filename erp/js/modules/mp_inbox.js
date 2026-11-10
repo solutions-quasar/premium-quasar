@@ -356,6 +356,208 @@ export function renderProjectMessaging(container, opts) {
         return false;
     };
 
+    // ---------- In-app modal ----------
+    const openModal = (title, icon, html, width = 640) => {
+        document.getElementById('mp-modal')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'mp-modal';
+        ov.style.cssText = 'position:fixed; inset:0; z-index:10000; background:rgba(0,0,0,.8); backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; padding:20px;';
+        ov.innerHTML = `
+            <div style="width:min(${width}px, 100%); max-height:92vh; display:flex; flex-direction:column; background:#12141A; border:1px solid rgba(223,165,58,.4); border-radius:14px; overflow:hidden;">
+                <div style="display:flex; align-items:center; gap:10px; padding:14px 18px; border-bottom:1px solid var(--border, #2a2d36);">
+                    <span class="material-icons" style="color:var(--gold);">${icon}</span>
+                    <div style="flex:1; font-weight:700;">${title}</div>
+                    <button data-close style="background:transparent; border:0; color:var(--text-muted); cursor:pointer;" title="Fermer"><span class="material-icons">close</span></button>
+                </div>
+                <div data-body style="overflow-y:auto; padding:16px 18px;">${html}</div>
+            </div>`;
+        document.body.appendChild(ov);
+        const close = () => ov.remove();
+        ov.querySelector('[data-close]').addEventListener('click', close);
+        ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+        return { el: ov, body: ov.querySelector('[data-body]'), close };
+    };
+    const field = (label, inner, hint = '') => `
+        <label style="display:flex; flex-direction:column; gap:5px; margin-bottom:12px;">
+            <span style="font-size:.8rem; font-weight:600;">${label}</span>${inner}
+            ${hint ? `<small style="color:var(--text-muted); font-size:.72rem;">${hint}</small>` : ''}
+        </label>`;
+    const varCount = (text) => (String(text || '').match(/\{\{\d+\}\}/g) || []).length;
+    const fillVars = (text, params) => String(text || '').replace(/\{\{(\d+)\}\}/g, (m, n) => params[Number(n) - 1] || m);
+
+    // ---------- New message (business-initiated) ----------
+    async function openNewMessage() {
+        try { if (!state.channels.length) await loadChannels(); } catch (_) { }
+        const usable = state.channels.filter(c => ['whatsapp', 'sms', 'email'].includes(c.type) && c.active);
+        if (!usable.length) { toast('Aucun canal WhatsApp, SMS ou courriel actif dans ce projet.', 'error'); return; }
+        const m = openModal('Nouveau message', 'edit_square', `
+            ${field('Canal', `<select class="form-input" data-f="channel">${usable.map(c => `<option value="${esc(c.id)}">${CHANNELS[c.type].label} · ${esc(c.label || c.externalId)}</option>`).join('')}</select>`)}
+            ${field('Destinataire', `<input class="form-input" data-f="to" placeholder="+1 506 555-1234">`, '', )}
+            <div data-wa style="display:none; margin-bottom:12px;">
+                <div style="display:flex; gap:16px; font-size:.82rem;">
+                    <label style="display:flex; gap:6px; align-items:center; cursor:pointer;"><input type="radio" name="mp-mode" value="template" checked> Modèle approuvé</label>
+                    <label style="display:flex; gap:6px; align-items:center; cursor:pointer;"><input type="radio" name="mp-mode" value="text"> Texte libre</label>
+                </div>
+                <small style="color:var(--text-muted); font-size:.72rem;">WhatsApp exige un modèle approuvé pour écrire en premier ou après 24 h sans message du client.</small>
+            </div>
+            <div data-tpl style="display:none;">
+                ${field('Modèle', `<select class="form-input" data-f="template"><option value="">Chargement…</option></select>`)}
+                <div data-params></div>
+                <div data-preview style="display:none; margin-bottom:12px; padding:10px 12px; border-radius:10px; background:rgba(37,211,102,.08); border:1px solid rgba(37,211,102,.3); white-space:pre-wrap; font-size:.85rem;"></div>
+            </div>
+            <div data-text>${field('Message', `<textarea class="form-input" data-f="text" rows="4" style="resize:vertical;"></textarea>`)}</div>
+            <div style="display:flex; justify-content:flex-end; gap:10px;">
+                <button class="btn" data-close-btn>Annuler</button>
+                <button class="btn btn-primary" data-send><span class="material-icons" style="font-size:1.1rem; vertical-align:text-bottom;">send</span> Envoyer</button>
+            </div>`, 560);
+        const q = (s) => m.body.querySelector(s);
+        q('[data-close-btn]').addEventListener('click', m.close);
+        let templates = [];
+        const current = () => usable.find(c => c.id === q('[data-f=channel]').value);
+        const mode = () => current().type === 'whatsapp' ? m.body.querySelector('input[name=mp-mode]:checked').value : 'text';
+        const tplBody = (t) => (t?.components || []).find(c => c.type === 'BODY')?.text || '';
+        const renderParams = () => {
+            const t = templates.find(x => `${x.name}|${x.language}` === q('[data-f=template]').value);
+            const n = varCount(tplBody(t));
+            q('[data-params]').innerHTML = Array.from({ length: n }, (_, i) => field(`Variable {{${i + 1}}}`, `<input class="form-input" data-param="${i}">`)).join('');
+            const upd = () => {
+                const params = [...m.body.querySelectorAll('[data-param]')].map(i => i.value.trim());
+                const p = q('[data-preview]');
+                p.style.display = t ? '' : 'none';
+                p.textContent = fillVars(tplBody(t), params);
+            };
+            m.body.querySelectorAll('[data-param]').forEach(i => i.addEventListener('input', upd));
+            upd();
+        };
+        const sync = async () => {
+            const ch = current();
+            const isWa = ch.type === 'whatsapp';
+            q('[data-wa]').style.display = isWa ? '' : 'none';
+            q('[data-f=to]').placeholder = ch.type === 'email' ? 'client@exemple.com' : '+1 506 555-1234';
+            const tplMode = mode() === 'template';
+            q('[data-tpl]').style.display = tplMode ? '' : 'none';
+            q('[data-text]').style.display = tplMode ? 'none' : '';
+            if (isWa && tplMode) {
+                try {
+                    // Text templates only (media headers and carousels need extra parameters)
+                    templates = (await api(`/channels/${encodeURIComponent(ch.id)}/templates`)).templates.filter(t =>
+                        t.status === 'APPROVED' &&
+                        !(t.components || []).some(c => c.type === 'CAROUSEL' || (c.type === 'HEADER' && c.format && c.format !== 'TEXT')));
+                    q('[data-f=template]').innerHTML = templates.length
+                        ? templates.map(t => `<option value="${esc(t.name)}|${esc(t.language)}">${esc(t.name)} (${esc(t.language)})</option>`).join('')
+                        : '<option value="">Aucun modèle approuvé</option>';
+                } catch (e) {
+                    q('[data-f=template]').innerHTML = `<option value="">${esc(e.message)}</option>`;
+                    templates = [];
+                }
+                renderParams();
+            }
+        };
+        q('[data-f=channel]').addEventListener('change', sync);
+        m.body.querySelectorAll('input[name=mp-mode]').forEach(r => r.addEventListener('change', sync));
+        q('[data-f=template]').addEventListener('change', renderParams);
+        sync();
+
+        q('[data-send]').addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            const ch = current();
+            const to = q('[data-f=to]').value.trim();
+            if (!to) { toast('Indiquez le destinataire.', 'error'); return; }
+            const payload = { channelId: ch.id, to };
+            if (mode() === 'template') {
+                const [name, language] = (q('[data-f=template]').value || '').split('|');
+                if (!name) { toast('Choisissez un modèle approuvé.', 'error'); return; }
+                const params = [...m.body.querySelectorAll('[data-param]')].map(i => i.value.trim());
+                if (params.some(p => !p)) { toast('Remplissez toutes les variables du modèle.', 'error'); return; }
+                const t = templates.find(x => x.name === name && x.language === language);
+                payload.template = { name, language, params, preview: fillVars(tplBody(t), params) };
+            } else {
+                payload.text = q('[data-f=text]').value.trim();
+                if (!payload.text) { toast('Le message est vide.', 'error'); return; }
+            }
+            btn.disabled = true;
+            try {
+                const r = await api('/messages', { method: 'POST', body: payload });
+                m.close();
+                toast('Message envoyé.', 'success');
+                state.activeConvId = r.convId;
+                await loadConversations(true);
+                openConversation(r.convId);
+            } catch (err) { toast(`Envoi impossible : ${err.message}`, 'error'); btn.disabled = false; }
+        });
+    }
+
+    // ---------- WhatsApp templates ----------
+    async function openTemplates(c) {
+        const m = openModal(`Modèles WhatsApp · ${esc(c.label || c.externalId)}`, 'description', '<div class="mp-muted">Chargement…</div>', 860);
+        const STATUS = { APPROVED: ['ok', 'Approuvé'], PENDING: ['warn', 'En examen'], REJECTED: ['warn', 'Refusé'], PAUSED: ['off', 'En pause'], DISABLED: ['off', 'Désactivé'] };
+        const render = async () => {
+            let list = [];
+            let err = '';
+            try { list = (await api(`/channels/${encodeURIComponent(c.id)}/templates`)).templates; } catch (e) { err = e.message; }
+            m.body.innerHTML = `
+                <div style="display:grid; grid-template-columns:minmax(0, 1.2fr) minmax(0, 1fr); gap:18px;">
+                    <div>
+                        <div style="font-weight:700; margin-bottom:8px;">Modèles du compte</div>
+                        ${err ? `<div style="color:#f5a524; font-size:.85rem;">${esc(err)}</div>` : ''}
+                        ${!err && !list.length ? '<div class="mp-muted" style="font-size:.85rem;">Aucun modèle.</div>' : ''}
+                        ${list.map(t => {
+                            const [cls, label] = STATUS[t.status] || ['off', t.status];
+                            const body = (t.components || []).find(x => x.type === 'BODY')?.text || '';
+                            return `<div style="border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:8px;">
+                                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                    <strong style="font-size:.85rem;">${esc(t.name)}</strong>
+                                    <span class="mp-chip ${cls}" style="font-size:.7rem;">${label}</span>
+                                    <span class="mp-muted" style="font-size:.72rem;">${esc(t.category)} · ${esc(t.language)}</span>
+                                </div>
+                                <div style="font-size:.8rem; margin-top:6px; white-space:pre-wrap; color:var(--text-muted);">${esc(body)}</div>
+                                ${t.rejected_reason && t.rejected_reason !== 'NONE' ? `<div style="font-size:.72rem; color:#f5a524; margin-top:4px;">Motif : ${esc(t.rejected_reason)}</div>` : ''}
+                            </div>`;
+                        }).join('')}
+                    </div>
+                    <form data-create>
+                        <div style="font-weight:700; margin-bottom:8px;">Créer un modèle</div>
+                        ${field('Nom', `<input class="form-input" name="name" placeholder="confirmation_rendez_vous" required>`, 'Lettres minuscules, chiffres et _ uniquement.')}
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                            ${field('Catégorie', `<select class="form-input" name="category"><option value="UTILITY">Utilitaire</option><option value="MARKETING">Marketing</option></select>`)}
+                            ${field('Langue', `<select class="form-input" name="language"><option value="fr">Français</option><option value="fr_CA">Français (Canada)</option><option value="en_US">Anglais (É.-U.)</option><option value="en">Anglais</option></select>`)}
+                        </div>
+                        ${field('Texte', `<textarea class="form-input" name="body" rows="4" style="resize:vertical;" placeholder="Bonjour {{1}}, votre rendez-vous est confirmé le {{2}}." required></textarea>`, 'Variables : {{1}}, {{2}}… Meta examine chaque modèle (quelques minutes à 24 h).')}
+                        <div data-examples></div>
+                        <button class="btn btn-primary" type="submit" style="width:100%;">Créer le modèle</button>
+                    </form>
+                </div>`;
+            const form = m.body.querySelector('[data-create]');
+            const bodyEl = form.querySelector('[name=body]');
+            const renderExamples = () => {
+                const n = varCount(bodyEl.value);
+                const prev = [...form.querySelectorAll('[data-ex]')].map(i => i.value);
+                form.querySelector('[data-examples]').innerHTML = Array.from({ length: n }, (_, i) =>
+                    field(`Exemple pour {{${i + 1}}}`, `<input class="form-input" data-ex value="${esc(prev[i] || '')}" required>`)).join('');
+            };
+            bodyEl.addEventListener('input', renderExamples);
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const btn = form.querySelector('button[type=submit]');
+                btn.disabled = true;
+                try {
+                    const r = await api(`/channels/${encodeURIComponent(c.id)}/templates`, {
+                        method: 'POST',
+                        body: {
+                            name: form.querySelector('[name=name]').value,
+                            category: form.querySelector('[name=category]').value,
+                            language: form.querySelector('[name=language]').value,
+                            body: bodyEl.value, examples: [...form.querySelectorAll('[data-ex]')].map(i => i.value.trim())
+                        }
+                    });
+                    toast(`Modèle envoyé à Meta pour examen (statut : ${r.template?.status || 'PENDING'}).`, 'success');
+                    render();
+                } catch (err) { toast(`Création impossible : ${err.message}`, 'error'); btn.disabled = false; }
+            });
+        };
+        render();
+    }
+
     const copyText = async (text) => {
         try { await navigator.clipboard.writeText(text); toast('Copié dans le presse-papiers.', 'success'); }
         catch (_) { toast('Copie impossible : sélectionnez le texte manuellement.', 'error'); }
@@ -505,8 +707,9 @@ export function renderProjectMessaging(container, opts) {
         body.innerHTML = `
             <div class="mp-inbox ${state.activeConvId ? 'has-thread' : ''}">
                 <div class="mp-pane-list" style="display:flex; flex-direction:column; border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--bg-dark);">
-                    <div style="padding:10px; border-bottom:1px solid var(--border);">
-                        <input id="mp-search" class="form-input" placeholder="Rechercher un contact ou un message…" style="width:100%;">
+                    <div style="padding:10px; border-bottom:1px solid var(--border); display:flex; gap:8px;">
+                        <input id="mp-search" class="form-input" placeholder="Rechercher un contact ou un message…" style="flex:1; min-width:0;">
+                        ${state.isStaff ? `<button class="mp-iconbtn" id="mp-new-msg" title="Nouveau message" style="width:40px; height:40px; color:var(--gold); border-color:var(--gold);"><span class="material-icons">edit_square</span></button>` : ''}
                     </div>
                     <div class="mp-filters" id="mp-filters"></div>
                     <div id="mp-conv-list" style="flex:1; overflow-y:auto;"><div class="mp-muted" style="padding:1rem; font-size:.85rem;">Chargement…</div></div>
@@ -516,6 +719,7 @@ export function renderProjectMessaging(container, opts) {
                 </div>
             </div>`;
         body.querySelector('#mp-search').addEventListener('input', renderConvList);
+        body.querySelector('#mp-new-msg')?.addEventListener('click', openNewMessage);
         await loadConversations();
         if (state.activeConvId) openConversation(state.activeConvId);
         state.poll = setInterval(async () => {
@@ -758,6 +962,7 @@ export function renderProjectMessaging(container, opts) {
                         </label>
                         <div class="mp-actions">
                             ${smsUrl ? `<button class="mp-iconbtn mp-copy-btn" data-copy="${esc(smsUrl)}" title="Copier le webhook Twilio (« A message comes in », HTTP POST)"><span class="material-icons">link</span></button>` : ''}
+                            ${c.type === 'whatsapp' ? `<button class="mp-iconbtn mp-templates" title="Modèles WhatsApp"><span class="material-icons">description</span></button>` : ''}
                             ${agent ? `<button class="mp-iconbtn mp-prompt" title="Voir le prompt final de l'agent sur ce canal"><span class="material-icons">visibility</span></button>` : ''}
                             <button class="mp-iconbtn mp-sim" title="Simuler un message entrant"><span class="material-icons">play_arrow</span></button>
                             ${c.type === 'email' ? `<button class="mp-iconbtn mp-test" title="Synchroniser Gmail maintenant"><span class="material-icons">sync</span></button>`
@@ -839,6 +1044,7 @@ export function renderProjectMessaging(container, opts) {
             });
 
             card.querySelector('.mp-sim').addEventListener('click', () => toggleSimulation(card, c));
+            card.querySelector('.mp-templates')?.addEventListener('click', () => openTemplates(c));
             card.querySelector('.mp-prompt')?.addEventListener('click', () => showPromptPreview({
                 apiBase: state.apiBase, getToken: state.getToken, projectId: state.projectId, agentId: c.agentId, channel: c.type
             }));
@@ -882,6 +1088,7 @@ export function renderProjectMessaging(container, opts) {
 
     const channelPayload = (c) => ({
         type: c.type, externalId: c.externalId, label: c.label || null, agentId: c.agentId || null,
+        ...(c.type === 'whatsapp' ? { wabaId: c.wabaId || null } : {}),
         aiEnabled: c.aiEnabled, active: c.active
     });
     const saveChannel = async (payload) => (await api('/channels', { method: 'POST', body: payload })).channel;
@@ -1005,7 +1212,13 @@ export function renderProjectMessaging(container, opts) {
                     <div class="mp-field">
                         <label>${ch.tokenLabel}</label>
                         <input id="mp-f-token" class="form-input" type="password" autocomplete="off" placeholder="${ed?.hasToken ? 'Jeton enregistré · laisser vide pour le conserver' : esc(ch.tokenPlaceholder)}" ${ed?.hasToken ? '' : 'required'}>
-                    </div>` : `
+                    </div>
+                    ${wz.type === 'whatsapp' ? `
+                    <div class="mp-field">
+                        <label>ID du compte WhatsApp Business (WABA)</label>
+                        <input id="mp-f-waba" class="form-input" placeholder="ex. 1092204263808720" value="${esc(ed?.wabaId || '')}">
+                        <small>Nécessaire pour les modèles de message. Visible dans WhatsApp › Configuration de l'API (« ID du compte WhatsApp Business »).</small>
+                    </div>` : ''}` : `
                     <details style="margin-bottom:14px;">
                         <summary class="mp-muted" style="cursor:pointer; font-size:.8rem;">Utiliser le compte Twilio du client (optionnel)</summary>
                         <div class="mp-field" style="margin-top:10px;">
@@ -1067,6 +1280,7 @@ export function renderProjectMessaging(container, opts) {
                 label: f('#mp-f-label').value.trim() || null,
                 agentId: f('#mp-f-agent').value || null,
                 accessToken: f('#mp-f-token')?.value.trim() || undefined,
+                wabaId: f('#mp-f-waba') ? f('#mp-f-waba').value.trim() : undefined,
                 twilioAccountSid: f('#mp-f-tsid')?.value.trim() || undefined,
                 twilioAuthToken: f('#mp-f-ttoken')?.value.trim() || undefined,
                 aiEnabled: f('#mp-f-ai').checked,
