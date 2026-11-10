@@ -7,7 +7,7 @@ import { tip, bindTips } from './mp_help.js';
  */
 
 // Language follows the ERP EN/FR toggle (localStorage 'erp_lang', same default as translationService).
-const isEn = () => { try { return (localStorage.getItem('erp_lang') || 'en') !== 'fr'; } catch (_) { return false; } };
+const isEn = () => { if (window.MP_LANG) return window.MP_LANG !== 'fr'; try { return (localStorage.getItem('erp_lang') || 'en') !== 'fr'; } catch (_) { return false; } };
 const L = (fr, en) => (isEn() ? en : fr);
 const LOCALE = () => (isEn() ? 'en-CA' : 'fr-CA');
 
@@ -656,6 +656,7 @@ export function renderProjectMessaging(container, opts) {
                     <button data-tab="inbox"><span class="material-icons">inbox</span> ${L('Boîte de réception', 'Inbox')} <span class="mp-badge-count" id="mp-unread" style="display:none;"></span></button>
                     ${state.isStaff ? `<button data-tab="channels"><span class="material-icons">hub</span> ${L('Canaux', 'Channels')} <span class="mp-badge-count" id="mp-ch-count" style="display:none;"></span></button>` : ''}
                     ${state.isStaff ? `<button data-tab="rules" title="${L('Règles communes à tous les agents clients', 'Rules shared by all client agents')}"><span class="material-icons">gavel</span> ${L('Règles IA', 'AI rules')}</button>` : ''}
+                    ${state.isStaff ? `<button data-tab="embed" title="${L('Intégrer la boîte de réception dans une autre app', 'Embed the inbox in another app')}"><span class="material-icons">integration_instructions</span> ${L('Intégration', 'Embed')}</button>` : ''}
                 </div>
                 ${state.isStaff ? `<span class="mp-muted" style="margin-left:auto; font-size:.75rem;">${L('Messagerie clients · séparée de la boîte Quasar', 'Client messaging · separate from the Quasar inbox')}</span>` : ''}
             </div>
@@ -684,6 +685,7 @@ export function renderProjectMessaging(container, opts) {
         clearInterval(state.poll);
         if (state.tab === 'channels') return renderChannels();
         if (state.tab === 'rules') return renderRules();
+        if (state.tab === 'embed') return renderEmbed();
         return renderInbox();
     }
 
@@ -785,6 +787,129 @@ export function renderProjectMessaging(container, opts) {
             ta.focus();
             toast(L('Version chargée dans l\'éditeur : cliquez sur « Enregistrer » pour l\'appliquer.', 'Version loaded in the editor: click "Save" to apply it.'));
         }));
+    }
+
+    // =====================================================================
+    // EMBED (inbox widget in another app)
+    // =====================================================================
+
+    async function renderEmbed() {
+        const body = container.querySelector('#mp-body');
+        const origin = window.location.hostname.includes('localhost') ? 'https://solutionsquasar.ca' : window.location.origin;
+        const code = (s) => `<div class="mp-copy" style="align-items:flex-start;"><code style="white-space:pre-wrap;">${esc(s)}</code><button class="mp-iconbtn mp-copy-btn" data-copy="${esc(s)}" title="${L('Copier', 'Copy')}"><span class="material-icons">content_copy</span></button></div>`;
+        const backendSnippet = `// ${L('Votre backend (Node.js) : la clé reste côté serveur', 'Your backend (Node.js): the key stays on the server')}
+app.get('/api/quasar-token', requireLogin, async (req, res) => {
+  const r = await fetch('${origin}/api/mp/embed/session', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + process.env.QUASAR_INBOX_KEY,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ userName: req.user.name })
+  });
+  res.json(await r.json()); // { token, expiresAt }
+});`;
+        const frontSnippet = `<div id="inbox" style="height:640px"></div>
+<script src="${origin}/embed/sdk.js"></script>
+<script>
+  QuasarInbox.mount('#inbox', {
+    getToken: () => fetch('/api/quasar-token').then(r => r.json()).then(d => d.token),
+    lang: '${isEn() ? 'en' : 'fr'}',
+    theme: { accent: '#dfa53a', background: '#08090a' }
+  });
+</script>`;
+        const curlSnippet = `curl -X POST ${origin}/api/mp/embed/session \\
+  -H "Authorization: Bearer VOTRE_CLE" \\
+  -H "Content-Type: application/json" \\
+  -d '{"userName":"Marie","ttl":3600}'`;
+
+        body.innerHTML = `
+            <div style="overflow-y:auto; height:100%; padding-right:4px; display:flex; flex-direction:column; gap:14px;">
+                <div class="mp-panel">
+                    <div data-tip-host style="display:flex; align-items:center; gap:8px;"><div style="font-size:1.05rem; font-weight:700; flex:1;">${L('Intégrer la boîte de réception dans une autre app', 'Embed the inbox in another app')}</div>${tip(L('Le widget affiche la boîte de réception de CE projet (conversations, réponses, IA on/off) dans n\'importe quel site ou app web : Bubble, React, WordPress, ou une WebView Flutter. Sécurité : la clé d\'intégration reste sur le serveur de l\'app ; le navigateur ne reçoit qu\'un jeton de session temporaire limité à cette boîte.', 'The widget shows THIS project\'s inbox (conversations, replies, AI on/off) in any website or web app: Bubble, React, WordPress, or a Flutter WebView. Security: the integration key stays on the app\'s server; the browser only gets a temporary session token limited to this inbox.'))}</div>
+                    <ol class="mp-muted" style="font-size:.82rem; margin:8px 0 0 18px; padding:0; line-height:1.6;">
+                        <li>${L('Créez une clé d\'intégration ci-dessous (affichée une seule fois).', 'Create an integration key below (shown only once).')}</li>
+                        <li>${L('Le backend de l\'app échange la clé contre un jeton de session (1 h par défaut, 12 h max).', 'The app\'s backend exchanges the key for a session token (1 h by default, 12 h max).')}</li>
+                        <li>${L('La page de l\'app charge le widget avec ce jeton.', 'The app\'s page loads the widget with that token.')}</li>
+                    </ol>
+                </div>
+                <div class="mp-panel">
+                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;"><div style="font-weight:700; flex:1;">${L('Clés d\'intégration', 'Integration keys')}</div>
+                        <input id="mp-key-label" class="form-input" placeholder="${L('Nom (ex. App mobile)', 'Name (e.g. Mobile app)')}" style="max-width:200px;">
+                        <button class="btn btn-primary" id="mp-key-new"><span class="material-icons" style="font-size:1.1rem; vertical-align:text-bottom;">key</span> ${L('Créer', 'Create')}</button></div>
+                    <div id="mp-key-new-out"></div>
+                    <div id="mp-keys" class="mp-muted" style="font-size:.85rem;">${L('Chargement…', 'Loading…')}</div>
+                </div>
+                <div class="mp-panel">
+                    <div style="font-weight:700; margin-bottom:8px;">1 · ${L('Backend de l\'app', 'App backend')}</div>
+                    ${code(backendSnippet)}
+                    <div class="mp-muted" style="font-size:.78rem; margin:10px 0 6px;">${L('Test rapide, ou Bubble (API Connector, en-tête Authorization privé) :', 'Quick test, or Bubble (API Connector, private Authorization header):')}</div>
+                    ${code(curlSnippet)}
+                </div>
+                <div class="mp-panel">
+                    <div style="font-weight:700; margin-bottom:8px;">2 · ${L('Page de l\'app', 'App page')}</div>
+                    ${code(frontSnippet)}
+                    <div class="mp-muted" style="font-size:.78rem; margin-top:8px;">${L('Flutter / mobile : chargez une page web contenant ce code dans une WebView.', 'Flutter / mobile: load a web page containing this code in a WebView.')}</div>
+                </div>
+                <div class="mp-panel">
+                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;"><div style="font-weight:700; flex:1;">${L('Aperçu du widget', 'Widget preview')}</div><button class="btn" id="mp-embed-preview"><span class="material-icons" style="font-size:1.1rem; vertical-align:text-bottom;">visibility</span> ${L('Afficher', 'Show')}</button></div>
+                    <div id="mp-embed-frame"></div>
+                </div>
+            </div>`;
+        bindTips(body);
+        body.querySelectorAll('.mp-copy-btn').forEach(b => b.addEventListener('click', () => copyText(b.dataset.copy)));
+
+        const loadKeys = async () => {
+            const box = body.querySelector('#mp-keys');
+            try {
+                const { keys } = await api('/embed/keys');
+                box.innerHTML = keys.length ? keys.map(k => `
+                    <div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid var(--border); flex-wrap:wrap;">
+                        <span class="material-icons" style="color:${k.revoked ? 'var(--text-muted)' : '#3ecf8e'};">${k.revoked ? 'key_off' : 'key'}</span>
+                        <div style="flex:1; min-width:180px;"><strong style="color:var(--text-main,#fff);">${esc(k.label || L('Sans nom', 'Unnamed'))}</strong><br><code style="font-size:.72rem;">${esc(k.preview)}</code></div>
+                        <span style="font-size:.75rem;">${k.lastUsedAt ? `${L('Utilisée', 'Used')} ${fmtTime(k.lastUsedAt)}` : L('Jamais utilisée', 'Never used')}</span>
+                        ${k.revoked ? `<span class="mp-chip off">${L('Révoquée', 'Revoked')}</span>` : `<button class="mp-iconbtn danger" data-revoke="${esc(k.id)}" title="${L('Révoquer', 'Revoke')}"><span class="material-icons">block</span></button>`}
+                    </div>`).join('') : L('Aucune clé pour ce projet.', 'No key for this project.');
+                box.querySelectorAll('[data-revoke]').forEach(b => b.addEventListener('click', () => confirmInApp(L('Révoquer cette clé ? Les apps qui l\'utilisent perdront l\'accès immédiatement.', 'Revoke this key? Apps using it lose access immediately.'), async () => {
+                    try { await api(`/embed/keys/${encodeURIComponent(b.dataset.revoke)}`, { method: 'DELETE' }); toast(L('Clé révoquée.', 'Key revoked.'), 'success'); loadKeys(); }
+                    catch (e) { toast(e.message, 'error'); }
+                })));
+            } catch (e) { box.innerHTML = `<span class="text-danger">${esc(e.message)}</span>`; }
+        };
+        body.querySelector('#mp-key-new').addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            btn.disabled = true;
+            try {
+                const { key } = await api('/embed/keys', { method: 'POST', body: { label: body.querySelector('#mp-key-label').value.trim() } });
+                body.querySelector('#mp-key-new-out').innerHTML = `
+                    <div style="margin-bottom:12px; padding:10px 12px; border-radius:10px; background:rgba(62,207,142,.08); border:1px solid rgba(62,207,142,.35); font-size:.82rem;">
+                        <strong>${L('Copiez cette clé maintenant : elle ne sera plus affichée.', 'Copy this key now: it will not be shown again.')}</strong>
+                        <div style="margin-top:8px;">${code(key)}</div>
+                        <div class="mp-muted" style="margin-top:6px;">${L('Gardez-la sur le serveur de l\'app (variable d\'environnement), jamais dans le code du navigateur.', 'Keep it on the app\'s server (environment variable), never in browser code.')}</div>
+                    </div>`;
+                body.querySelectorAll('#mp-key-new-out .mp-copy-btn').forEach(b => b.addEventListener('click', () => copyText(b.dataset.copy)));
+                body.querySelector('#mp-key-label').value = '';
+                loadKeys();
+            } catch (err) { toast(err.message, 'error'); }
+            finally { btn.disabled = false; }
+        });
+        body.querySelector('#mp-embed-preview').addEventListener('click', async () => {
+            const frame = body.querySelector('#mp-embed-frame');
+            frame.innerHTML = '<div id="mp-embed-mount" style="height:560px;"></div>';
+            try {
+                if (!window.QuasarInbox) await new Promise((resolve, reject) => {
+                    const s = document.createElement('script');
+                    s.src = `${window.location.hostname.includes('localhost') ? '' : window.location.origin}/embed/sdk.js`;
+                    s.onload = resolve; s.onerror = () => reject(new Error('sdk.js'));
+                    document.head.appendChild(s);
+                });
+                window.QuasarInbox.mount(frame.querySelector('#mp-embed-mount'), {
+                    getToken: async () => (await api('/embed/preview-session', { method: 'POST' })).token,
+                    lang: isEn() ? 'en' : 'fr'
+                });
+            } catch (e) { frame.innerHTML = `<span class="text-danger">${esc(e.message)}</span>`; }
+        });
+        loadKeys();
     }
 
     // =====================================================================
