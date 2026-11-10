@@ -202,7 +202,7 @@ window.selectProject = async (id, json) => {
 // Final prompt of an agent on the client Messaging Platform (platform rules + agent + tools + channel)
 window.agent_showPromptPreview = async (agentId) => {
     if (!activeProjectId || !agentId) return;
-    const { showPromptPreview } = await import('./mp_inbox.js');
+    const { showPromptPreview } = await import('./mp_inbox.js?v=20261110');
     showPromptPreview({ apiBase: API_BASE, getToken: getAuthToken, projectId: activeProjectId, agentId, channel: 'sms' });
 };
 
@@ -218,7 +218,7 @@ window.agent_openPromptGenerator = async (agentId) => {
     }
     if (!initialBrief.businessName && currentProject?.clientName) initialBrief.businessName = currentProject.name || '';
     if (!initialBrief.agentName) initialBrief.agentName = document.getElementById('ag-name')?.value || '';
-    const { openPromptGenerator } = await import('./mp_inbox.js');
+    const { openPromptGenerator } = await import('./mp_inbox.js?v=20261110');
     openPromptGenerator({
         apiBase: API_BASE, getToken: getAuthToken, projectId: activeProjectId, agentId, initialBrief,
         onUse: (text) => {
@@ -249,7 +249,7 @@ window.showProjectTab = async (tab, subTab = null) => {
         const snap = await getDocs(query(collection(db, "ai_agents"), where("projectId", "==", projectId)));
         if (projectId !== activeProjectId) return; // project changed while loading
         const agents = snap.docs.map(d => ({ id: d.id, name: d.data().name || d.id }));
-        const { renderProjectMessaging } = await import('./mp_inbox.js');
+        const { renderProjectMessaging } = await import('./mp_inbox.js?v=20261110');
         renderProjectMessaging(contentEl, { projectId, apiBase: API_BASE, getToken: getAuthToken, agents, isStaff: true, initialTab: subTab || 'inbox' });
     } catch (e) {
         console.error('[Messaging] Load error:', e);

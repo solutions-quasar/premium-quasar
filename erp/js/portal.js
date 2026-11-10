@@ -216,7 +216,7 @@ const mountMessages = async () => {
     const el = document.getElementById('tab-messages');
     if (!el || !currentProjectId) return;
     try {
-        const { renderProjectMessaging } = await import('./modules/mp_inbox.js');
+        const { renderProjectMessaging } = await import('./modules/mp_inbox.js?v=20261110');
         renderProjectMessaging(el, {
             projectId: currentProjectId,
             apiBase,
