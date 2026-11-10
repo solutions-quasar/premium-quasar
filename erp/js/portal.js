@@ -206,8 +206,9 @@ const showDashboard = async () => {
 
     loadAgents();
     refreshUnreadBadge();
-    // Back from Google after connecting Gmail: open the Connect tab
+    // Back from Google after connecting Gmail: open the Connect tab; back from Stripe: the Subscription tab
     if (new URLSearchParams(window.location.search).has('gmail')) window.switchTab('integrations');
+    if (new URLSearchParams(window.location.search).has('billing')) window.switchTab('subscription');
     clearInterval(badgeTimer);
     badgeTimer = setInterval(refreshUnreadBadge, 60000);
 };
@@ -249,6 +250,18 @@ const refreshUnreadBadge = async () => {
 };
 let badgeTimer = null;
 
+// Subscription tab: plan, usage, add-ons, invoices (Stripe)
+const mountBilling = async () => {
+    const el = document.getElementById('billing-root');
+    if (!el || !currentProjectId) return;
+    try {
+        const { renderProjectBilling } = await import('./modules/billing_ui.js?v=20261110');
+        renderProjectBilling(el, { projectId: currentProjectId, apiBase, getToken: () => auth.currentUser.getIdToken(), isStaff: false });
+    } catch (e) {
+        console.error('[Portal] Billing load error:', e);
+    }
+};
+
 // Connect tab: messaging channels the client links itself (Facebook/Instagram, WhatsApp, Gmail)
 let connectMounted = false;
 const mountConnect = async () => {
@@ -268,7 +281,10 @@ const mountConnect = async () => {
 window.togglePortalMenu = (open) => {
     const isOpen = typeof open === 'boolean' ? open : !document.body.classList.contains('menu-open');
     document.body.classList.toggle('menu-open', isOpen);
-    document.getElementById('menu-fab')?.setAttribute('aria-expanded', String(isOpen));
+    const fab = document.getElementById('menu-fab');
+    fab?.setAttribute('aria-expanded', String(isOpen));
+    const icon = fab?.querySelector('.material-icons');
+    if (icon) icon.textContent = isOpen ? 'close' : 'menu';
 };
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.togglePortalMenu(false); });
 
@@ -280,6 +296,9 @@ window.switchTab = (tab) => {
     if (msg) msg.style.display = tab === 'messages' ? 'block' : 'none';
     if (tab === 'messages' && !messagesMounted) mountMessages();
     if (tab === 'integrations' && !connectMounted) mountConnect();
+    const subTab = document.getElementById('tab-subscription');
+    if (subTab) subTab.style.display = tab === 'subscription' ? 'block' : 'none';
+    if (tab === 'subscription') mountBilling();
 
     // Update Nav UI
     document.querySelectorAll('.nav-link').forEach(el => {

@@ -189,6 +189,9 @@ window.selectProject = async (id, json) => {
              <button class="btn" id="ai-tab-messaging" onclick="showProjectTab('messaging')" title="${mpL('Messagerie Meta, SMS et courriel de ce client', 'This client\'s Meta, SMS and email messaging')}">
                 <span class="material-icons" style="font-size:1.1rem; vertical-align:text-bottom;">forum</span> ${mpL('Messagerie', 'Messaging')}
              </button>
+             <button class="btn" id="ai-tab-billing" onclick="showProjectTab('billing')" title="${mpL('Abonnement du client et catalogue de l\'offre', 'Client subscription and offer catalog')}">
+                <span class="material-icons" style="font-size:1.1rem; vertical-align:text-bottom;">workspace_premium</span> ${mpL('Forfait', 'Plan')}
+             </button>
              <button class="btn btn-primary" onclick="openAgentModal()">
                 <span class="material-icons" style="font-size:1.2rem; vertical-align:text-bottom; margin-right:5px;">add</span>
                 New Agent
@@ -233,13 +236,25 @@ let currentProjectTab = 'agents';
 window.showProjectTab = async (tab, subTab = null) => {
     if (!activeProjectId) return;
     currentProjectTab = tab;
-    ['agents', 'messaging'].forEach(t => {
+    ['agents', 'messaging', 'billing'].forEach(t => {
         const b = document.getElementById(`ai-tab-${t}`);
         if (b) {
             b.style.background = t === tab ? 'rgba(223, 165, 58, 0.15)' : 'transparent';
             b.style.border = `1px solid ${t === tab ? 'var(--gold)' : 'var(--border)'}`;
         }
     });
+    if (tab === 'billing') {
+        const contentEl = document.getElementById('ai-agent-content');
+        contentEl.innerHTML = '<div id="bl-project"></div><div style="height:28px;"></div><div id="bl-catalog"></div>';
+        try {
+            const { renderProjectBilling, renderCatalogEditor } = await import('./billing_ui.js?v=20261110');
+            renderProjectBilling(contentEl.querySelector('#bl-project'), { projectId: activeProjectId, apiBase: API_BASE, getToken: getAuthToken, isStaff: true });
+            renderCatalogEditor(contentEl.querySelector('#bl-catalog'), { apiBase: API_BASE, getToken: getAuthToken });
+        } catch (e) {
+            contentEl.innerHTML = `<div class="text-danger">${e.message}</div>`;
+        }
+        return;
+    }
     if (tab !== 'messaging') return renderAgentList(activeProjectId);
 
     const contentEl = document.getElementById('ai-agent-content');
