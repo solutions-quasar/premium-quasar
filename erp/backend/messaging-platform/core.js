@@ -64,6 +64,7 @@ function publicChannel(ch, { withWebhookKey = false } = {}) {
         hasTwilioCredentials: !!(ch.twilioAccountSid && ch.twilioAuthToken),
         lastSyncAt: ch.lastSyncAt || null,
         lastError: ch.lastError || null,
+        wabaId: ch.wabaId || null,
         createdAt: ch.createdAt || null,
         updatedAt: ch.updatedAt || null
     };
@@ -108,6 +109,7 @@ async function saveChannel(projectId, input) {
     if (input.accessToken) data.accessToken = String(input.accessToken).trim();
     if (input.twilioAccountSid) data.twilioAccountSid = String(input.twilioAccountSid).trim();
     if (input.twilioAuthToken) data.twilioAuthToken = String(input.twilioAuthToken).trim();
+    if (type === 'whatsapp' && input.wabaId !== undefined) data.wabaId = String(input.wabaId || '').replace(/[^\d]/g, '') || null;
     if (!existing.exists) {
         data.createdAt = nowIso();
         if (type === 'sms') data.webhookKey = crypto.randomBytes(24).toString('hex');
@@ -385,6 +387,79 @@ async function sendManualReply({ projectId, convId, text, user }) {
     return sentId;
 }
 
+/**
+ * Business-initiated message from the ERP ("Nouveau message"): free text, or a WhatsApp
+ * template (required outside the 24 h customer-service window). Recorded in the inbox.
+ */
+async function startOutbound({ projectId, channelId: chId, to, text, template, user }) {
+    const channel = await getChannelById(chId);
+    if (!channel || channel.projectId !== projectId) throw new Error('Canal introuvable.');
+    if (channel.active === false) throw new Error('Ce canal est en pause.');
+    if (['facebook', 'instagram'].includes(channel.type)) {
+        throw new Error('Messenger et Instagram n\'autorisent pas à écrire en premier : le client doit vous écrire d\'abord.');
+    }
+    let contactId = String(to || '').trim();
+    if (!contactId) throw new Error('Destinataire requis.');
+    if (channel.type === 'whatsapp') contactId = contactId.replace(/[^\d]/g, '');
+    if (channel.type === 'sms') contactId = '+' + contactId.replace(/[^\d]/g, '');
+    if (channel.type === 'email') contactId = contactId.toLowerCase();
+
+    const convId = `${channel.type}_${contactId}`;
+    const ref = conversationsRef(projectId).doc(convId);
+    const snap = await ref.get();
+    if (snap.exists && snap.data().optedOut) throw new Error('Ce contact s\'est désabonné (STOP).');
+
+    let sentId;
+    let content;
+    if (template?.name) {
+        if (channel.type !== 'whatsapp') throw new Error('Les modèles ne concernent que WhatsApp.');
+        sentId = await providers.sendWhatsAppTemplate({
+            token: channel.accessToken, phoneNumberId: channel.externalId, to: contactId,
+            name: template.name, language: template.language || 'en_US', bodyParams: template.params || []
+        });
+        content = template.preview || `[Modèle WhatsApp : ${template.name}]`;
+    } else {
+        const body = String(text || '').trim();
+        if (!body) throw new Error('Message vide.');
+        sentId = await sendOnChannel(channel, contactId, body, snap.exists ? snap.data() : {});
+        content = body;
+    }
+
+    await appendMessage(projectId, convId, {
+        role: 'assistant', author: 'human', senderName: user?.email || null,
+        content, messageId: sentId, timestamp: nowIso()
+    }, {
+        projectId, channelId: channel.id, channel: channel.type, contactId,
+        unread: false,
+        ...(snap.exists ? {} : { createdAt: nowIso(), aiEnabled: true, contactName: null })
+    });
+    return { convId, messageId: sentId };
+}
+
+async function getWhatsAppChannel(projectId, chId) {
+    const channel = await getChannelById(chId);
+    if (!channel || channel.projectId !== projectId || channel.type !== 'whatsapp') throw new Error('Canal WhatsApp introuvable.');
+    return channel;
+}
+
+async function listWhatsAppTemplates(projectId, chId) {
+    const ch = await getWhatsAppChannel(projectId, chId);
+    return providers.listWhatsAppTemplates({ token: ch.accessToken, wabaId: ch.wabaId });
+}
+
+async function createWhatsAppTemplate(projectId, chId, input) {
+    const ch = await getWhatsAppChannel(projectId, chId);
+    const name = String(input.name || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_');
+    if (!name) throw new Error('Nom du modèle requis (lettres minuscules, chiffres, _).');
+    const body = String(input.body || '').trim();
+    if (!body) throw new Error('Texte du modèle requis.');
+    const category = ['UTILITY', 'MARKETING', 'AUTHENTICATION'].includes(input.category) ? input.category : 'UTILITY';
+    const varCount = (body.match(/\{\{\d+\}\}/g) || []).length;
+    const examples = (input.examples || []).slice(0, varCount);
+    if (varCount && examples.length < varCount) throw new Error(`Donnez un exemple pour chacune des ${varCount} variables {{n}}.`);
+    return providers.createWhatsAppTemplate({ token: ch.accessToken, wabaId: ch.wabaId, name, category, language: input.language || 'fr', body, examples });
+}
+
 /** Imports new emails of one Gmail channel (or all of them) into the project inboxes. */
 async function syncEmailChannel(channel) {
     return gmail.syncChannel(channel, (m) => handleInbound({
@@ -412,6 +487,9 @@ async function syncAllEmailChannels() {
 }
 
 module.exports = {
+    startOutbound,
+    listWhatsAppTemplates,
+    createWhatsAppTemplate,
     syncEmailChannel,
     syncAllEmailChannels,
     CHANNEL_TYPES,

@@ -312,6 +312,34 @@ function createRouter({ verifyToken }) {
         }
     });
 
+    // ----- Outbound + WhatsApp templates (staff) -----
+    router.post('/projects/:projectId/messages', staff, async (req, res) => {
+        try {
+            const { channelId, to, text, template } = req.body || {};
+            const r = await core.startOutbound({ projectId: req.params.projectId, channelId, to, text, template, user: req.user });
+            res.json({ success: true, ...r });
+        } catch (e) {
+            res.status(400).json({ success: false, error: e.message });
+        }
+    });
+
+    router.get('/projects/:projectId/channels/:channelId/templates', staff, async (req, res) => {
+        try {
+            res.json({ success: true, templates: await core.listWhatsAppTemplates(req.params.projectId, req.params.channelId) });
+        } catch (e) {
+            res.status(400).json({ success: false, error: e.message });
+        }
+    });
+
+    router.post('/projects/:projectId/channels/:channelId/templates', staff, async (req, res) => {
+        try {
+            const created = await core.createWhatsAppTemplate(req.params.projectId, req.params.channelId, req.body || {});
+            res.json({ success: true, template: created });
+        } catch (e) {
+            res.status(400).json({ success: false, error: e.message });
+        }
+    });
+
     // ----- Gmail per project -----
     // Returns the Google sign-in URL; the signed state carries the project, agent and return page.
     router.get('/projects/:projectId/gmail/auth-url', staff, (req, res) => {

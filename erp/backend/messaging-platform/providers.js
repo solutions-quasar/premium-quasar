@@ -60,6 +60,50 @@ async function sendWhatsApp({ token, phoneNumberId, to, text }) {
     }
 }
 
+/** WhatsApp approved template message (business-initiated, outside the 24 h window). */
+async function sendWhatsAppTemplate({ token, phoneNumberId, to, name, language = 'en_US', bodyParams = [] }) {
+    if (!token || !phoneNumberId) throw new Error('Jeton ou phone_number_id WhatsApp manquant pour ce canal.');
+    const template = { name, language: { code: language } };
+    if (bodyParams.length) template.components = [{ type: 'body', parameters: bodyParams.map(t => ({ type: 'text', text: String(t) })) }];
+    try {
+        const res = await axios.post(`https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}/messages`, {
+            messaging_product: 'whatsapp', to: String(to).replace(/[^\d]/g, ''), type: 'template', template
+        }, { headers: { Authorization: `Bearer ${token}` } });
+        return res.data?.messages?.[0]?.id || null;
+    } catch (err) {
+        throw wrapMetaError(err, 'Erreur API WhatsApp');
+    }
+}
+
+/** Message templates of a WhatsApp Business Account. */
+async function listWhatsAppTemplates({ token, wabaId }) {
+    if (!wabaId) throw new Error('ID du compte WhatsApp Business (WABA) manquant : ajoutez-le dans le canal.');
+    try {
+        const res = await axios.get(`https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}/message_templates`, {
+            params: { fields: 'name,status,category,language,components,rejected_reason', limit: 100 },
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        return res.data?.data || [];
+    } catch (err) {
+        throw wrapMetaError(err, 'Erreur API WhatsApp');
+    }
+}
+
+/** Creates a text template (body with optional {{1}} variables + examples). Meta reviews it. */
+async function createWhatsAppTemplate({ token, wabaId, name, category, language, body, examples = [] }) {
+    if (!wabaId) throw new Error('ID du compte WhatsApp Business (WABA) manquant : ajoutez-le dans le canal.');
+    const bodyComponent = { type: 'BODY', text: body };
+    if (examples.length) bodyComponent.example = { body_text: [examples.map(String)] };
+    try {
+        const res = await axios.post(`https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}/message_templates`, {
+            name, category, language, components: [bodyComponent]
+        }, { headers: { Authorization: `Bearer ${token}` } });
+        return res.data; // { id, status, category }
+    } catch (err) {
+        throw wrapMetaError(err, 'Erreur API WhatsApp');
+    }
+}
+
 /** Twilio client for a channel: its own credentials first, then the server's. */
 function twilioClientFor(channel) {
     if (channel.twilioAccountSid && channel.twilioAuthToken) {
@@ -123,4 +167,7 @@ async function inspectMetaToken(token) {
     };
 }
 
-module.exports = { sendMetaDM, sendWhatsApp, sendSms, getMetaProfile, inspectMetaToken };
+module.exports = {
+    sendMetaDM, sendWhatsApp, sendSms, getMetaProfile, inspectMetaToken,
+    sendWhatsAppTemplate, listWhatsAppTemplates, createWhatsAppTemplate
+};
