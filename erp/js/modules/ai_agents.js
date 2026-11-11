@@ -33,9 +33,11 @@ export async function initAiAgents() {
             /* Responsive layout driven by the space the module really gets (ERP sidebar open or not):
                side by side when wide, stacked on tablets and phones. */
             .aia-root { container-type:inline-size; container-name:aia; height:100%; }
+            /* Desktop: cancel the 5rem bottom padding of the ERP main area so the full-height panels do not scroll */
+            @media (min-width: 1024px) { .aia-root { margin-bottom:-5rem; } }
             .aia-layout { display:flex; height:100%; gap:20px; min-width:0; }
-            .aia-projects { width:300px; flex-shrink:0; display:flex; flex-direction:column; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; height:calc(100vh - 140px); }
-            .aia-main { flex:1; min-width:0; display:flex; flex-direction:column; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; height:calc(100vh - 140px); container-type:inline-size; container-name:aiamain; }
+            .aia-projects { width:300px; flex-shrink:0; display:flex; flex-direction:column; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; height:var(--aia-h, calc(100vh - 140px)); }
+            .aia-main { flex:1; min-width:0; display:flex; flex-direction:column; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; height:var(--aia-h, calc(100vh - 140px)); container-type:inline-size; container-name:aiamain; }
             #ai-agent-header { padding:1.5rem; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
             .aia-title { min-width:0; flex:1 1 220px; }
             .aia-title .text-h { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -62,7 +64,7 @@ export async function initAiAgents() {
                 .aia-layout { flex-direction:column; height:auto; }
                 .aia-projects { width:auto; height:auto; max-height:230px; }
                 .aia-projects > div:first-child { padding:.9rem 1rem !important; }
-                .aia-main { height:auto; min-height:calc(100vh - 140px); }
+                .aia-main { height:auto; min-height:var(--aia-h, calc(100vh - 140px)); }
             }
             /* Narrow main panel: one row of tabs that scrolls sideways instead of wrapping into a stack */
             @container aiamain (max-width: 900px) {
@@ -112,6 +114,16 @@ export async function initAiAgents() {
         <!-- Modals Container -->
         <div id="ai-modal-host"></div>
     `;
+
+    // Panels fill the screen down to a small bottom margin (measured, whatever the ERP header/padding)
+    const fitHeight = () => {
+        const root = container.querySelector('.aia-root');
+        if (!root || !root.isConnected) return window.removeEventListener('resize', fitHeight);
+        const top = root.getBoundingClientRect().top + (root.closest('main, #main-content')?.scrollTop || 0);
+        root.style.setProperty('--aia-h', `${Math.max(420, Math.round(window.innerHeight - top - 16))}px`);
+    };
+    fitHeight();
+    window.addEventListener('resize', fitHeight);
 
     renderProjectList();
 
