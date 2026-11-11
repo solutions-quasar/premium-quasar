@@ -26,6 +26,16 @@ const { db } = require('../firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
 
 const stripe = process.env.STRIPE_SECRET_KEY ? require('stripe')(process.env.STRIPE_SECRET_KEY) : null;
+// Test and live Stripe ids are stored apart: the local server (test key) and production (live key)
+// share the same Firestore, so test products, customers and subscriptions must never overwrite live ones.
+//   live → catalog.stripe,     ai_projects/{id}.billing
+//   test → catalog.stripeTest, ai_projects/{id}.billingTest
+const STRIPE_TEST_MODE = /^(sk|rk)_test_/.test(process.env.STRIPE_SECRET_KEY || '');
+const STRIPE_FIELD = STRIPE_TEST_MODE ? 'stripeTest' : 'stripe';
+const BILLING_FIELD = STRIPE_TEST_MODE ? 'billingTest' : 'billing';
+/** Project data with `billing` = the subscription data of the current Stripe mode. */
+const withMode = (data = {}) => (STRIPE_TEST_MODE ? { ...data, billing: data.billingTest || {} } : data);
+if (STRIPE_TEST_MODE) console.log('[Billing] Stripe TEST mode: ids kept in stripeTest / billingTest');
 const CATALOG_REF = () => db.collection('billing_settings').doc('catalog');
 const METER_EVENT = 'quasar_ai_conversation';
 const VOICE_METER_EVENT = 'quasar_voice_minute';
@@ -61,6 +71,37 @@ const DEFAULT_CATALOG = {
         { key: 'sms', name: 'Numéro texto dédié (SMS)', description: 'Un numéro local pour vos textos, enregistré auprès des opérateurs.', nameEn: 'Dedicated text number (SMS)', descriptionEn: 'A local number for your texts, registered with the carriers.', monthly: 39, extraConversations: 0, includedMinutes: 0 },
         { key: 'quota', name: '+1 000 conversations IA', description: 'Quota mensuel supplémentaire, à prix réduit.', nameEn: '+1,000 AI conversations', descriptionEn: 'Extra monthly quota at a lower price.', monthly: 99, extraConversations: 1000, includedMinutes: 0 }
     ],
+    // Proposal page defaults (each client's offer can override them)
+    presentation: {
+        includes: [
+            'Réponses IA 24 h/24 sur Messenger, Instagram, WhatsApp et courriel',
+            'Une seule boîte de réception pour tous vos messages',
+            'Portail client sur téléphone : vous reprenez la main en un clic',
+            'Assistant formé sur vos services, vos prix et vos horaires',
+            'Suivi et ajustements par l\'équipe Quasar'
+        ],
+        includesEn: [
+            'AI replies 24/7 on Messenger, Instagram, WhatsApp and email',
+            'One inbox for all your messages',
+            'Client portal on your phone: take over in one tap',
+            'Assistant trained on your services, prices and hours',
+            'Follow-up and adjustments by the Quasar team'
+        ],
+        setupIncludes: [
+            'Configuration de l\'assistant (instructions, ton, informations)',
+            'Connexion de vos comptes (Facebook, Instagram, WhatsApp, courriel)',
+            'Tests complets avant la mise en service',
+            'Formation de 30 minutes à votre portail'
+        ],
+        setupIncludesEn: [
+            'Assistant setup (instructions, tone, information)',
+            'Connection of your accounts (Facebook, Instagram, WhatsApp, email)',
+            'Full testing before going live',
+            '30-minute training on your portal'
+        ],
+        validityDays: 30,
+        contactEmail: ''
+    },
     stripe: {}
 };
 
@@ -74,7 +115,23 @@ async function getCatalog() {
     const snap = await CATALOG_REF().get();
     if (!snap.exists) return { ...DEFAULT_CATALOG, isDefault: true };
     const c = snap.data();
-    return { ...DEFAULT_CATALOG, ...c, base: { ...DEFAULT_CATALOG.base, ...c.base }, setupFee: { ...DEFAULT_CATALOG.setupFee, ...c.setupFee }, overage: { ...DEFAULT_CATALOG.overage, ...c.overage }, minuteOverage: { ...DEFAULT_CATALOG.minuteOverage, ...c.minuteOverage }, stripe: c.stripe || {} };
+    return { ...DEFAULT_CATALOG, ...c, base: { ...DEFAULT_CATALOG.base, ...c.base }, setupFee: { ...DEFAULT_CATALOG.setupFee, ...c.setupFee }, overage: { ...DEFAULT_CATALOG.overage, ...c.overage }, minuteOverage: { ...DEFAULT_CATALOG.minuteOverage, ...c.minuteOverage }, presentation: { ...DEFAULT_CATALOG.presentation, ...(c.presentation || {}) }, stripe: c[STRIPE_FIELD] || {} };
+}
+
+/** Lines typed in a textarea (or an array) → trimmed non-empty lines. */
+const toLines = (v, max = 12) => (Array.isArray(v) ? v : String(v || '').split('\n')).map(s => String(s).trim().replace(/^[-•·✓*]\s*/, '').slice(0, 200)).filter(Boolean).slice(0, max);
+
+function cleanPresentation(input, previous) {
+    if (!input) return previous;
+    const p = { ...previous };
+    for (const k of ['includes', 'includesEn', 'setupIncludes', 'setupIncludesEn']) if (k in input) p[k] = toLines(input[k]);
+    if ('validityDays' in input) p.validityDays = Math.min(365, Math.max(1, Math.round(Number(input.validityDays) || 30)));
+    if ('contactEmail' in input) {
+        const e = String(input.contactEmail || '').trim();
+        if (e && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw new Error('Courriel de contact invalide.');
+        p.contactEmail = e;
+    }
+    return p;
 }
 
 function cleanCatalog(input, previous) {
@@ -94,14 +151,16 @@ function cleanCatalog(input, previous) {
         overage: { name: str(input.overage?.name, 120) || DEFAULT_CATALOG.overage.name, unitPrice: num(input.overage?.unitPrice) },
         minuteOverage: { name: str(input.minuteOverage?.name, 120) || DEFAULT_CATALOG.minuteOverage.name, unitPrice: input.minuteOverage?.unitPrice == null ? (previous.minuteOverage?.unitPrice ?? DEFAULT_CATALOG.minuteOverage.unitPrice) : num(input.minuteOverage.unitPrice) },
         options,
-        stripe: previous.stripe || {}
+        presentation: cleanPresentation(input.presentation, previous.presentation || DEFAULT_CATALOG.presentation),
+        [STRIPE_FIELD]: previous.stripe || {}
     };
 }
 
 async function saveCatalog(input, user) {
     const previous = await getCatalog();
     const data = cleanCatalog(input, previous);
-    await CATALOG_REF().set({ ...data, updatedAt: nowIso(), updatedBy: user?.email || null });
+    // merge: the other Stripe mode's ids (stripe / stripeTest) are kept
+    await CATALOG_REF().set({ ...data, updatedAt: nowIso(), updatedBy: user?.email || null }, { merge: true });
     return getCatalog();
 }
 
@@ -184,7 +243,7 @@ async function syncCatalog() {
         ids.options[o.key] = { product, price: await upsertPrice(cur.price, product, m.params, m.same) };
     }
 
-    await CATALOG_REF().set({ stripe: ids, syncedAt: nowIso() }, { merge: true });
+    await CATALOG_REF().set({ [STRIPE_FIELD]: ids, [STRIPE_TEST_MODE ? 'syncedTestAt' : 'syncedAt']: nowIso() }, { merge: true });
     return getCatalog();
 }
 
@@ -193,7 +252,7 @@ async function syncCatalog() {
 async function getProject(projectId) {
     const snap = await db.collection('ai_projects').doc(projectId).get();
     if (!snap.exists) throw new Error('Projet introuvable.');
-    return { id: snap.id, ...snap.data() };
+    return { id: snap.id, ...withMode(snap.data()) };
 }
 
 async function clientEmailFor(project) {
@@ -212,7 +271,7 @@ async function ensureCustomer(project, fallbackEmail) {
         email, name: project.clientName || project.name || undefined,
         metadata: { projectId: project.id, source: 'quasar_ai_agents' }
     });
-    await db.collection('ai_projects').doc(project.id).set({ billing: { customerId: customer.id } }, { merge: true });
+    await db.collection('ai_projects').doc(project.id).set({ [BILLING_FIELD]: { customerId: customer.id } }, { merge: true });
     return customer.id;
 }
 
@@ -248,7 +307,7 @@ async function syncProjectSubscription(project, catalog) {
         cancelAtPeriodEnd: !!sub?.cancel_at_period_end,
         syncedAt: nowIso()
     };
-    await db.collection('ai_projects').doc(project.id).set({ billing }, { merge: true });
+    await db.collection('ai_projects').doc(project.id).set({ [BILLING_FIELD]: billing }, { merge: true });
     return { sub, billing };
 }
 
@@ -269,6 +328,8 @@ function defaultOffer(catalog) {
         customItems: [],
         discount: { percent: 0, months: 0 },
         note: '',
+        // Proposal page: empty lists fall back to the catalog defaults in the page language
+        clientCompany: '', senderName: '', contactEmail: '', validUntil: '', includes: [], setupIncludes: [],
         isDefault: true
     };
 }
@@ -293,7 +354,13 @@ function cleanOffer(input, catalog) {
             type: i.type === 'once' ? 'once' : 'monthly'
         })).filter(i => i.name),
         discount: { percent: Math.min(100, num(input.discount?.percent)), months: Math.round(num(input.discount?.months)) },
-        note: str(input.note, 1000)
+        note: str(input.note, 1000),
+        clientCompany: str(input.clientCompany, 120),
+        senderName: str(input.senderName, 120),
+        contactEmail: (() => { const e = str(input.contactEmail, 200); if (e && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw new Error('Courriel de contact invalide.'); return e; })(),
+        validUntil: /^\d{4}-\d{2}-\d{2}$/.test(String(input.validUntil || '')) ? input.validUntil : '',
+        includes: toLines(input.includes),
+        setupIncludes: toLines(input.setupIncludes)
     };
 }
 
@@ -309,6 +376,8 @@ const offerOf = (project, catalog) => {
 async function saveOffer(projectId, input, user) {
     const [project, catalog] = await Promise.all([getProject(projectId), getCatalog()]);
     const offer = cleanOffer(input, catalog);
+    // Validity: given date, else today + the catalog's validity days
+    if (!offer.validUntil) offer.validUntil = new Date(Date.now() + (catalog.presentation?.validityDays || 30) * 86400e3).toISOString().slice(0, 10);
     const proposalId = project.billingOffer?.proposalId || newId();
     // update() replaces the whole field: removed options / items do not linger
     await db.collection('ai_projects').doc(projectId).update({
@@ -344,7 +413,7 @@ async function projectSummary(projectId, { staff = false } = {}) {
     const base = {
         stripe: !!stripe, ready: !!catalog.stripe?.baseProduct,
         offer: staff ? offer : publicOffer(offer),
-        ...(staff ? { proposalUrl: project.billingOffer?.proposalId ? `${PUBLIC_BASE}/offer.html?p=${project.billingOffer.proposalId}` : null } : {})
+        ...(staff ? { proposalUrl: project.billingOffer?.proposalId ? `${PUBLIC_BASE}/offer.html?p=${project.billingOffer.proposalId}` : null, presentationDefaults: catalog.presentation } : {})
     };
     if (!stripe) return { ...base, subscription: null, usage: null, invoices: [] };
 
@@ -403,7 +472,7 @@ async function overagePriceFor(catalog, unitPrice) {
         recurring: { interval: 'month', usage_type: 'metered', meter: ids.meterId }, tax_behavior: 'exclusive'
     });
     cache[decimal] = price.id;
-    await CATALOG_REF().set({ stripe: { overagePrices: cache } }, { merge: true });
+    await CATALOG_REF().set({ [STRIPE_FIELD]: { overagePrices: cache } }, { merge: true });
     return price.id;
 }
 
@@ -419,14 +488,14 @@ async function minutePriceFor(catalog, unitPrice) {
         recurring: { interval: 'month', usage_type: 'metered', meter: ids.voiceMeterId }, tax_behavior: 'exclusive'
     });
     cache[decimal] = price.id;
-    await CATALOG_REF().set({ stripe: { minutePrices: cache } }, { merge: true });
+    await CATALOG_REF().set({ [STRIPE_FIELD]: { minutePrices: cache } }, { merge: true });
     return price.id;
 }
 
 async function couponFor(projectId, offer) {
     const { percent, months } = offer.discount || {};
     if (!percent) return null;
-    const key = `${percent}_${months}`;
+    const key = `${percent}_${months}${STRIPE_TEST_MODE ? '_test' : ''}`; // a test coupon is never reused in live
     if (offer.coupon?.key === key) return offer.coupon.id;
     const coupon = await stripe.coupons.create({
         percent_off: percent, duration: months ? 'repeating' : 'forever', ...(months ? { duration_in_months: months } : {}),
@@ -436,7 +505,7 @@ async function couponFor(projectId, offer) {
     return coupon.id;
 }
 
-async function createCheckout(projectId, { options = [], withSetup = true, returnTo, user }) {
+async function createCheckout(projectId, { options = [], withSetup = true, returnTo, user, termsAcceptedAt = null }) {
     requireStripe();
     const [project, catalog] = await Promise.all([getProject(projectId), getCatalog()]);
     const ids = catalog.stripe || {};
@@ -467,7 +536,7 @@ async function createCheckout(projectId, { options = [], withSetup = true, retur
         mode: 'subscription',
         customer,
         line_items,
-        subscription_data: { metadata: { projectId, source: 'quasar_ai_agents' } },
+        subscription_data: { metadata: { projectId, source: 'quasar_ai_agents', ...(termsAcceptedAt ? { termsAcceptedAt } : {}) } },
         metadata: { projectId, type: 'ai_agent_subscription' },
         automatic_tax: { enabled: !!catalog.automaticTax },
         ...(catalog.automaticTax ? { customer_update: { address: 'auto' } } : {}),
@@ -530,14 +599,41 @@ async function projectByProposal(proposalId) {
     if (!/^[a-f0-9]{24}$/.test(String(proposalId || ''))) throw new Error('Proposition introuvable.');
     const snap = await db.collection('ai_projects').where('billingOffer.proposalId', '==', proposalId).limit(1).get();
     if (snap.empty) throw new Error('Proposition introuvable ou expirée.');
-    return { id: snap.docs[0].id, ...snap.docs[0].data() };
+    return { id: snap.docs[0].id, ...withMode(snap.docs[0].data()) };
 }
+
+const proposalExpired = (offer) => !!offer.validUntil && offer.validUntil < new Date().toISOString().slice(0, 10);
 
 async function proposal(proposalId) {
     const project = await projectByProposal(proposalId);
     const catalog = await getCatalog();
     const subscribed = ['active', 'trialing', 'past_due'].includes(project.billing?.status);
-    return { projectName: project.name || '', clientName: project.clientName || '', offer: publicOffer(offerOf(project, catalog)), subscribed };
+    const offer = offerOf(project, catalog);
+    const pres = catalog.presentation || DEFAULT_CATALOG.presentation;
+    return {
+        projectName: project.name || '',
+        // The client's business name: set in the offer, else the CRM name without our "(…)" notes
+        clientName: offer.clientCompany || String(project.clientName || project.name || '').replace(/\s*\([^)]*\)\s*$/, ''),
+        number: `Q-${proposalId.slice(0, 6).toUpperCase()}`,
+        date: project.billingOffer?.updatedAt || null,
+        validUntil: offer.validUntil || null,
+        expired: proposalExpired(offer),
+        sender: { name: offer.senderName || '', email: offer.contactEmail || pres.contactEmail || project.billingOffer?.updatedBy || '' },
+        includes: offer.includes?.length ? { fr: offer.includes, en: offer.includes } : { fr: pres.includes, en: pres.includesEn },
+        setupIncludes: offer.setupIncludes?.length ? { fr: offer.setupIncludes, en: offer.setupIncludes } : { fr: pres.setupIncludes, en: pres.setupIncludesEn },
+        offer: withEnglishNames(publicOffer(offer), catalog),
+        subscribed
+    };
+}
+
+/** English names for the proposal page in English, when the plan / add-on still uses the price list text. */
+function withEnglishNames(pub, catalog) {
+    const en = (item, ref) => ({
+        ...item,
+        ...(ref && item.name === ref.name && ref.nameEn ? { nameEn: ref.nameEn } : {}),
+        ...(ref && item.description === ref.description && ref.descriptionEn ? { descriptionEn: ref.descriptionEn } : {})
+    });
+    return { ...pub, base: en(pub.base, catalog.base), options: pub.options.map(o => en(o, catalog.options.find(c => c.key === o.key))) };
 }
 
 // ---------- Usage (called by the Messaging Platform after each AI reply) ----------
@@ -549,7 +645,7 @@ async function proposal(proposalId) {
 async function recordAiConversation(projectId, convId) {
     try {
         const projectRef = db.collection('ai_projects').doc(projectId);
-        const project = (await projectRef.get()).data() || {};
+        const project = withMode((await projectRef.get()).data() || {});
         let billing = project.billing || {};
         // New billing period started since the last sync: refresh it so usage restarts at 0
         if (stripe && billing.subscriptionId && billing.periodEnd && Date.now() > Date.parse(billing.periodEnd)) {
@@ -590,7 +686,7 @@ async function recordVoiceMinutes(projectId, callId, seconds) {
     try {
         const minutes = Math.max(1, Math.ceil(Number(seconds) / 60));
         const projectRef = db.collection('ai_projects').doc(projectId);
-        const project = (await projectRef.get()).data() || {};
+        const project = withMode((await projectRef.get()).data() || {});
         let billing = project.billing || {};
         if (stripe && billing.subscriptionId && billing.periodEnd && Date.now() > Date.parse(billing.periodEnd)) {
             billing = (await syncProjectSubscription({ id: projectId, ...project }, await getCatalog())).billing;
@@ -627,7 +723,7 @@ async function recordVoiceMinutes(projectId, callId, seconds) {
  * A subscribed client needs an active subscription that includes a voice option.
  */
 async function voiceStatus(projectId) {
-    const project = { id: projectId, ...((await db.collection('ai_projects').doc(projectId).get()).data() || {}) };
+    const project = { id: projectId, ...withMode((await db.collection('ai_projects').doc(projectId).get()).data() || {}) };
     const billing = project.billing || {};
     if (!billing.subscriptionId) return { allowed: true, reason: 'not_subscribed' };
     if (!['active', 'trialing', 'past_due'].includes(billing.status)) return { allowed: false, reason: 'subscription_inactive' };
@@ -660,9 +756,12 @@ function mountBilling(app, { verifyToken }) {
     router.get('/proposals/:proposalId', handle(async (req) => proposal(req.params.proposalId)));
     router.post('/proposals/:proposalId/checkout', handle(async (req) => {
         const project = await projectByProposal(req.params.proposalId);
+        if (proposalExpired(offerOf(project, await getCatalog()))) throw new Error('Cette proposition a expiré. Contactez Solutions Quasar pour la renouveler. / This proposal has expired. Contact Solutions Quasar to renew it.');
+        if (req.body?.acceptTerms !== true) throw new Error('Veuillez accepter les conditions d\'utilisation. / Please accept the terms of service.');
         return createCheckout(project.id, {
             options: Array.isArray(req.body?.options) ? req.body.options.map(String) : [],
-            withSetup: true, returnTo: `${PUBLIC_BASE}/offer.html?p=${req.params.proposalId}`
+            withSetup: true, returnTo: `${PUBLIC_BASE}/offer.html?p=${req.params.proposalId}`,
+            termsAcceptedAt: new Date().toISOString()
         });
     }));
 
@@ -690,4 +789,6 @@ function mountBilling(app, { verifyToken }) {
     console.log('[Billing] Routes mounted on /api/billing');
 }
 
-module.exports = { mountBilling, recordAiConversation, recordVoiceMinutes, voiceStatus, getCatalog, DEFAULT_CATALOG };
+module.exports = { mountBilling, recordAiConversation, recordVoiceMinutes, voiceStatus, getCatalog, DEFAULT_CATALOG, STRIPE_TEST_MODE,
+    // for local tests
+    _syncCatalog: syncCatalog, _createCheckout: createCheckout };
