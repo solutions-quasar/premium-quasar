@@ -86,6 +86,12 @@ export async function initAiAgents() {
                     <span class="text-h" style="font-size:1.1rem; margin:0;">${mpL('Projets clients', 'Client projects')}</span>
                     <button class="icon-btn text-gold" onclick="openProjectModal()"><span class="material-icons">add</span></button>
                 </div>
+                <div style="padding:10px 10px 0;">
+                    <div id="aia-pricing-link" class="nav-item" style="cursor:pointer; border-radius:8px; padding:10px 12px; gap:10px; border:1px solid rgba(223,165,58,.3); overflow:hidden; box-sizing:border-box; max-width:100%;" onclick="window.agent_openPricing()">
+                        <span class="material-icons" style="color:var(--gold); font-size:1.2rem; flex-shrink:0;">payments</span>
+                        <div style="flex:1; min-width:0; white-space:normal; line-height:1.3;"><div style="font-weight:600; font-size:.9rem; overflow-wrap:anywhere;">${mpL('Tarifs et abonnements', 'Pricing and subscriptions')}</div><div class="text-muted" style="font-size:.72rem; overflow-wrap:anywhere;">${mpL('Tous les clients, grille de prix', 'All clients, price list')}</div></div>
+                    </div>
+                </div>
                 <div id="ai-project-list" style="flex:1; overflow-y:auto; padding: 10px;">
                     <div class="text-center text-muted text-sm mt-4">${mpL('Chargement…', 'Loading…')}</div>
                 </div>
@@ -131,6 +137,8 @@ export async function initAiAgents() {
     const hash = window.location.hash;
     const params = new URLSearchParams(hash.includes('?') ? hash.split('?')[1] : '');
     const urlProjectId = params.get('projectId');
+    // #ai-agents?view=pricing opens "Pricing and subscriptions"
+    if (!urlProjectId && params.get('view') === 'pricing') { await projectsLoaded; window.agent_openPricing(params.get('tab') || 'overview'); }
     const urlAgentId = params.get('agentId');
 
     if (urlProjectId) {
@@ -230,6 +238,7 @@ window.selectProject = async (id, json) => {
     if (window.history.replaceState) window.history.replaceState(null, '', newUrl);
 
     renderProjectList(); // from memory: just moves the highlight
+    document.getElementById('aia-pricing-link')?.classList.remove('active');
 
     // The client-database check runs in the background: the tabs show right away
     projectVerified = null;
@@ -300,7 +309,7 @@ const PROJECT_TABS = () => ({
     agents: { icon: 'smart_toy', label: mpL('Agents', 'Agents'), intro: mpL('Les assistants IA de ce client : ce qu\'ils savent, comment ils se comportent et où ils répondent.', 'This client\'s AI assistants: what they know, how they behave and where they answer.') },
     messaging: { icon: 'forum', label: mpL('Messagerie', 'Messaging'), intro: mpL('La boîte de réception du client, ses canaux connectés (Messenger, Instagram, WhatsApp, courriel, SMS) et l\'intégration dans d\'autres apps.', 'The client\'s inbox, connected channels (Messenger, Instagram, WhatsApp, email, SMS) and embedding in other apps.') },
     voice: { icon: 'support_agent', label: mpL('Téléphone', 'Phone'), intro: mpL('L\'agent vocal : numéro de téléphone, où vont les alertes, heures de rendez-vous et appels reçus.', 'The voice agent: phone number, where alerts go, booking hours and received calls.') },
-    billing: { icon: 'workspace_premium', label: mpL('Forfait', 'Plan'), intro: mpL('L\'offre de ce client, son abonnement, sa consommation et ses factures. C\'est le seul endroit où se règlent les prix.', 'This client\'s offer, subscription, usage and invoices. This is the only place where prices are set.') },
+    billing: { icon: 'workspace_premium', label: mpL('Forfait', 'Plan'), intro: mpL('L\'offre de ce client, son abonnement, sa consommation et ses factures. La grille commune se trouve dans « Tarifs et abonnements ».', 'This client\'s offer, subscription, usage and invoices. The shared price list is in "Pricing and subscriptions".') },
     settings: { icon: 'settings', label: mpL('Réglages', 'Settings'), intro: mpL('Accès du client à son portail, adresse d\'envoi des courriels et, en option, connexion à la base de données du client.', 'Client portal access, sending email address and, optionally, the connection to the client\'s own database.') }
 });
 const tabIntro = (tab) => { const t = PROJECT_TABS()[tab]; return t ? `<div class="aia-intro"><span class="material-icons">${t.icon}</span><span>${t.intro}</span></div>` : ''; };
@@ -334,11 +343,11 @@ window.showProjectTab = async (tab, subTab = null) => {
         return;
     }
     if (tab === 'billing') {
-        contentEl.innerHTML = tabIntro('billing') + '<div id="bl-project"></div><div style="height:28px;"></div><div id="bl-catalog"></div>';
+        // This client's offer and subscription only; the shared price list lives in "Pricing and subscriptions"
+        contentEl.innerHTML = tabIntro('billing') + `<div style="text-align:right; margin:-4px 0 10px;"><a href="#" class="text-sm" style="color:var(--gold);" onclick="event.preventDefault(); window.agent_openPricing('catalog');">${mpL('Modifier la grille commune', 'Edit the shared price list')} →</a></div><div id="bl-project"></div>`;
         try {
-            const { renderProjectBilling, renderCatalogEditor } = await import('./billing_ui.js?v=20261111');
+            const { renderProjectBilling } = await import('./billing_ui.js?v=20261112');
             renderProjectBilling(contentEl.querySelector('#bl-project'), { projectId: activeProjectId, apiBase: API_BASE, getToken: getAuthToken, isStaff: true });
-            renderCatalogEditor(contentEl.querySelector('#bl-catalog'), { apiBase: API_BASE, getToken: getAuthToken });
         } catch (e) {
             contentEl.innerHTML = `<div class="text-danger">${e.message}</div>`;
         }
@@ -359,6 +368,28 @@ window.showProjectTab = async (tab, subTab = null) => {
         console.error('[Messaging] Load error:', e);
         contentEl.innerHTML = `<div class="text-danger">${mpL('Impossible de charger la messagerie', 'Could not load messaging')} : ${e.message}</div>`;
     }
+};
+
+// "Pricing and subscriptions": all clients (recurring revenue, subscriptions, proposals) and the shared price list
+window.agent_openPricing = async (tab = 'overview') => {
+    activeProjectId = null;
+    currentProject = null;
+    currentProjectTab = 'pricing';
+    if (window.history.replaceState) window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#ai-agents?view=pricing`);
+    renderProjectList();
+    document.getElementById('aia-pricing-link')?.classList.add('active');
+    const header = document.getElementById('ai-agent-header');
+    if (header) header.innerHTML = `<div class="aia-title"><div class="text-h" style="margin:0;">${mpL('Tarifs et abonnements', 'Pricing and subscriptions')}</div><div class="text-sm text-muted">${mpL('Vos revenus, vos clients abonnés, vos propositions et la grille de prix.', 'Your revenue, subscribed clients, proposals and price list.')}</div></div>`;
+    const contentEl = document.getElementById('ai-agent-content');
+    contentEl.innerHTML = `<div class="text-muted">${mpL('Chargement…', 'Loading…')}</div>`;
+    try {
+        const { renderBillingOverview } = await import('./billing_ui.js?v=20261112');
+        if (currentProjectTab !== 'pricing') return;
+        renderBillingOverview(contentEl, {
+            apiBase: API_BASE, getToken: getAuthToken, initialTab: tab, embedded: true,
+            onOpenProject: async (id) => { await window.selectProject(id); window.showProjectTab('billing'); }
+        });
+    } catch (e) { contentEl.innerHTML = `<div class="text-danger">${e.message}</div>`; }
 };
 
 // Guided agent creation and the per-project setup checklist (agent_wizard.js)

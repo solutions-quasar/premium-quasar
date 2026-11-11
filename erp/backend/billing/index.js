@@ -738,6 +738,80 @@ async function voiceStatus(projectId) {
         : { allowed: false, reason: 'voice_option_off' };
 }
 
+// ---------- Overview of all clients (ERP › AI Agents › Pricing and subscriptions) ----------
+
+const ACTIVE_STATUSES = ['active', 'trialing', 'past_due'];
+
+/**
+ * One row per client project, from what Firestore already holds (fast, no Stripe call):
+ * subscription status mirrored by the last sync, the client's offer, current-period usage.
+ * Monthly amounts are computed from the offer (Stripe stays the source of truth for invoices).
+ */
+async function overview() {
+    const [snap, catalog] = await Promise.all([db.collection('ai_projects').get(), getCatalog()]);
+    const today = new Date().toISOString().slice(0, 10);
+    const rows = await Promise.all(snap.docs.map(async (d) => {
+        const project = { id: d.id, ...withMode(d.data()) };
+        const billing = project.billing || {};
+        const offer = offerOf(project, catalog);
+        const subscribed = !!billing.subscriptionId && ACTIVE_STATUSES.includes(billing.status);
+        const opts = billing.options || [];
+        const hasOffer = !!project.billingOffer?.proposalId;
+        const expired = hasOffer && !!offer.validUntil && offer.validUntil < today;
+        let status = 'none';
+        if (subscribed) status = billing.status === 'past_due' ? 'past_due' : (billing.cancelAtPeriodEnd ? 'canceling' : 'active');
+        else if (billing.status === 'canceled' || billing.status === 'unpaid') status = billing.status;
+        else if (hasOffer) status = expired ? 'expired' : 'proposal';
+
+        let usage = null;
+        if (subscribed) {
+            const u = await d.ref.collection('billing_usage').doc(periodKeyOf(billing)).get().catch(() => null);
+            const data = u?.exists ? u.data() : {};
+            usage = {
+                conversations: data.conversations || 0, includedConversations: includedFor(offer, opts),
+                minutes: data.voiceMinutes || 0, includedMinutes: includedMinutesFor(offer, opts)
+            };
+        }
+        const pct = offer.discount?.percent || 0;
+        return {
+            projectId: d.id,
+            name: project.name || d.id,
+            client: offer.clientCompany || String(project.clientName || '').replace(/\s*\([^)]*\)\s*$/, ''),
+            status,
+            monthly: subscribed ? monthlyFor(offer, opts) : monthlyFor(offer, []),
+            discountPercent: pct,
+            periodEnd: billing.periodEnd || null,
+            validUntil: hasOffer ? offer.validUntil || null : null,
+            proposalUrl: hasOffer ? `${PUBLIC_BASE}/offer.html?p=${project.billingOffer.proposalId}` : null,
+            customOffer: !!project.billingOffer,
+            usage
+        };
+    }));
+    const order = { past_due: 0, canceling: 1, active: 2, proposal: 3, expired: 4, unpaid: 5, canceled: 6, none: 7 };
+    rows.sort((a, b) => (order[a.status] - order[b.status]) || a.name.localeCompare(b.name));
+    const subscribedRows = rows.filter(r => ['active', 'canceling', 'past_due'].includes(r.status));
+    return {
+        mode: STRIPE_TEST_MODE ? 'test' : 'live',
+        published: !!catalog.stripe?.baseProduct,
+        totals: {
+            mrr: Math.round(subscribedRows.reduce((n, r) => n + r.monthly, 0) * 100) / 100,
+            subscribed: subscribedRows.length,
+            proposals: rows.filter(r => r.status === 'proposal').length,
+            attention: rows.filter(r => ['past_due', 'canceling', 'expired'].includes(r.status) || (r.usage && ((r.usage.includedConversations && r.usage.conversations >= r.usage.includedConversations * 0.8) || (r.usage.includedMinutes && r.usage.minutes >= r.usage.includedMinutes * 0.8)))).length
+        },
+        rows
+    };
+}
+
+/** Re-reads every client's subscription in Stripe (for after a payment or a cancellation made outside the ERP). */
+async function refreshOverview() {
+    requireStripe();
+    const [snap, catalog] = await Promise.all([db.collection('ai_projects').get(), getCatalog()]);
+    const targets = snap.docs.map(d => ({ id: d.id, ...withMode(d.data()) })).filter(p => p.billing?.customerId || p.billing?.subscriptionId || p.billingOffer?.proposalId);
+    for (const p of targets) { await syncProjectSubscription(p, catalog).catch(e => console.warn('[Billing] refresh', p.id, e.message)); }
+    return overview();
+}
+
 // ---------- Router ----------
 
 function mountBilling(app, { verifyToken }) {
@@ -773,6 +847,8 @@ function mountBilling(app, { verifyToken }) {
 
     // Staff
     router.get('/catalog', verifyToken, staff, handle(async () => ({ catalog: await getCatalog(), stripeConfigured: !!stripe })));
+    router.get('/overview', verifyToken, staff, handle(async () => overview()));
+    router.post('/overview/refresh', verifyToken, staff, handle(async () => refreshOverview()));
     router.put('/catalog', verifyToken, staff, handle(async (req) => ({ catalog: await saveCatalog(req.body || {}, req.user) })));
     router.post('/catalog/sync', verifyToken, staff, handle(async () => ({ catalog: await syncCatalog() })));
     router.put('/projects/:projectId/offer', verifyToken, staff, handle(async (req) => ({ offer: await saveOffer(req.params.projectId, req.body || {}, req.user) })));
@@ -797,4 +873,4 @@ function mountBilling(app, { verifyToken }) {
 
 module.exports = { mountBilling, recordAiConversation, recordVoiceMinutes, voiceStatus, getCatalog, DEFAULT_CATALOG, STRIPE_TEST_MODE,
     // for local tests
-    _syncCatalog: syncCatalog, _createCheckout: createCheckout };
+    _syncCatalog: syncCatalog, _createCheckout: createCheckout, _overview: overview, _refreshOverview: refreshOverview };
