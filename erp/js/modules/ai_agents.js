@@ -678,7 +678,7 @@ async function renderSettingsTab(host) {
                     <div class="form-group mt-3">
                         <label class="form-label">${mpL('Lien du portail', 'Portal link')}</label>
                         <div style="display:flex; gap:10px;">
-                            <input type="text" id="proj-portal-url" class="form-input" readonly value="${window.location.origin}/portal.html" style="background:var(--bg-dark); color:var(--text-muted); font-size:0.8rem;">
+                            <input type="text" id="proj-portal-url" class="form-input" readonly value="${window.location.hostname.includes('localhost') ? window.location.origin : 'https://solutionsquasar.ca'}/portal.html" style="background:var(--bg-dark); color:var(--text-muted); font-size:0.8rem;">
                             <button id="btn-copy-portal" class="btn btn-sm" style="background:#333;"><span class="material-icons" style="font-size:1.2rem;">content_copy</span></button>
                         </div>
                         <div class="text-xs text-muted mt-2">${mpL('À donner au client : il s\'y connecte avec son courriel et son mot de passe.', 'Give it to the client: they sign in with their email and password.')}</div>
