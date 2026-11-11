@@ -781,7 +781,7 @@ export function renderBillingOverview(container, opts) {
         </div>`;
     const body = container.querySelector('#ov-body');
     const notice = (type, html) => { container.querySelector('#ov-notice').innerHTML = html ? `<div class="bl-note ${type}" style="margin-bottom:12px;">${html}</div>` : ''; };
-    const setTab = (t) => { tab = t; container.querySelectorAll('.ov-tab').forEach(b => b.classList.toggle('on', b.dataset.t === t)); show(); };
+    const setTab = (t) => { tab = t; opts.onTabChange?.(t); container.querySelectorAll('.ov-tab').forEach(b => b.classList.toggle('on', b.dataset.t === t)); show(); };
     container.querySelectorAll('.ov-tab').forEach(b => b.onclick = () => setTab(b.dataset.t));
 
     async function show() {
