@@ -24,7 +24,25 @@ let projectsLoaded = null; // promise of the first load
 let isCallActive = false; // Track call state
 
 // --- INIT ---
+// EN/FR toggle: redraw the page in the new language and come back to the same place
+// (project, project tab, or Pricing tab). Skipped while an agent form is open, so nothing typed is lost.
+let langListening = false;
+let pricingTab = 'overview';
+async function onAgentsLanguageChanged() {
+    const view = document.getElementById('view-ai-agents');
+    if (!view || !view.isConnected || !view.querySelector('.aia-root')) return;
+    if (document.getElementById('ai-modal-host')?.children.length) return;
+    const tab = currentProjectTab, project = activeProjectId, pTab = pricingTab;
+    await initAiAgents();
+    if (tab === 'pricing') return window.agent_openPricing(pTab);
+    if (project && tab && tab !== 'agents') {
+        if (activeProjectId !== project) await window.selectProject(project);
+        window.showProjectTab(tab, tab === 'messaging' ? null : undefined);
+    }
+}
+
 export async function initAiAgents() {
+    if (!langListening) { window.addEventListener('languageChanged', onAgentsLanguageChanged); langListening = true; }
     console.log('Initializing AI Agents Module...');
     const container = document.getElementById('view-ai-agents');
 
@@ -372,6 +390,7 @@ window.showProjectTab = async (tab, subTab = null) => {
 
 // "Pricing and subscriptions": all clients (recurring revenue, subscriptions, proposals) and the shared price list
 window.agent_openPricing = async (tab = 'overview') => {
+    pricingTab = tab;
     activeProjectId = null;
     currentProject = null;
     currentProjectTab = 'pricing';
@@ -386,7 +405,7 @@ window.agent_openPricing = async (tab = 'overview') => {
         const { renderBillingOverview } = await import('./billing_ui.js?v=20261112');
         if (currentProjectTab !== 'pricing') return;
         renderBillingOverview(contentEl, {
-            apiBase: API_BASE, getToken: getAuthToken, initialTab: tab, embedded: true,
+            apiBase: API_BASE, getToken: getAuthToken, initialTab: tab, embedded: true, onTabChange: (t) => { pricingTab = t; },
             onOpenProject: async (id) => { await window.selectProject(id); window.showProjectTab('billing'); }
         });
     } catch (e) { contentEl.innerHTML = `<div class="text-danger">${e.message}</div>`; }
