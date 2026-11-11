@@ -47,6 +47,36 @@ export const STYLES = `
 .bl-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:10px; }
 .bl-field { display:flex; flex-direction:column; gap:4px; font-size:.78rem; font-weight:600; }
 @media (max-width: 600px) { .bl-btn { width:100%; } .bl-big { font-size:1.4rem; } }
+.bo-sum { display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:14px; align-items:center; }
+.bo-sum .k { font-size:.75rem; color:var(--text-dim, #94a3b8); margin-bottom:4px; }
+.bo-sum .v { font-size:1.5rem; font-weight:800; letter-spacing:-.5px; }
+.bo-sum .v small { font-size:.75rem; font-weight:600; color:var(--text-dim, #94a3b8); letter-spacing:0; }
+.bo-sec { display:flex; align-items:flex-start; gap:12px; margin-bottom:14px; }
+.bo-ic { width:36px; height:36px; border-radius:10px; background:rgba(223,165,58,.1); color:var(--gold, #dfa53a); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.bo-ic .material-icons { font-size:1.2rem; }
+.bo-h { font-weight:700; font-size:1rem; }
+.bo-sub { font-size:.8rem; color:var(--text-dim, #94a3b8); margin-top:2px; }
+.bo-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:12px; }
+.bo-f { display:flex; flex-direction:column; gap:5px; font-size:.75rem; font-weight:600; color:var(--text-dim, #94a3b8); }
+.bo-f .bl-input, .bo-opt .bl-input { color:var(--text-main, #fff); }
+.bo-u { display:flex; align-items:center; gap:8px; }
+.bo-u .bl-input { max-width:120px; font-weight:700; color:var(--text-main, #fff); }
+.bo-u span { font-size:.8rem; color:var(--text-dim, #94a3b8); white-space:nowrap; font-weight:500; }
+.bo-opt { display:flex; align-items:center; gap:12px; padding:12px 0; border-top:1px solid var(--border, #2d3139); flex-wrap:wrap; }
+.bo-opt:first-child { border-top:0; padding-top:0; }
+.bo-opt.off .bo-on { opacity:.45; }
+.bo-on { display:flex; align-items:center; gap:12px; flex:1; min-width:200px; }
+.bo-seg { display:inline-flex; border:1px solid var(--border, #2d3139); border-radius:10px; overflow:hidden; }
+.bo-seg label { padding:7px 12px; font-size:.78rem; font-weight:600; cursor:pointer; color:var(--text-dim, #94a3b8); border-left:1px solid var(--border, #2d3139); }
+.bo-seg label:first-child { border-left:0; }
+.bo-seg input { display:none; }
+.bo-seg label.on { background:rgba(223,165,58,.15); color:var(--gold, #dfa53a); }
+.bo-seg label.on.hid { background:rgba(255,255,255,.06); color:var(--text-main, #fff); }
+.bo-bar { position:sticky; bottom:0; z-index:5; display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:12px 16px; border:1px solid var(--border, #2d3139); border-radius:14px; background:var(--bg-card, #121418); }
+.bo-bar .msg { flex:1; font-size:.8rem; color:var(--text-dim, #94a3b8); min-width:160px; }
+.bo-bar .msg.dirty { color:#f5a524; }
+.bc-head { display:flex; align-items:center; gap:12px; cursor:pointer; }
+@media (max-width: 600px) { .bo-seg label { padding:7px 9px; } .bo-u .bl-input { max-width:none; } }
 `;
 
 function api(apiBase, getToken) {
@@ -304,75 +334,128 @@ export function renderProjectBilling(container, opts) {
     }
 
     // ----- Staff: edit this client's offer -----
+    // Layout: live price summary, then numbered sections (plan, fees, add-ons, custom lines and discount),
+    // amounts with their unit next to them, add-ons as rows with an Included / Offered / Hidden switch,
+    // and a sticky save bar that shows unsaved changes.
     function renderOfferEditor(body, d) {
         const o = d.offer;
-        const f = (label, name, value, type = 'text', step = '') => `<label class="bl-field">${label}<input class="bl-input" name="${name}" type="${type}" ${step ? `step="${step}"` : ''} value="${esc(value)}"></label>`;
-        const modeSel = (opt) => `<select class="bl-input" name="mode">${[['optional', L('Proposée (le client choisit)', 'Offered (client chooses)')], ['included', L('Incluse dans l\'offre', 'Included in the offer')], ['hidden', L('Masquée', 'Hidden')]].map(([v, l]) => `<option value="${v}" ${opt.mode === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+        const subscribed = d.subscription && d.subscription.status !== 'canceled';
+        const unit = (name, value, suffix, step = '0.01', extra = '') => `<div class="bo-u"><input class="bl-input" name="${name}" type="number" min="0" step="${step}" value="${esc(value)}" ${extra}><span>${suffix}</span></div>`;
+        const fld = (label, inner) => `<label class="bo-f">${label}${inner}</label>`;
+        const sec = (n, icon, title, sub, right = '') => `<div class="bo-sec"><div class="bo-ic"><span class="material-icons">${icon}</span></div><div style="flex:1;"><div class="bo-h">${n}. ${title}</div><div class="bo-sub">${sub}</div></div>${right}</div>`;
+        const OPT_ICON = { voice: 'call', booking: 'event', sms: 'sms', quota: 'forum' };
+        const MODES = () => [['included', L('Incluse', 'Included')], ['optional', L('Proposée', 'Offered')], ['hidden', L('Masquée', 'Hidden')]];
+        const seg = (opt) => `<div class="bo-seg" role="radiogroup">${MODES().map(([v, l]) => `<label class="${opt.mode === v ? 'on' : ''} ${v === 'hidden' ? 'hid' : ''}"><input type="radio" name="mode-${esc(opt.key)}" value="${v}" ${opt.mode === v ? 'checked' : ''}>${l}</label>`).join('')}</div>`;
         const itemRow = (i) => `
-            <div data-item class="bl-opt" style="flex-wrap:wrap; align-items:flex-end;">
-                <div class="bl-grid" style="flex:1;">
-                    <label class="bl-field">${L('Nom', 'Name')}<input class="bl-input" name="name" value="${esc(i.name)}" placeholder="${L('ex. Intégration CRM', 'e.g. CRM integration')}"></label>
-                    <label class="bl-field">${L('Montant ($)', 'Amount ($)')}<input class="bl-input" name="amount" type="number" step="0.01" value="${esc(i.amount)}"></label>
-                    <label class="bl-field">${L('Facturation', 'Billing')}<select class="bl-input" name="type"><option value="monthly" ${i.type === 'monthly' ? 'selected' : ''}>${L('Mensuelle', 'Monthly')}</option><option value="once" ${i.type === 'once' ? 'selected' : ''}>${L('Une fois', 'One time')}</option></select></label>
-                    <label class="bl-field" style="grid-column:1/-1;">${L('Description', 'Description')}<input class="bl-input" name="description" value="${esc(i.description || '')}"></label>
-                    <input type="hidden" name="id" value="${esc(i.id || '')}">
+            <div data-item class="bo-opt">
+                <div class="bo-on" style="flex-wrap:wrap;">
+                    <span class="material-icons" style="color:var(--text-dim);">add_box</span>
+                    <input class="bl-input" name="name" value="${esc(i.name)}" placeholder="${L('ex. Intégration CRM', 'e.g. CRM integration')}" style="flex:1; min-width:160px;">
+                    <input class="bl-input" name="description" value="${esc(i.description || '')}" placeholder="${L('Précision (facultatif)', 'Detail (optional)')}" style="flex:1; min-width:160px;">
                 </div>
-                <button type="button" class="bl-btn ghost" data-remove style="min-height:40px;"><span class="material-icons">delete_outline</span></button>
+                <div class="bo-u"><input class="bl-input" name="amount" type="number" min="0" step="0.01" value="${esc(i.amount)}" style="max-width:100px;"><span>$</span>
+                    <select class="bl-input" name="type" style="max-width:130px;"><option value="monthly" ${i.type === 'monthly' ? 'selected' : ''}>${L('par mois', 'per month')}</option><option value="once" ${i.type === 'once' ? 'selected' : ''}>${L('une fois', 'one time')}</option></select></div>
+                <input type="hidden" name="id" value="${esc(i.id || '')}">
+                <button type="button" class="bl-btn ghost" data-remove style="min-height:38px; padding:0 10px;" title="${L('Retirer', 'Remove')}"><span class="material-icons">delete_outline</span></button>
             </div>`;
+        const statusChip = subscribed ? ['ok', L('Client abonné', 'Client subscribed')] : d.proposalUrl ? ['info', L('Lien de proposition prêt', 'Proposal link ready')] : ['warn', L('Offre pas encore envoyée', 'Offer not sent yet')];
+
         body.innerHTML = `
             <form id="bo-form" class="bl" style="max-width:none;">
                 <div class="bl-card" style="border-color:rgba(223,165,58,.4);">
-                    <div class="bl-title">${L('Personnaliser l\'offre de ce client', 'Customise this client\'s offer')}</div>
-                    <div class="bl-dim">${L('Seul ce client voit ces conditions. La grille publique ne change pas.', 'Only this client sees these terms. The public price list does not change.')}</div>
+                    <div class="bl-row" style="margin-bottom:14px;"><div style="flex:1; min-width:200px;"><div class="bl-title">${L('Offre de ce client', 'This client\'s offer')}</div><div class="bl-dim">${L('Seul ce client voit ces conditions. La grille publique ne change pas.', 'Only this client sees these terms. The public price list does not change.')}</div></div>
+                        <span class="bl-chip ${statusChip[0] === 'info' ? 'ok' : statusChip[0]}">${statusChip[1]}</span></div>
+                    <div class="bo-sum" id="bo-sum"></div>
+                    ${subscribed ? `<div class="bl-note info" style="margin-top:12px;">${L('Ce client est déjà abonné : les changements s\'appliquent à un futur paiement, pas à l\'abonnement en cours.', 'This client is already subscribed: changes apply to a future checkout, not to the current subscription.')}</div>` : ''}
                 </div>
+
                 <div class="bl-card">
-                    <div class="bl-title" style="margin-bottom:10px;">${L('Forfait', 'Plan')}</div>
-                    <div class="bl-grid">
-                        ${f(L('Nom affiché', 'Display name'), 'base.name', o.base.name)}
-                        ${f(L('Prix mensuel ($)', 'Monthly price ($)'), 'base.monthly', o.base.monthly, 'number', '0.01')}
-                        ${f(L('Conversations IA incluses / mois', 'AI conversations included / month'), 'base.includedConversations', o.base.includedConversations, 'number', '1')}
-                        ${f(L('Frais d\'installation ($)', 'Setup fee ($)'), 'setupFee', o.setupFee, 'number', '0.01')}
-                        ${f(L('Prix par conversation en dépassement ($)', 'Price per overage conversation ($)'), 'overageUnitPrice', o.overageUnitPrice, 'number', '0.01')}
-                        ${f(L('Prix par minute d\'appel en dépassement ($)', 'Price per overage call minute ($)'), 'minuteOverageUnitPrice', o.minuteOverageUnitPrice ?? 0.4, 'number', '0.01')}
+                    ${sec(1, 'inventory_2', L('Forfait de base', 'Base plan'), L('Ce que le client paie chaque mois.', 'What the client pays every month.'))}
+                    <div class="bo-grid">
+                        ${fld(L('Nom affiché au client', 'Name shown to the client'), `<input class="bl-input" name="base.name" value="${esc(o.base.name)}">`)}
+                        ${fld(L('Prix', 'Price'), unit('base.monthly', o.base.monthly, L('$ / mois', '$ / month')))}
+                        ${fld(L('Conversations IA incluses', 'AI conversations included'), unit('base.includedConversations', o.base.includedConversations, L('/ mois', '/ month'), '1'))}
                     </div>
-                    <label class="bl-field" style="margin-top:10px;">${L('Description', 'Description')}<textarea class="bl-input" name="base.description" rows="2">${esc(o.base.description)}</textarea></label>
+                    ${fld(`<span style="margin-top:12px;">${L('Description (affichée sur la proposition)', 'Description (shown on the proposal)')}</span>`, `<textarea class="bl-input" name="base.description" rows="2">${esc(o.base.description)}</textarea>`)}
                 </div>
+
                 <div class="bl-card">
-                    <div class="bl-title" style="margin-bottom:6px;">${L('Options', 'Add-ons')}</div>
+                    ${sec(2, 'receipt_long', L('Frais et dépassements', 'Fees and overage'), L('L\'installation, payée une fois, et ce qui est facturé au-delà de ce qui est inclus.', 'Setup, paid once, and what is billed beyond what is included.'))}
+                    <div class="bo-grid">
+                        ${fld(L('Installation', 'Setup'), unit('setupFee', o.setupFee, L('$ une fois', '$ one time')))}
+                        ${fld(L('Conversation en plus', 'Extra conversation'), unit('overageUnitPrice', o.overageUnitPrice, L('$ chacune', '$ each')))}
+                        ${fld(L('Minute d\'appel en plus', 'Extra call minute'), unit('minuteOverageUnitPrice', o.minuteOverageUnitPrice ?? 0.4, L('$ / min', '$ / min')))}
+                    </div>
+                </div>
+
+                <div class="bl-card">
+                    ${sec(3, 'extension', L('Options', 'Add-ons'), L('<b>Incluse</b> : toujours facturée (0 $ pour l\'offrir). <b>Proposée</b> : le client la coche s\'il la veut. <b>Masquée</b> : il ne la voit pas.', '<b>Included</b>: always billed ($0 to give it away). <b>Offered</b>: the client ticks it if they want it. <b>Hidden</b>: they don\'t see it.'))}
                     ${o.options.map(opt => `
-                        <div data-option="${esc(opt.key)}" class="bl-opt" style="flex-wrap:wrap;">
-                            <div class="bl-grid" style="flex:1;">
-                                <label class="bl-field">${L('Nom', 'Name')}<input class="bl-input" name="name" value="${esc(opt.name)}"></label>
-                                <label class="bl-field">${L('Prix mensuel ($, 0 = offert)', 'Monthly price ($, 0 = free)')}<input class="bl-input" name="monthly" type="number" step="0.01" value="${esc(opt.monthly)}"></label>
-                                <label class="bl-field">${L('Pour ce client', 'For this client')}${modeSel(opt)}</label>
-                                ${opt.includedMinutes || opt.key === 'voice' ? `<label class="bl-field">${L('Minutes d\'appel incluses / mois', 'Call minutes included / month')}<input class="bl-input" name="minutes" type="number" step="1" value="${esc(opt.includedMinutes || 0)}"></label>` : `<input type="hidden" name="minutes" value="${esc(opt.includedMinutes || 0)}">`}
-                                <input type="hidden" name="description" value="${esc(opt.description)}"><input type="hidden" name="extra" value="${esc(opt.extraConversations || 0)}">
+                        <div data-option="${esc(opt.key)}" class="bo-opt ${opt.mode === 'hidden' ? 'off' : ''}">
+                            <div class="bo-on">
+                                <span class="material-icons" style="color:var(--text-dim);">${OPT_ICON[opt.key] || 'add_circle_outline'}</span>
+                                <div style="flex:1; min-width:140px;"><input class="bl-input" name="name" value="${esc(opt.name)}" style="font-weight:600;">
+                                    ${(opt.includedMinutes || opt.key === 'voice') ? `<div class="bo-u" style="margin-top:6px;"><input class="bl-input" name="minutes" type="number" min="0" step="1" value="${esc(opt.includedMinutes || 0)}" style="max-width:90px;"><span>${L('min d\'appel incluses / mois', 'call min included / month')}</span></div>` : `<input type="hidden" name="minutes" value="${esc(opt.includedMinutes || 0)}">`}
+                                </div>
+                                <div class="bo-u"><input class="bl-input" name="monthly" type="number" min="0" step="0.01" value="${esc(opt.monthly)}" style="max-width:90px;"><span>${L('$ / mois', '$ / mo')}</span></div>
                             </div>
+                            ${seg(opt)}
+                            <input type="hidden" name="description" value="${esc(opt.description)}"><input type="hidden" name="extra" value="${esc(opt.extraConversations || 0)}">
                         </div>`).join('') || `<div class="bl-dim">${L('Aucune option dans la grille.', 'No add-on in the price list.')}</div>`}
                 </div>
+
                 <div class="bl-card">
-                    <div class="bl-row" style="margin-bottom:6px;"><div class="bl-title" style="flex:1;">${L('Lignes sur mesure', 'Custom lines')}</div><button type="button" class="bl-btn ghost" id="bo-add" style="min-height:38px;"><span class="material-icons">add</span> ${L('Ajouter', 'Add')}</button></div>
-                    <div class="bl-dim" style="margin-bottom:6px;">${L('Pour ce qui n\'est pas dans la grille : intégration spéciale, agent multilingue, formation…', 'For anything not in the price list: special integration, multilingual agent, training…')}</div>
+                    ${sec(4, 'sell', L('Sur mesure, remise et message', 'Custom lines, discount and message'), L('Facultatif. Ce qui n\'est pas dans la grille, un rabais de lancement et un mot personnel.', 'Optional. Anything not in the price list, a launch discount and a personal note.'), `<button type="button" class="bl-btn ghost" id="bo-add" style="min-height:38px;"><span class="material-icons">add</span> ${L('Ligne sur mesure', 'Custom line')}</button>`)}
                     <div id="bo-items">${o.customItems.map(itemRow).join('')}</div>
-                </div>
-                <div class="bl-card">
-                    <div class="bl-title" style="margin-bottom:10px;">${L('Remise et message', 'Discount and message')}</div>
-                    <div class="bl-grid">
-                        ${f(L('Remise (%)', 'Discount (%)'), 'discount.percent', o.discount?.percent || 0, 'number', '1')}
-                        ${f(L('Pendant (mois, 0 = toujours)', 'For (months, 0 = always)'), 'discount.months', o.discount?.months || 0, 'number', '1')}
+                    <div class="bo-grid" style="margin-top:${o.customItems.length ? '14px' : '0'};">
+                        ${fld(L('Remise', 'Discount'), `<div class="bo-u"><input class="bl-input" name="discount.percent" type="number" min="0" max="100" step="1" value="${esc(o.discount?.percent || 0)}" style="max-width:80px;"><span>${L('% pendant', '% for')}</span><input class="bl-input" name="discount.months" type="number" min="0" step="1" value="${esc(o.discount?.months || 0)}" style="max-width:70px;"><span>${L('mois (0 = toujours)', 'months (0 = always)')}</span></div>`)}
                     </div>
-                    <label class="bl-field" style="margin-top:10px;">${L('Message au client (affiché en haut de sa proposition)', 'Message to the client (shown at the top of the proposal)')}<textarea class="bl-input" name="note" rows="3" placeholder="${L('ex. Comme convenu lors de notre rencontre…', 'e.g. As discussed in our meeting…')}">${esc(o.note || '')}</textarea></label>
+                    ${fld(`<span style="margin-top:12px;">${L('Message au client (en haut de sa proposition)', 'Message to the client (top of the proposal)')}</span>`, `<textarea class="bl-input" name="note" rows="2" placeholder="${L('ex. Comme convenu lors de notre rencontre…', 'e.g. As discussed in our meeting…')}">${esc(o.note || '')}</textarea>`)}
                 </div>
-                <div class="bl-row">
-                    <button type="submit" class="bl-btn"><span class="material-icons">save</span> ${L('Enregistrer l\'offre', 'Save the offer')}</button>
-                    <button type="button" class="bl-btn ghost" id="bo-cancel">${L('Annuler', 'Cancel')}</button>
-                    ${!o.isDefault ? `<button type="button" class="bl-btn ghost" id="bo-reset">${L('Revenir à la grille publique', 'Back to the public price list')}</button>` : ''}
+
+                <div class="bo-bar">
+                    <span class="msg" id="bo-msg">${L('Aucune modification', 'No changes')}</span>
+                    ${!o.isDefault ? `<button type="button" class="bl-btn ghost" id="bo-reset" style="min-height:40px;">${L('Revenir à la grille', 'Back to price list')}</button>` : ''}
+                    <button type="button" class="bl-btn ghost" id="bo-cancel" style="min-height:40px;">${L('Annuler', 'Cancel')}</button>
+                    <button type="submit" class="bl-btn" style="min-height:40px;"><span class="material-icons">save</span> ${L('Enregistrer l\'offre', 'Save the offer')}</button>
                 </div>
             </form>`;
+
         const form = body.querySelector('#bo-form');
-        body.querySelector('#bo-add').addEventListener('click', () => body.querySelector('#bo-items').insertAdjacentHTML('beforeend', itemRow({ name: '', amount: 0, type: 'monthly' })));
-        body.querySelector('#bo-items').addEventListener('click', (e) => { if (e.target.closest('[data-remove]')) e.target.closest('[data-item]').remove(); });
-        body.querySelector('#bo-cancel').addEventListener('click', () => { state.editing = false; render(); });
+        const num = (n) => Number(form.querySelector(`[name="${n}"]`)?.value) || 0;
+        // Live summary from what is typed (same rules as the proposal page and Stripe)
+        const summary = () => {
+            const rows = [...form.querySelectorAll('[data-option]')].map(r => ({ mode: r.querySelector('input[type=radio]:checked')?.value, monthly: Number(r.querySelector('[name=monthly]').value) || 0 }));
+            const items = [...form.querySelectorAll('[data-item]')].map(r => ({ amount: Number(r.querySelector('[name=amount]').value) || 0, type: r.querySelector('[name=type]').value }));
+            const monthly = num('base.monthly') + rows.filter(r => r.mode === 'included').reduce((n, r) => n + r.monthly, 0) + items.filter(i => i.type === 'monthly').reduce((n, i) => n + i.amount, 0);
+            const offered = rows.filter(r => r.mode === 'optional').reduce((n, r) => n + r.monthly, 0);
+            const once = num('setupFee') + items.filter(i => i.type === 'once').reduce((n, i) => n + i.amount, 0);
+            const pct = Math.min(100, num('discount.percent'));
+            const first = Math.round((monthly + once) * (100 - pct)) / 100;
+            body.querySelector('#bo-sum').innerHTML = `
+                <div><div class="k">${L('Par mois', 'Per month')}</div><div class="v">${money(monthly)}</div>${offered ? `<div class="k" style="margin:4px 0 0;">${L(`+ jusqu'à ${money(offered)} d'options`, `+ up to ${money(offered)} in add-ons`)}</div>` : ''}</div>
+                <div><div class="k">${L('Une fois', 'One time')}</div><div class="v">${money(once)}</div></div>
+                <div><div class="k">${L('Premier paiement', 'First payment')}</div><div class="v">${money(first)} <small>+ ${L('taxes', 'taxes')}</small></div>${pct ? `<div class="k" style="margin:4px 0 0; color:#3ecf8e;">${L(`remise de ${pct} % incluse`, `${pct}% discount included`)}</div>` : ''}</div>`;
+        };
+        let dirty = false;
+        const changed = () => { if (!dirty) { dirty = true; const m = body.querySelector('#bo-msg'); m.textContent = L('Modifications non enregistrées', 'Unsaved changes'); m.classList.add('dirty'); } summary(); };
+        form.addEventListener('input', changed);
+        form.addEventListener('change', (e) => {
+            if (e.target.type === 'radio') {
+                const row = e.target.closest('[data-option]');
+                row.querySelectorAll('.bo-seg label').forEach(l => l.classList.toggle('on', l.querySelector('input').checked));
+                row.classList.toggle('off', e.target.value === 'hidden');
+            }
+            changed();
+        });
+        summary();
+
+        body.querySelector('#bo-add').addEventListener('click', () => { body.querySelector('#bo-items').insertAdjacentHTML('beforeend', itemRow({ name: '', amount: 0, type: 'monthly' })); changed(); });
+        body.querySelector('#bo-items').addEventListener('click', (e) => { if (e.target.closest('[data-remove]')) { e.target.closest('[data-item]').remove(); changed(); } });
+        body.querySelector('#bo-cancel').addEventListener('click', async () => {
+            if (dirty && window.erpConfirm && !(await window.erpConfirm(L('Abandonner les modifications ?', 'Discard your changes?')))) return;
+            state.editing = false; render();
+        });
         body.querySelector('#bo-reset')?.addEventListener('click', async () => {
             try { await call(`/projects/${opts.projectId}/offer`, { method: 'DELETE' }); state.editing = false; notice('ok', L('Offre remise à la grille publique.', 'Offer reset to the public price list.')); load(); }
             catch (e) { notice('err', esc(e.message)); }
@@ -385,8 +468,8 @@ export function renderProjectBilling(container, opts) {
                 setupFee: v('setupFee'), overageUnitPrice: v('overageUnitPrice'), minuteOverageUnitPrice: v('minuteOverageUnitPrice'),
                 options: [...form.querySelectorAll('[data-option]')].map(r => ({
                     key: r.dataset.option, name: r.querySelector('[name=name]').value, monthly: r.querySelector('[name=monthly]').value,
-                    mode: r.querySelector('[name=mode]').value, description: r.querySelector('[name=description]').value, extraConversations: r.querySelector('[name=extra]').value,
-                    includedMinutes: r.querySelector('[name=minutes]').value
+                    mode: r.querySelector('input[type=radio]:checked')?.value || 'optional', description: r.querySelector('[name=description]').value,
+                    extraConversations: r.querySelector('[name=extra]').value, includedMinutes: r.querySelector('[name=minutes]').value
                 })),
                 customItems: [...form.querySelectorAll('[data-item]')].map(r => ({
                     id: r.querySelector('[name=id]').value, name: r.querySelector('[name=name]').value, description: r.querySelector('[name=description]').value,
@@ -400,12 +483,11 @@ export function renderProjectBilling(container, opts) {
             try {
                 await call(`/projects/${opts.projectId}/offer`, { method: 'PUT', body: payload });
                 state.editing = false;
-                notice('ok', L('Offre enregistrée. Copiez le lien de proposition pour l\'envoyer au client.', 'Offer saved. Copy the proposal link to send it to the client.'));
+                notice('ok', L('Offre enregistrée. Copiez maintenant le lien de proposition et envoyez-le au client.', 'Offer saved. Now copy the proposal link and send it to the client.'));
                 await load();
             } catch (err) { notice('err', esc(err.message)); if (btn) btn.disabled = false; }
         });
     }
-
     load();
 }
 
@@ -446,6 +528,7 @@ export function renderProposal(container, { apiBase, proposalId }) {
 export function renderCatalogEditor(container, opts) {
     const call = api(opts.apiBase, opts.getToken);
     let cat = null;
+    let open = null; // folded once published (rarely edited); open while it still has to be published
 
     container.innerHTML = `<style>${STYLES}</style><div class="bl"><div id="bc-notice"></div><div id="bc-body" class="bl-dim">${L('Chargement…', 'Loading…')}</div></div>`;
     bindTips(container);
@@ -455,10 +538,27 @@ export function renderCatalogEditor(container, opts) {
     function render() {
         const body = container.querySelector('#bc-body');
         body.className = '';
+        const published = !!cat.stripe?.basePrice;
+        if (open === null) open = !published;
+        if (!open) {
+            body.innerHTML = `
+                <div class="bl-card bc-head" id="bc-open" role="button" tabindex="0">
+                    <div class="bo-ic" style="background:rgba(255,255,255,.05); color:var(--text-dim);"><span class="material-icons">public</span></div>
+                    <div style="flex:1; min-width:180px;"><div class="bl-title" style="font-size:.95rem;">${L('Grille publique (site web)', 'Public price list (website)')}</div>
+                        <div class="bl-dim">${L(`À partir de ${money(cat.base.monthly)} / mois · point de départ de chaque offre`, `From ${money(cat.base.monthly)} / month · starting point of every offer`)}</div></div>
+                    <span class="bl-chip ${published ? 'ok' : 'warn'}">${published ? L('Publiée dans Stripe', 'Published to Stripe') : L('Non publiée', 'Not published')}</span>
+                    <span class="material-icons" style="color:var(--text-dim);">expand_more</span>
+                </div>`;
+            const go = () => { open = true; render(); };
+            body.querySelector('#bc-open').onclick = go;
+            body.querySelector('#bc-open').onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } };
+            return;
+        }
         body.innerHTML = `
             <form id="bc-form" class="bl" style="max-width:none;">
                 <div class="bl-card">
-                    <div class="bl-row" data-tip-host><div class="bl-title" style="flex:1;">${L('Grille publique (site web) et point de départ des offres', 'Public price list (website) and starting point of offers')}</div>
+                    <div class="bl-row" data-tip-host><div class="bo-ic"><span class="material-icons">public</span></div><div class="bl-title" style="flex:1;">${L('Grille publique (site web) et point de départ des offres', 'Public price list (website) and starting point of offers')}</div>
+                        ${published ? `<button type="button" class="bl-btn ghost" id="bc-close" style="min-height:34px; padding:0 10px;" title="${L('Replier', 'Fold')}"><span class="material-icons">expand_less</span></button>` : ''}
                         <span class="bl-chip ${cat.stripe?.basePrice ? 'ok' : 'warn'}">${cat.stripe?.basePrice ? L('Publié dans Stripe', 'Published to Stripe') : L('Non publié', 'Not published')}</span>
                         ${tip(L('Modifiez les prix puis cliquez « Enregistrer et publier ». Un prix modifié crée un nouveau prix Stripe pour les nouveaux abonnements ; les abonnements existants gardent leur prix tant que vous ne les migrez pas.', 'Edit the prices then click "Save and publish". A changed price creates a new Stripe price for new subscriptions; existing subscriptions keep their price until you migrate them.'))}</div>
                 </div>
@@ -493,6 +593,7 @@ export function renderCatalogEditor(container, opts) {
                 </div>
             </form>`;
         const form = body.querySelector('#bc-form');
+        body.querySelector('#bc-close')?.addEventListener('click', () => { open = false; render(); });
         body.querySelector('#bc-add').addEventListener('click', () => {
             body.querySelector('#bc-options').insertAdjacentHTML('beforeend', optionRow({ key: '', name: '', description: '', monthly: 0, extraConversations: 0, includedMinutes: 0 }));
         });
