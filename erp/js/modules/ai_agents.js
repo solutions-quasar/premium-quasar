@@ -339,6 +339,31 @@ window.showProjectTab = async (tab, subTab = null) => {
     }
 };
 
+// Guided agent creation and the per-project setup checklist (agent_wizard.js)
+window.agent_openWizard = async () => {
+    if (!activeProjectId) return;
+    const { openAgentWizard } = await import('./agent_wizard.js?v=20261112');
+    openAgentWizard({ projectId: activeProjectId, project: currentProject, apiBase: API_BASE, getToken: getAuthToken, onDone: () => renderAgentList(activeProjectId) });
+};
+window.agent_renderSetup = async () => {
+    const el = document.getElementById('aia-setup');
+    if (!el || !activeProjectId) return;
+    const { renderSetupChecklist } = await import('./agent_wizard.js?v=20261112');
+    renderSetupChecklist(el, {
+        projectId: activeProjectId, apiBase: API_BASE, getToken: getAuthToken,
+        onAction: async (action) => {
+            if (action === 'wizard') return window.agent_openWizard();
+            if (['messaging', 'voice', 'billing', 'settings'].includes(action)) return window.showProjectTab(action, action === 'messaging' ? 'channels' : null);
+            const [kind, id] = action.split(':');
+            const snap = await getDoc(doc(db, "ai_agents", id));
+            if (!snap.exists()) return;
+            window.openAgentModal(encodeURIComponent(JSON.stringify({ id, ...snap.data() })).replace(/'/g, "%27"));
+            const tab = { 'agent-test': 'test', 'agent-knowledge': 'knowledge', 'agent-channels': 'channels' }[kind];
+            if (tab) setTimeout(() => window.agent_switchTab(tab), 150);
+        }
+    });
+};
+
 // Messaging channels of the project, used to show where each agent answers (staff route)
 async function loadProjectChannels(projectId) {
     try {
@@ -366,9 +391,13 @@ async function renderAgentList(projectId) {
 
         const toolbar = `
             ${tabIntro('agents')}
-            <div style="display:flex; justify-content:flex-end; margin-bottom:1rem;">
-                <button class="btn btn-primary" onclick="openAgentModal()"><span class="material-icons" style="font-size:1.1rem; vertical-align:text-bottom;">add</span> ${mpL('Nouvel agent', 'New agent')}</button>
+            <div id="aia-setup"></div>
+            <div style="display:flex; justify-content:flex-end; align-items:center; gap:12px; margin-bottom:1rem; flex-wrap:wrap;">
+                <a href="#" class="text-xs text-muted" style="text-decoration:underline;" onclick="event.preventDefault(); openAgentModal();">${mpL('Créer sans le guide', 'Create without the guide')}</a>
+                <button class="btn btn-primary" onclick="window.agent_openWizard()"><span class="material-icons" style="font-size:1.1rem; vertical-align:text-bottom;">auto_fix_high</span> ${mpL('Nouvel agent (guidé)', 'New agent (guided)')}</button>
             </div>`;
+        // Setup checklist above the agents (loaded in the background)
+        setTimeout(() => window.agent_renderSetup?.(), 0);
 
         if (snapshot.empty) {
             contentEl.innerHTML = toolbar + `
@@ -377,8 +406,8 @@ async function renderAgentList(projectId) {
                         <span class="material-icons text-muted" style="font-size:3rem;">smart_toy</span>
                     </div>
                     <div class="text-h mb-2">${mpL('Aucun agent pour ce client', 'No agent for this client yet')}</div>
-                    <p class="text-muted text-sm mb-4">${mpL('Créez un agent : il répondra aux messages du client, et au téléphone si vous activez la voix.', 'Create an agent: it answers the client\'s messages, and the phone if you turn voice on.')}</p>
-                    <button class="btn btn-primary" onclick="openAgentModal()">${mpL('Créer un agent', 'Create an agent')}</button>
+                    <p class="text-muted text-sm mb-4">${mpL('Le parcours guidé vous pose les bonnes questions, écran par écran, puis crée et teste l\'agent avec vous.', 'The guide asks you the right questions, screen by screen, then creates and tests the agent with you.')}</p>
+                    <button class="btn btn-primary" onclick="window.agent_openWizard()">${mpL('Créer un agent avec le guide', 'Create an agent with the guide')}</button>
                 </div>`;
             return;
         }
@@ -846,6 +875,7 @@ window.openAgentModal = (agentJson = null) => {
             if (json.success) {
                 aiDiv.innerText = json.message;
                 chatHistory = json.history.filter(m => m.role !== 'system'); // Sync history
+                if (agent?.id && !agent.testedAt) { agent.testedAt = new Date().toISOString(); updateDoc(doc(db, "ai_agents", agent.id), { testedAt: agent.testedAt }).catch(() => { }); } // setup checklist
             } else {
                 aiDiv.innerText = mpL('Erreur : ', 'Error: ') + (json.error || mpL('pas de réponse', 'no response'));
                 aiDiv.style.color = "var(--danger)";
@@ -1058,6 +1088,8 @@ window.openAgentModal = (agentJson = null) => {
     window.agent_copyWidgetCode = () => {
         const code = document.getElementById('ag-w-code')?.value || '';
         navigator.clipboard.writeText(code).then(() => window.showToast(mpL('Code copié', 'Code copied'), 'success')).catch(() => { });
+        // Ticks "Website bubble" in the setup checklist
+        if (agent?.id) updateDoc(doc(db, "ai_agents", agent.id), { widgetCodeCopiedAt: new Date().toISOString() }).catch(() => { });
     };
     window.agent_previewWidget = () => {
         if (!agent) return;
