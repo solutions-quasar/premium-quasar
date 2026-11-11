@@ -730,11 +730,136 @@ export function renderProposal(container, { apiBase, proposalId }) {
     call(`/proposals/${proposalId}`).then(d => { state.data = d; render(); })
         .catch(e => { body().innerHTML = `<div class="bl-note err">${esc(e.message)}</div>`; });
 }
+const OV_STYLES = `
+.ov-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+.ov-tabs { display:flex; gap:6px; flex-wrap:wrap; }
+.ov-tab { border:1px solid var(--border, #2d3139); background:transparent; color:var(--text-dim, #94a3b8); border-radius:10px; padding:9px 14px; font-weight:700; font-size:.85rem; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+.ov-tab.on { border-color:var(--gold, #dfa53a); color:var(--gold, #dfa53a); background:rgba(223,165,58,.1); }
+.ov-tab .material-icons { font-size:1.1rem; }
+.ov-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:12px; }
+.ov-card { background:var(--bg-card, #121418); border:1px solid var(--border, #2d3139); border-radius:14px; padding:14px 16px; }
+.ov-card .k { font-size:.75rem; color:var(--text-dim, #94a3b8); display:flex; align-items:center; gap:6px; }
+.ov-card .k .material-icons { font-size:1rem; color:var(--gold, #dfa53a); }
+.ov-card .v { font-size:1.6rem; font-weight:800; margin-top:6px; letter-spacing:-.5px; }
+.ov-row { display:flex; align-items:center; gap:14px; padding:14px 0; border-top:1px solid var(--border, #2d3139); flex-wrap:wrap; }
+.ov-row:first-child { border-top:0; }
+.ov-name { flex:1 1 220px; min-width:0; }
+.ov-name b { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ov-amt { min-width:110px; text-align:right; }
+.ov-mini { display:flex; flex-direction:column; gap:4px; min-width:150px; font-size:.72rem; color:var(--text-dim, #94a3b8); }
+.ov-mini .bl-bar { height:6px; }
+@media (max-width: 640px) { .ov-amt { text-align:left; min-width:0; } }
+`;
+
+/**
+ * ERP › AI Agents › "Pricing and subscriptions": all clients at a glance (recurring revenue, subscriptions,
+ * proposals, things to watch) and the shared price list.
+ * @param {{ apiBase, getToken, onOpenProject: (projectId) => void, initialTab?: 'overview'|'catalog' }} opts
+ */
+export function renderBillingOverview(container, opts) {
+    const call = api(opts.apiBase, opts.getToken);
+    let tab = opts.initialTab || 'overview';
+    let data = null;
+    const STATUS_OV = () => ({
+        active: ['ok', L('Abonné', 'Subscribed')], canceling: ['warn', L('Résiliation prévue', 'Cancels at period end')], past_due: ['err', L('Paiement en retard', 'Payment past due')],
+        proposal: ['info', L('Proposition envoyée', 'Proposal sent')], expired: ['warn', L('Proposition expirée', 'Proposal expired')],
+        unpaid: ['err', L('Impayé', 'Unpaid')], canceled: ['off', L('Résilié', 'Canceled')], none: ['off', L('Pas d\'offre', 'No offer')]
+    });
+    container.innerHTML = `<style>${STYLES}${OV_STYLES}</style>
+        <div class="bl" style="max-width:none;">
+            <div class="ov-head">
+                ${opts.embedded ? '<div style="flex:1;"></div>' : `<div style="flex:1; min-width:220px;"><div class="bl-title" style="font-size:1.2rem;">${L('Tarifs et abonnements', 'Pricing and subscriptions')}</div>
+                    <div class="bl-dim">${L('Tous vos clients d\'un coup d\'œil, et la grille de prix commune.', 'All your clients at a glance, and the shared price list.')}</div></div>`}
+                <span id="ov-mode"></span>
+                <div class="ov-tabs">
+                    <button class="ov-tab" data-t="overview"><span class="material-icons">insights</span>${L('Vue d\'ensemble', 'Overview')}</button>
+                    <button class="ov-tab" data-t="catalog"><span class="material-icons">sell</span>${L('Grille tarifaire', 'Price list')}</button>
+                </div>
+            </div>
+            <div id="ov-notice"></div>
+            <div id="ov-body" class="bl-dim">${L('Chargement…', 'Loading…')}</div>
+        </div>`;
+    const body = container.querySelector('#ov-body');
+    const notice = (type, html) => { container.querySelector('#ov-notice').innerHTML = html ? `<div class="bl-note ${type}" style="margin-bottom:12px;">${html}</div>` : ''; };
+    const setTab = (t) => { tab = t; container.querySelectorAll('.ov-tab').forEach(b => b.classList.toggle('on', b.dataset.t === t)); show(); };
+    container.querySelectorAll('.ov-tab').forEach(b => b.onclick = () => setTab(b.dataset.t));
+
+    async function show() {
+        notice('', '');
+        if (tab === 'catalog') {
+            body.className = '';
+            body.innerHTML = `<div class="bl-note info" style="margin-bottom:12px;">${L('Ces prix s\'affichent sur le site et servent de point de départ à chaque nouvelle offre. Les clients déjà abonnés gardent leur prix. Pour un client en particulier, personnalisez son offre dans son projet (onglet Forfait).', 'These prices show on the website and are the starting point of every new offer. Subscribed clients keep their price. For one client, customise their offer in their project (Plan tab).')}</div><div id="ov-cat"></div>`;
+            renderCatalogEditor(body.querySelector('#ov-cat'), { apiBase: opts.apiBase, getToken: opts.getToken, startOpen: true });
+            return;
+        }
+        if (!data) {
+            try { data = await call('/overview'); } catch (e) { body.innerHTML = `<div class="bl-note err">${esc(e.message)}</div>`; return; }
+        }
+        renderOverview();
+    }
+
+    function usageBar(used, included, label) {
+        if (!included) return '';
+        const pct = Math.min(100, Math.round(used / included * 100));
+        const color = used > included ? '#ef4444' : pct >= 80 ? '#f5a524' : '#3ecf8e';
+        return `<div>${label} ${used} / ${included}</div><div class="bl-bar"><div style="width:${pct}%; background:${color};"></div></div>`;
+    }
+
+    function renderOverview() {
+        body.className = '';
+        container.querySelector('#ov-mode').innerHTML = `<span class="bl-chip ${data.mode === 'live' ? 'ok' : 'warn'}">${data.mode === 'live' ? L('Stripe live', 'Stripe live') : L('Stripe test (local)', 'Stripe test (local)')}</span>`;
+        const t = data.totals;
+        const S = STATUS_OV();
+        body.innerHTML = `
+            ${!data.published ? `<div class="bl-note err" style="margin-bottom:12px;">${L('La grille n\'est pas publiée dans Stripe : aucun client ne peut payer. Ouvrez l\'onglet « Grille tarifaire » et publiez-la.', 'The price list is not published to Stripe: no client can pay. Open the "Price list" tab and publish it.')}</div>` : ''}
+            <div class="ov-cards">
+                <div class="ov-card"><div class="k"><span class="material-icons">trending_up</span>${L('Revenu mensuel récurrent', 'Monthly recurring revenue')}</div><div class="v">${money(t.mrr)}</div></div>
+                <div class="ov-card"><div class="k"><span class="material-icons">verified</span>${L('Clients abonnés', 'Subscribed clients')}</div><div class="v">${t.subscribed}</div></div>
+                <div class="ov-card"><div class="k"><span class="material-icons">send</span>${L('Propositions en attente', 'Pending proposals')}</div><div class="v">${t.proposals}</div></div>
+                <div class="ov-card"><div class="k"><span class="material-icons" style="color:${t.attention ? '#f5a524' : 'var(--gold)'};">notification_important</span>${L('À surveiller', 'To watch')}</div><div class="v" style="${t.attention ? 'color:#f5a524;' : ''}">${t.attention}</div></div>
+            </div>
+            <div class="bl-card" style="margin-top:14px;">
+                <div class="bl-row" style="margin-bottom:6px;">
+                    <div class="bl-title" style="flex:1;">${L('Clients', 'Clients')}</div>
+                    <button class="bl-btn ghost" id="ov-refresh" style="min-height:36px;" title="${L('Relire les abonnements dans Stripe (après un paiement ou une résiliation)', 'Re-read subscriptions from Stripe (after a payment or a cancellation)')}"><span class="material-icons">sync</span>${L('Actualiser depuis Stripe', 'Refresh from Stripe')}</button>
+                </div>
+                ${data.rows.map(r => {
+            const [cls, label] = S[r.status] || ['off', r.status];
+            const info = ['active', 'canceling', 'past_due'].includes(r.status)
+                ? (r.periodEnd ? `${r.status === 'canceling' ? L('Fin le', 'Ends on') : L('Renouvellement le', 'Renews on')} ${date(r.periodEnd)}` : '')
+                : r.status === 'proposal' || r.status === 'expired' ? (r.validUntil ? `${r.status === 'expired' ? L('Expirée le', 'Expired on') : L('Valable jusqu\'au', 'Valid until')} ${date(r.validUntil)}` : '')
+                    : r.customOffer ? L('Offre personnalisée, pas encore envoyée', 'Custom offer, not sent yet') : L('Grille publique', 'Public price list');
+            return `
+                    <div class="ov-row">
+                        <div class="ov-name"><b>${esc(r.name)}</b><span class="bl-dim">${esc(r.client || '')}${r.client && info ? ' · ' : ''}${info}</span></div>
+                        <span class="bl-chip ${cls === 'info' ? 'ok' : cls}" style="${cls === 'info' ? 'color:var(--gold); border-color:rgba(223,165,58,.4); background:rgba(223,165,58,.08);' : ''}">${label}</span>
+                        ${r.usage ? `<div class="ov-mini">${usageBar(r.usage.conversations, r.usage.includedConversations, L('Conversations', 'Conversations'))}${usageBar(r.usage.minutes, r.usage.includedMinutes, L('Minutes', 'Minutes'))}</div>` : ''}
+                        <div class="ov-amt"><b>${money(r.monthly)}</b><div class="bl-dim">${['active', 'canceling', 'past_due'].includes(r.status) ? L('/ mois', '/ month') : L('/ mois proposé', '/ month offered')}</div></div>
+                        <div class="bl-row" style="gap:6px;">
+                            ${r.proposalUrl && ['proposal', 'expired'].includes(r.status) ? `<button class="bl-btn ghost" data-copy="${esc(r.proposalUrl)}" style="min-height:36px; padding:0 10px;" title="${L('Copier le lien de proposition', 'Copy the proposal link')}"><span class="material-icons">link</span></button>` : ''}
+                            <button class="bl-btn ghost" data-open="${esc(r.projectId)}" style="min-height:36px;">${L('Ouvrir', 'Open')} <span class="material-icons">chevron_right</span></button>
+                        </div>
+                    </div>`;
+        }).join('') || `<div class="bl-dim">${L('Aucun projet client.', 'No client project.')}</div>`}
+                <div class="bl-dim" style="margin-top:10px; font-size:.75rem;">${L('Montants calculés à partir de chaque offre, hors taxes et dépassements. Les factures exactes sont dans Stripe.', 'Amounts computed from each offer, before taxes and overage. Exact invoices are in Stripe.')}</div>
+            </div>`;
+        body.querySelectorAll('[data-open]').forEach(b => b.onclick = () => opts.onOpenProject?.(b.dataset.open));
+        body.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => { await navigator.clipboard.writeText(b.dataset.copy).catch(() => { }); notice('ok', L('Lien de proposition copié.', 'Proposal link copied.')); });
+        body.querySelector('#ov-refresh').onclick = async (e) => {
+            const btn = e.currentTarget; btn.disabled = true;
+            try { data = await call('/overview/refresh', { method: 'POST' }); renderOverview(); notice('ok', L('Abonnements relus dans Stripe.', 'Subscriptions re-read from Stripe.')); }
+            catch (err) { notice('err', esc(err.message)); btn.disabled = false; }
+        };
+    }
+
+    setTab(tab);
+}
+
 /** ERP staff: edit the offer and publish it to Stripe. */
 export function renderCatalogEditor(container, opts) {
     const call = api(opts.apiBase, opts.getToken);
     let cat = null;
-    let open = null; // folded once published (rarely edited); open while it still has to be published
+    let open = opts.startOpen ? true : null; // folded once published (rarely edited); open while it still has to be published
 
     container.innerHTML = `<style>${STYLES}</style><div class="bl"><div id="bc-notice"></div><div id="bc-body" class="bl-dim">${L('Chargement…', 'Loading…')}</div></div>`;
     bindTips(container);
