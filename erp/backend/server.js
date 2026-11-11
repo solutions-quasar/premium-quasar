@@ -988,11 +988,14 @@ app.post('/api/stripe-webhook', express.raw({ type: 'application/json' }), async
     let event;
 
     try {
+        // The global express.json() runs first: verify the signature on the raw bytes it kept (req.rawBody)
+        const payload = req.rawBody || (Buffer.isBuffer(req.body) ? req.body : null);
         if (endpointSecret) {
-            event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+            if (!payload) throw new Error('Raw body unavailable for signature check');
+            event = stripe.webhooks.constructEvent(payload, sig, endpointSecret);
         } else {
             // If no secret, we trust the body (NOT RECOMMENDED for production)
-            event = JSON.parse(req.body);
+            event = payload ? JSON.parse(payload.toString('utf8')) : req.body;
         }
     } catch (err) {
         console.error(`Webhook Error: ${err.message}`);
