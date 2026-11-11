@@ -17,6 +17,10 @@ async function getAuthToken() {
 let activeProjectId = null;
 let currentProject = null;
 let projectVerified = null; // true when the client's own Firebase database is connected (advanced tools, memories)
+// Projects loaded once per visit (kept in memory only: never written into the page HTML, which used to
+// expose service account keys and Google tokens in onclick attributes)
+const projectsCache = new Map();
+let projectsLoaded = null; // promise of the first load
 let isCallActive = false; // Track call state
 
 // --- INIT ---
@@ -119,14 +123,11 @@ export async function initAiAgents() {
 
     if (urlProjectId) {
         try {
-            const projSnap = await getDoc(doc(db, "ai_projects", urlProjectId));
-            if (projSnap.exists()) {
-                const projData = { id: projSnap.id, ...projSnap.data() };
-                const projJson = encodeURIComponent(JSON.stringify(projData)).replace(/'/g, "%27");
-
-                setTimeout(async () => {
-                    await window.selectProject(urlProjectId, projJson);
-
+            // Reuse the project list being loaded (no second read, no artificial delay)
+            await projectsLoaded;
+            if (projectsCache.has(urlProjectId) || (await getDoc(doc(db, "ai_projects", urlProjectId))).exists()) {
+                {
+                    await window.selectProject(urlProjectId);
                     // Back from the Google sign-in of a client Gmail channel
                     const gmailResult = params.get('gmail');
                     if (gmailResult) {
@@ -147,7 +148,7 @@ export async function initAiAgents() {
                             window.openAgentModal(agentJson);
                         }
                     }
-                }, 300);
+                }
             }
         } catch (e) { console.error("[DeepLink] Error:", e); }
     }
@@ -155,31 +156,37 @@ export async function initAiAgents() {
 
 // --- PROJECT LOGIC ---
 
-async function renderProjectList() {
+// Projects are read once; selecting a project only re-renders the list from memory.
+// renderProjectList(true) re-reads them (after creating or renaming a project).
+async function renderProjectList(force = false) {
     const listEl = document.getElementById('ai-project-list');
+    if (!listEl) return;
     try {
-        const q = query(collection(db, "ai_projects"));
-        const snapshot = await getDocs(q);
+        if (force || !projectsLoaded) {
+            projectsLoaded = getDocs(query(collection(db, "ai_projects"))).then(snap => {
+                projectsCache.clear();
+                snap.forEach(d => projectsCache.set(d.id, { id: d.id, ...d.data() }));
+            });
+        }
+        await projectsLoaded;
 
-        if (snapshot.empty) {
+        if (!projectsCache.size) {
             listEl.innerHTML = `
                 <div class="text-center text-muted text-sm" style="padding:2rem;">
-                    ${mpL('Aucun projet pour l\'instant.', 'No projects yet.')}<br>
+                    ${mpL('Aucun projet pour l\x27instant.', 'No projects yet.')}<br>
                     <a href="#" onclick="openProjectModal()" style="color:var(--gold);">${mpL('Créer un projet', 'Create one')}</a>
                 </div>`;
             return;
         }
 
         let html = '';
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            const isActive = activeProjectId === doc.id;
-            const projectJson = encodeURIComponent(JSON.stringify({ id: doc.id, ...data })).replace(/'/g, "%27");
-
+        projectsCache.forEach((data, id) => {
+            const doc = { id };
+            const isActive = activeProjectId === id;
             html += `
                 <div class="nav-item ${isActive ? 'active' : ''}" 
                      style="cursor:pointer; border-radius:8px; margin-bottom:5px; padding:12px;"
-                     onclick="selectProject('${doc.id}', '${projectJson}')">
+                     onclick="selectProject('${doc.id}')">
                     <div style="flex:1; overflow:hidden;">
                         <div style="font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${data.name}</div>
                         <div class="text-muted text-sm" style="font-size:0.75rem;">${data.clientName || mpL('Client inconnu', 'Unknown client')}</div>
@@ -198,33 +205,36 @@ async function renderProjectList() {
 
 window.selectProject = async (id, json) => {
     activeProjectId = id;
-    currentProject = JSON.parse(decodeURIComponent(json));
+    // Project data: given by the caller, else from memory, else read once
+    currentProject = json ? JSON.parse(decodeURIComponent(json)) : projectsCache.get(id);
+    if (!currentProject) {
+        const snap = await getDoc(doc(db, "ai_projects", id));
+        currentProject = snap.exists() ? { id, ...snap.data() } : { id, name: id };
+    }
+    if (json) projectsCache.set(id, { ...(projectsCache.get(id) || {}), ...currentProject });
 
     // Update hash for deep linking using replaceState to avoid triggering hashchange loops
     const newUrl = `${window.location.pathname}${window.location.search}#ai-agents?projectId=${id}`;
     if (window.history.replaceState) window.history.replaceState(null, '', newUrl);
 
-    renderProjectList();
+    renderProjectList(); // from memory: just moves the highlight
 
-    // Verify Backend Connection
-    const token = await getAuthToken();
-    let connStatus = '<span class="status-badge" style="background:#555; color:white;">Checking...</span>';
-
-    try {
-        const res = await fetch(`${API_BASE}/api/projects/${id}/verify`, {
-            headers: { 'Authorization': `Bearer ${token}` }
+    // The client-database check runs in the background: the tabs show right away
+    projectVerified = null;
+    const connStatus = '<span id="aia-conn"></span>';
+    getAuthToken().then(token => fetch(`${API_BASE}/api/projects/${id}/verify`, { headers: { 'Authorization': `Bearer ${token}` } }))
+        .then(r => r.json())
+        .then(data => {
+            if (activeProjectId !== id) return;
+            projectVerified = !!data.verified;
+            const el = document.getElementById('aia-conn');
+            if (el && data.verified) el.innerHTML = `<span class="status-badge status-client" title="${mpL('La base de données du client est connectée : outils avancés disponibles.', 'The client\'s database is connected: advanced tools available.')}">${mpL('Base client connectée', 'Client DB connected')}</span>`;
+        })
+        .catch(() => {
+            if (activeProjectId !== id) return;
+            const el = document.getElementById('aia-conn');
+            if (el) el.innerHTML = `<span class="status-badge status-lead">${mpL('Serveur injoignable', 'Server offline')}</span>`;
         });
-        const data = await res.json();
-        projectVerified = !!data.verified;
-        // Only matters for the advanced tools: most clients don't need their own database
-        connStatus = data.verified
-            ? `<span class="status-badge status-client" title="${mpL('La base de données du client est connectée : outils avancés disponibles.', 'The client\'s database is connected: advanced tools available.')}">${mpL('Base client connectée', 'Client DB connected')}</span>`
-            : '';
-    } catch (e) {
-        projectVerified = null;
-        connStatus = `<span class="status-badge status-lead">${mpL('Serveur injoignable', 'Server offline')}</span>`;
-    }
-
     const header = document.getElementById('ai-agent-header');
     header.innerHTML = `
         <div class="aia-title">
@@ -345,12 +355,12 @@ window.agent_openWizard = async () => {
     const { openAgentWizard } = await import('./agent_wizard.js?v=20261112');
     openAgentWizard({ projectId: activeProjectId, project: currentProject, apiBase: API_BASE, getToken: getAuthToken, onDone: () => renderAgentList(activeProjectId) });
 };
-window.agent_renderSetup = async () => {
+window.agent_renderSetup = async (prefetched = {}) => {
     const el = document.getElementById('aia-setup');
     if (!el || !activeProjectId) return;
     const { renderSetupChecklist } = await import('./agent_wizard.js?v=20261112');
     renderSetupChecklist(el, {
-        projectId: activeProjectId, apiBase: API_BASE, getToken: getAuthToken,
+        projectId: activeProjectId, apiBase: API_BASE, getToken: getAuthToken, ...prefetched,
         onAction: async (action) => {
             if (action === 'wizard') return window.agent_openWizard();
             if (['messaging', 'voice', 'billing', 'settings'].includes(action)) return window.showProjectTab(action, action === 'messaging' ? 'channels' : null);
@@ -396,8 +406,9 @@ async function renderAgentList(projectId) {
                 <a href="#" class="text-xs text-muted" style="text-decoration:underline;" onclick="event.preventDefault(); openAgentModal();">${mpL('Créer sans le guide', 'Create without the guide')}</a>
                 <button class="btn btn-primary" onclick="window.agent_openWizard()"><span class="material-icons" style="font-size:1.1rem; vertical-align:text-bottom;">auto_fix_high</span> ${mpL('Nouvel agent (guidé)', 'New agent (guided)')}</button>
             </div>`;
-        // Setup checklist above the agents (loaded in the background)
-        setTimeout(() => window.agent_renderSetup?.(), 0);
+        // Setup checklist above the agents: reuses the agents and channels just loaded
+        const loadedAgents = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        setTimeout(() => window.agent_renderSetup?.({ agents: loadedAgents, channels }), 0);
 
         if (snapshot.empty) {
             contentEl.innerHTML = toolbar + `
@@ -509,7 +520,7 @@ window.openProjectModal = async () => {
             });
 
             document.getElementById('ai-modal-host').innerHTML = '';
-            renderProjectList();
+            renderProjectList(true);
             window.showToast(mpL('Projet créé.', 'Project created.'), 'success');
         } catch (err) {
             console.error(err);
