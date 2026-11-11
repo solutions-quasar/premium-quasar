@@ -11,18 +11,19 @@
         :root { --bg-card: #121418; --bg-dark: #0d0f12; --border: #2d3139; --gold: #dfa53a; --text-main: #fff; --text-dim: #94a3b8; --text-muted: #94a3b8; }
         html, body { margin: 0; background: #08090a; color: #fff; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
         header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--border); }
-        .brand { font-weight: 800; letter-spacing: -.5px; font-size: 1.2rem; color: #fff; text-decoration: none; }
+        .brand { font-weight: 800; letter-spacing: -.5px; font-size: 1.2rem; color: #fff; text-decoration: none; display: inline-flex; align-items: center; gap: 10px; }
+        .brand img { width: 28px; height: 28px; }
         .brand span { color: var(--gold); }
         .lang a { color: var(--text-dim); text-decoration: none; font-size: .85rem; margin-left: 10px; }
         .lang a.on { color: var(--gold); font-weight: 700; }
-        main { max-width: 860px; margin: 0 auto; padding: 24px 16px 60px; }
+        main { max-width: 1160px; margin: 0 auto; padding: 28px 20px 60px; }
         footer { text-align: center; color: var(--text-dim); font-size: .75rem; padding: 20px; }
         footer a { color: var(--text-dim); }
     </style>
 </head>
 <body>
     <header>
-        <a class="brand" href="/">Solutions <span>Quasar</span></a>
+        <a class="brand" href="/"><img src="/favicon.svg" alt="">Solutions <span>Quasar</span></a>
         <div class="lang"><a href="#" data-lang="fr">FR</a><a href="#" data-lang="en">EN</a></div>
     </header>
     <main id="offer"></main>
@@ -37,8 +38,10 @@
             a.classList.toggle('on', a.dataset.lang === window.MP_LANG);
             a.addEventListener('click', (e) => { e.preventDefault(); params.set('lang', a.dataset.lang); location.search = params.toString(); });
         });
-        const { renderProposal } = await import('/erp/js/modules/billing_ui.js?v=20261111');
-        renderProposal(document.getElementById('offer'), { apiBase: '', proposalId: params.get('p') || '' });
+        const { renderProposal } = await import('/erp/js/modules/billing_ui.js?v=20261112');
+        // In local development the API runs on port 5000 (same rule as the ERP)
+        const apiBase = /^(localhost|127.0.0.1)$/.test(location.hostname) ? 'http://localhost:5000' : '';
+        renderProposal(document.getElementById('offer'), { apiBase, proposalId: params.get('p') || '' });
     </script>
 </body>
 </html>
