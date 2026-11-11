@@ -9,7 +9,7 @@ const calendarReminderService = require("./calendar-reminder-service");
 const gmailInbox = require("./gmail-inbox-service");
 const messagingPlatform = require("./messaging-platform");
 
-// Export the Express app as a Firebase Cloud Function (2nd Gen)
+// Export the Express app as a Firebase Cloud Function (2nd Gen) v1.0.2
 // Timeout set to 120s and Memory to 1GiB to support AI / Puppeteer / Stripe operations
 exports.api = onRequest({
     timeoutSeconds: 120,

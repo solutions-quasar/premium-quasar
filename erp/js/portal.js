@@ -31,7 +31,7 @@ onAuthStateChanged(auth, async (user) => {
     if (user) {
         // Logged in
         try {
-            const token = await user.getIdToken();
+            const token = await user.getIdToken(true); // Force fresh token with claims
             const res = await fetch(`${apiBase}/api/public/portal/session`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -43,7 +43,7 @@ onAuthStateChanged(auth, async (user) => {
                 showDashboard();
             } else {
                 // If it's not a valid portal session, we log out ONLY the portal app
-                console.warn("[Portal] Invalid session detected, logging out portal instance.");
+                console.warn("[Portal] Invalid session detected, logging out portal instance.", data.error);
                 signOut(auth);
                 showLoginOrSetup();
             }
@@ -139,6 +139,101 @@ const showLogin = () => {
     };
 };
 
+// --- PASSWORD VISIBILITY TOGGLE ---
+window.togglePasswordVisibility = (inputId, btn) => {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const isPass = input.type === 'password';
+    input.type = isPass ? 'text' : 'password';
+    const icon = btn.querySelector('.material-icons');
+    if (icon) {
+        icon.textContent = isPass ? 'visibility_off' : 'visibility';
+    }
+};
+
+// --- PASSWORD STRENGTH EVALUATION ---
+function evaluatePasswordStrength(val) {
+    if (!val || val.length === 0) return { score: 0, label: '', color: '' };
+    let score = 0;
+    if (val.length >= 6) score++;
+    if (val.length >= 8) score++;
+    if (/[a-z]/.test(val) && /[A-Z]/.test(val)) score++;
+    if (/\d/.test(val) || /[^A-Za-z0-9]/.test(val)) score++;
+    if (val.length >= 10 && /\d/.test(val) && /[^A-Za-z0-9]/.test(val)) score = Math.max(score, 4);
+
+    const levels = [
+        { label: 'Très faible', color: '#ef4444' },
+        { label: 'Faible', color: '#ef4444' },
+        { label: 'Moyen', color: '#f97316' },
+        { label: 'Bon', color: '#dfa53a' },
+        { label: 'Robuste', color: '#22c55e' }
+    ];
+
+    const idx = Math.min(4, Math.max(1, score));
+    return {
+        score: idx,
+        label: levels[idx].label,
+        color: levels[idx].color
+    };
+}
+
+let passwordListenersAttached = false;
+function setupPasswordStrengthListeners() {
+    if (passwordListenersAttached) return;
+    passwordListenersAttached = true;
+
+    const passInput = document.getElementById('setup-pass');
+    const confirmInput = document.getElementById('setup-pass-confirm');
+    const meterWrap = document.getElementById('setup-pass-strength');
+    const labelEl = document.getElementById('setup-pass-strength-label');
+    const matchHint = document.getElementById('setup-pass-match-hint');
+
+    if (!passInput) return;
+
+    passInput.addEventListener('input', () => {
+        const val = passInput.value;
+        if (!val) {
+            if (meterWrap) meterWrap.style.display = 'none';
+        } else {
+            if (meterWrap) meterWrap.style.display = 'flex';
+            const { score, label, color } = evaluatePasswordStrength(val);
+            if (labelEl) {
+                labelEl.textContent = label;
+                labelEl.style.color = color;
+            }
+            for (let i = 1; i <= 4; i++) {
+                const bar = document.getElementById(`str-bar-${i}`);
+                if (bar) {
+                    bar.style.background = i <= score ? color : 'rgba(255, 255, 255, 0.08)';
+                }
+            }
+        }
+        checkPasswordMatch();
+    });
+
+    if (confirmInput) {
+        confirmInput.addEventListener('input', checkPasswordMatch);
+    }
+
+    function checkPasswordMatch() {
+        if (!confirmInput || !matchHint) return;
+        const p1 = passInput.value;
+        const p2 = confirmInput.value;
+        if (!p2) {
+            matchHint.style.display = 'none';
+            return;
+        }
+        matchHint.style.display = 'block';
+        if (p1 === p2) {
+            matchHint.innerHTML = '<span class="material-icons" style="font-size:14px; vertical-align:middle; margin-right:4px;">check_circle</span> Mots de passe identiques';
+            matchHint.style.color = '#22c55e';
+        } else {
+            matchHint.innerHTML = '<span class="material-icons" style="font-size:14px; vertical-align:middle; margin-right:4px;">cancel</span> Les mots de passe ne correspondent pas';
+            matchHint.style.color = '#ef4444';
+        }
+    }
+}
+
 const showSetup = (email, projectName, token) => {
     document.getElementById('portal-login').style.display = 'none';
     document.getElementById('portal-setup').style.display = 'flex';
@@ -147,6 +242,8 @@ const showSetup = (email, projectName, token) => {
 
     document.getElementById('setup-email').value = email;
     document.getElementById('setup-welcome').innerHTML = `Welcome <strong>${projectName}</strong>! Setup your password to access your AI workforce.`;
+
+    setupPasswordStrengthListeners();
 
     document.getElementById('setup-form').onsubmit = async (e) => {
         e.preventDefault();
@@ -175,10 +272,17 @@ const showSetup = (email, projectName, token) => {
             const setupData = await setupRes.json();
 
             if (setupData.success) {
+                // Remove ?invite=... from URL so page doesn't get stuck in setup mode
+                window.history.replaceState({}, document.title, window.location.pathname);
+
+                // Explicitly hide setup view
+                document.getElementById('portal-setup').style.display = 'none';
+
                 // Auto Login
                 await setPersistence(auth, browserLocalPersistence);
-                await signInWithEmailAndPassword(auth, email, pass);
-                // Auth observer will handle the rest
+                const cred = await signInWithEmailAndPassword(auth, email, pass);
+                await cred.user.getIdToken(true); // Force token refresh with latest claims
+                // Auth observer will handle calling showDashboard()
             } else {
                 throw new Error(setupData.error);
             }
@@ -193,6 +297,7 @@ const showSetup = (email, projectName, token) => {
 // 4. DASHBOARD LOGIC
 const showDashboard = async () => {
     document.getElementById('portal-login').style.display = 'none';
+    document.getElementById('portal-setup').style.display = 'none';
     document.getElementById('portal-app').style.display = 'flex';
     document.body.style.alignItems = 'flex-start';
 

@@ -63,6 +63,77 @@
             box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
         }
 
+        /* --- PASSWORD TOGGLE & STRENGTH METER --- */
+        .password-field-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+            width: 100%;
+        }
+
+        .password-field-wrapper .form-input {
+            width: 100%;
+            padding-right: 48px !important;
+        }
+
+        .pwd-toggle-btn {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
+            padding: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+            z-index: 5;
+        }
+
+        .pwd-toggle-btn:hover {
+            color: var(--gold);
+            background: rgba(223, 165, 58, 0.1);
+        }
+
+        .strength-meter-wrap {
+            margin-top: 8px;
+            display: none;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .strength-meter-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.72rem;
+        }
+
+        .strength-meter-bars {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px;
+            height: 4px;
+        }
+
+        .strength-meter-bar {
+            height: 100%;
+            border-radius: 2px;
+            background: rgba(255, 255, 255, 0.08);
+            transition: background 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .match-hint {
+            display: none;
+            margin-top: 6px;
+            font-size: 0.72rem;
+            font-weight: 500;
+        }
+
         /* --- PORTAL APP LAYOUT --- */
         #portal-app {
             display: none;
@@ -348,8 +419,13 @@
                         <a href="#" style="color: var(--gold); font-size: 0.75rem; text-decoration:none;">Forgot
                             password?</a>
                     </div>
-                    <input type="password" id="login-pass" class="form-input" placeholder="••••••••" required
-                        style="height: 52px; background: var(--bg-accent);">
+                    <div class="password-field-wrapper">
+                        <input type="password" id="login-pass" class="form-input" placeholder="••••••••" required
+                            style="height: 52px; background: var(--bg-accent);">
+                        <button type="button" class="pwd-toggle-btn" onclick="togglePasswordVisibility('login-pass', this)" aria-label="Toggle password visibility">
+                            <span class="material-icons">visibility</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div
@@ -389,13 +465,40 @@
                 </div>
                 <div class="form-group mb-4">
                     <label class="form-label" style="font-size: 0.8rem;">Choose Password</label>
-                    <input type="password" id="setup-pass" class="form-input" placeholder="Minimum 6 characters"
-                        required minlength="6" style="height: 52px; background: var(--bg-accent);">
+                    <div class="password-field-wrapper">
+                        <input type="password" id="setup-pass" class="form-input" placeholder="Minimum 6 characters"
+                            required minlength="6" style="height: 52px; background: var(--bg-accent);">
+                        <button type="button" class="pwd-toggle-btn" onclick="togglePasswordVisibility('setup-pass', this)" aria-label="Toggle password visibility">
+                            <span class="material-icons">visibility</span>
+                        </button>
+                    </div>
+                    <!-- Password Strength Meter -->
+                    <div id="setup-pass-strength" class="strength-meter-wrap">
+                        <div class="strength-meter-header">
+                            <span style="color: var(--text-dim);">Force du mot de passe</span>
+                            <span id="setup-pass-strength-label" style="font-weight: 600; color: #ef4444;">Faible</span>
+                        </div>
+                        <div class="strength-meter-bars">
+                            <div class="strength-meter-bar" id="str-bar-1"></div>
+                            <div class="strength-meter-bar" id="str-bar-2"></div>
+                            <div class="strength-meter-bar" id="str-bar-3"></div>
+                            <div class="strength-meter-bar" id="str-bar-4"></div>
+                        </div>
+                        <div id="setup-pass-hint" style="font-size: 0.7rem; color: var(--text-dim);">
+                            6+ caractères requis (recommandé : 8+, majuscule, chiffre)
+                        </div>
+                    </div>
                 </div>
                 <div class="form-group mb-4">
                     <label class="form-label" style="font-size: 0.8rem;">Confirm Password</label>
-                    <input type="password" id="setup-pass-confirm" class="form-input" placeholder="••••••••" required
-                        style="height: 52px; background: var(--bg-accent);">
+                    <div class="password-field-wrapper">
+                        <input type="password" id="setup-pass-confirm" class="form-input" placeholder="••••••••" required
+                            style="height: 52px; background: var(--bg-accent);">
+                        <button type="button" class="pwd-toggle-btn" onclick="togglePasswordVisibility('setup-pass-confirm', this)" aria-label="Toggle password visibility">
+                            <span class="material-icons">visibility</span>
+                        </button>
+                    </div>
+                    <div id="setup-pass-match-hint" class="match-hint"></div>
                 </div>
                 <button type="submit" class="btn btn-primary btn-block btn-large">
                     Secure Account & Enter
@@ -506,7 +609,7 @@
         </nav>
     </div>
 
-    <script type="module" src="/erp/js/portal.js"></script>
+    <script type="module" src="/erp/js/portal.js?v=4"></script>
 </body>
 
 </html>

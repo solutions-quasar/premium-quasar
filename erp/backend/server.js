@@ -9,6 +9,9 @@ const stripe = process.env.STRIPE_SECRET_KEY ? require('stripe')(process.env.STR
 
 if (!stripe) {
     console.warn("⚠️ STRIPE_SECRET_KEY is missing in .env! Payments will be disabled.");
+} else {
+    const isLive = process.env.STRIPE_SECRET_KEY.startsWith('sk_live_');
+    console.log(`[Stripe] Initialized successfully in ${isLive ? '🟢 LIVE (Real Payments)' : '🟡 TEST (Sandbox)'} mode.`);
 }
 const { tools, handlers, dynamicHandler } = require('./vapi-tools');
 const voiceModule = require('./voice');
@@ -19,7 +22,7 @@ const voiceAuth = require('./voice-auth');
 const gmailInbox = require('./gmail-inbox-service');
 
 
-const PROD_URL = 'https://quasar-erp-b26d5.web.app';
+const PROD_URL = process.env.PUBLIC_APP_URL || 'https://solutionsquasar.ca';
 const SERVER_URL = process.env.SERVER_URL || PROD_URL;
 
 console.log("------------------------------------------");
@@ -290,7 +293,7 @@ app.post('/api/forgot-password', async (req, res) => {
         const reqOrigin = req.headers.origin || '';
         const appUrl = (reqOrigin.startsWith('https://') && !reqOrigin.includes('localhost'))
             ? reqOrigin
-            : 'https://quasar-erp-b26d5.web.app';
+            : 'https://solutionsquasar.ca';
 
         // Construct DIRECT LINK to our custom page (pointing to the /erp/ subfolder)
         const directLink = `${appUrl}/erp/reset-password.html?oobCode=${encodeURIComponent(oobCode)}&lang=${encodeURIComponent(lang)}`;
@@ -4602,7 +4605,7 @@ app.post('/api/sequences/test-admin-email', verifyToken, async (req, res) => {
                 { label: 'Heure locale', value: new Date().toLocaleString('fr-CA', { timeZone: 'America/Moncton' }) }
             ],
             snippet: 'Votre adresse courriel est correctement configurée pour recevoir les notifications d\'événements critiques du cockpit IA Quasar.',
-            ctaUrl: 'https://quasar-erp-b26d5.web.app/#prospection',
+            ctaUrl: 'https://solutionsquasar.ca/erp/#prospection',
             ctaText: 'Accéder aux Réglages IA'
         });
 
