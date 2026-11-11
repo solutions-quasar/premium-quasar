@@ -188,6 +188,20 @@ async function clientBook(projectId, args = {}) {
 
 async function clientCallNote(projectId, args = {}) {
     const caller = args.callerName ? `${args.callerName}${args.callerPhone ? ` (${args.callerPhone})` : ''}` : (args.callerPhone || args.phoneNumber || 'Unknown caller');
+    // Always keep the message in the client's Messages inbox (same conversation as the call),
+    // even when no alert phone / email is set
+    try {
+        const digits = String(args.phoneNumber || args.callerPhone || '').replace(/\D/g, '') || 'hidden';
+        const lines = [
+            '📝 Message left on the phone',
+            args.callerName ? `Name: ${args.callerName}` : '',
+            args.callerPhone ? `Call back: ${args.callerPhone}` : '',
+            String(args.summary || '').slice(0, 1500)
+        ].filter(Boolean).join('\n');
+        await require('../messaging-platform/core').appendMessage(projectId, `voice_${digits}`, {
+            role: 'user', author: 'user', content: lines, messageId: `note_${args.callId || Date.now()}_${Date.now()}`, timestamp: nowIso()
+        }, { projectId, channel: 'voice', channelId: null, contactId: args.phoneNumber || args.callerPhone || 'Hidden number', contactName: args.callerName || undefined, unread: true, lastCustomerMessageAt: nowIso() });
+    } catch (e) { console.warn('[Voice] Message not saved in inbox:', e.message); }
     const sent = await notifyClient(projectId, {
         subject: `Phone message from ${caller}`,
         title: `Message from ${caller}`,

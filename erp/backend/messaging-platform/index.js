@@ -568,6 +568,17 @@ function createRouter({ verifyToken }) {
     // Generate an agent's own instructions (layer 2) from a business brief.
     // The brief is saved on the agent (promptBrief) so it can be edited and regenerated later;
     // the generated text is only returned: the user reviews it and saves the agent from the ERP.
+    // Setup wizard: pre-fill the business sheet from Google Maps, the website, the Facebook Page and a web search
+    router.post('/projects/:projectId/prefill', staff, async (req, res) => {
+        try {
+            const result = await require('./prefill').prefillBusiness(req.params.projectId, req.body || {});
+            res.json({ success: true, ...result });
+        } catch (e) {
+            console.error('[Prefill]', e.message);
+            res.status(400).json({ success: false, error: e.message });
+        }
+    });
+
     router.post('/projects/:projectId/generate-prompt', staff, async (req, res) => {
         try {
             const { brief, agentId } = req.body || {};

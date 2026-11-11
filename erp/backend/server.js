@@ -2078,7 +2078,7 @@ app.post('/api/vapi/callback', async (req, res) => {
                 args = args || {};
 
                 // Inject Caller Number and call id for verification tools (never trust values sent by the model)
-                if (fnName === 'verify_voice_pin') {
+                if (fnName === 'verify_voice_pin' || fnName === 'send_call_note_sms') {
                     args.phoneNumber = callerNumber;
                     args.callId = callId;
                 }

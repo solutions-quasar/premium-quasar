@@ -99,6 +99,7 @@ export function renderVoice(container, opts) {
             <form class="bl-card" id="vc-form">
                 <div class="bl-row" data-tip-host style="margin-bottom:10px;"><div class="bl-title" style="flex:1;">${L('Alertes et rendez-vous', 'Alerts and appointments')}</div>
                     ${tip(L('Les rendez-vous sont pris dans votre Google Agenda (connectez-le plus bas sur cette page), seulement aux heures indiquées ici et quand vous êtes libre.', 'Appointments go into your Google Calendar (connect it further down this page), only during the hours set here and when you are free.'))}</div>
+                ${!s.alertPhone && !s.alertEmail ? `<div class="bl-note err" style="margin-bottom:12px;">${L('Personne n\'est prévenu des messages laissés au téléphone : remplissez au moins un texto ou un courriel d\'alerte. Les messages restent visibles dans l\'onglet Messages.', 'Nobody is told about messages left on the phone: fill in at least a text or an email alert. Messages stay visible in the Messages tab.')}</div>` : ''}
                 <div class="bl-grid">
                     <label class="bl-field">${L('Texto d\'alerte au', 'Text alerts to')}<input class="bl-input" name="alertPhone" type="tel" placeholder="+1 506 555-0123" value="${esc(s.alertPhone)}"></label>
                     <label class="bl-field">${L('Courriel d\'alerte', 'Alert email')}<input class="bl-input" name="alertEmail" type="email" placeholder="vous@entreprise.ca" value="${esc(s.alertEmail)}"></label>
