@@ -35,7 +35,7 @@ const { admin, auth, db } = require('./firebase-admin'); // Shared Module
 // CORS Setup (Updated for Embeddable Widgets)
 app.use(cors({
     origin: '*', // Allow all for public widgets
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], // PUT: price list, client offers, phone settings
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID']
 }));
 app.use(express.json({
