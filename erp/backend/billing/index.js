@@ -36,6 +36,10 @@ const BILLING_FIELD = STRIPE_TEST_MODE ? 'billingTest' : 'billing';
 /** Project data with `billing` = the subscription data of the current Stripe mode. */
 const withMode = (data = {}) => (STRIPE_TEST_MODE ? { ...data, billing: data.billingTest || {} } : data);
 if (STRIPE_TEST_MODE) console.log('[Billing] Stripe TEST mode: ids kept in stripeTest / billingTest');
+// Where Stripe may send the customer back: our sites, plus localhost only with a test key (local development)
+const LOCAL_ORIGIN = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+const allowedReturn = (url) => /^https:\/\/(www\.)?(solutionsquasar\.ca|quasar-erp-b26d5\.(web|firebaseapp)\.app)\//.test(url)
+    || (STRIPE_TEST_MODE && LOCAL_ORIGIN.test(String(url).replace(/^(http:\/\/[^/]+).*$/, '$1')));
 const CATALOG_REF = () => db.collection('billing_settings').doc('catalog');
 const METER_EVENT = 'quasar_ai_conversation';
 const VOICE_METER_EVENT = 'quasar_voice_minute';
@@ -105,6 +109,8 @@ const DEFAULT_CATALOG = {
     stripe: {}
 };
 
+// Amounts in Stripe texts, French Canadian format (0,15 $)
+const frMoney = (n) => new Intl.NumberFormat('fr-CA', { style: 'currency', currency: 'CAD' }).format(Number(n || 0));
 const cents = (dollars) => Math.round(Number(dollars || 0) * 100);
 const nowIso = () => new Date().toISOString();
 const requireStripe = () => { if (!stripe) throw new Error('Stripe n\'est pas configuré sur le serveur (STRIPE_SECRET_KEY).'); };
@@ -224,13 +230,13 @@ async function syncCatalog() {
             (p) => p.unit_amount === cents(cat.setupFee.amount) && !p.recurring);
     }
 
-    ids.overageProduct = await upsertProduct(ids.overageProduct, { name: cat.overage.name, description: `${cat.overage.unitPrice} $ par conversation au-delà du quota mensuel.`, key: 'overage' });
+    ids.overageProduct = await upsertProduct(ids.overageProduct, { name: cat.overage.name, description: `${frMoney(cat.overage.unitPrice)} par conversation au-delà du quota mensuel.`, key: 'overage' });
     const unitDecimal = String(Math.round(cat.overage.unitPrice * 100 * 10000) / 10000);
     ids.overagePrice = await upsertPrice(ids.overagePrice, ids.overageProduct,
         { unit_amount_decimal: unitDecimal, recurring: { interval: 'month', usage_type: 'metered', meter: ids.meterId }, tax_behavior: 'exclusive' },
         (p) => p.unit_amount_decimal === unitDecimal && p.recurring?.usage_type === 'metered' && p.recurring?.meter === ids.meterId);
 
-    ids.minuteProduct = await upsertProduct(ids.minuteProduct, { name: cat.minuteOverage.name, description: `${cat.minuteOverage.unitPrice} $ par minute au-delà des minutes incluses.`, key: 'voice_minutes' });
+    ids.minuteProduct = await upsertProduct(ids.minuteProduct, { name: cat.minuteOverage.name, description: `${frMoney(cat.minuteOverage.unitPrice)} par minute au-delà des minutes incluses.`, key: 'voice_minutes' });
     const minuteDecimal = String(Math.round(cat.minuteOverage.unitPrice * 100 * 10000) / 10000);
     ids.minutePrice = await upsertPrice(ids.minutePrice, ids.minuteProduct,
         { unit_amount_decimal: minuteDecimal, recurring: { interval: 'month', usage_type: 'metered', meter: ids.voiceMeterId }, tax_behavior: 'exclusive' },
@@ -529,8 +535,7 @@ async function createCheckout(projectId, { options = [], withSetup = true, retur
         ...(withSetup && offer.setupFee > 0 ? [ids.setupProduct ? line(ids.setupProduct, offer.setupFee, false) : lineNamed(catalog.setupFee.name, '', offer.setupFee, false)] : [])
     ];
     const coupon = await couponFor(projectId, offer);
-    const allowed = /^https:\/\/(www\.)?(solutionsquasar\.ca|quasar-erp-b26d5\.(web|firebaseapp)\.app)\//;
-    const back = returnTo && allowed.test(returnTo) ? returnTo.split('#')[0] : `${PUBLIC_BASE}/portal.html`;
+    const back = returnTo && allowedReturn(returnTo) ? returnTo.split('#')[0] : `${PUBLIC_BASE}/portal.html`;
     const sep = back.includes('?') ? '&' : '?';
     const session = await stripe.checkout.sessions.create({
         mode: 'subscription',
@@ -578,7 +583,7 @@ async function portalSession(projectId, returnTo) {
     const project = await getProject(projectId);
     const customer = project.billing?.customerId;
     if (!customer) throw new Error('Aucun compte de facturation pour ce projet.');
-    const back = returnTo && /^https:\/\/(www\.)?(solutionsquasar\.ca|quasar-erp-b26d5\.(web|firebaseapp)\.app)\//.test(returnTo) ? returnTo : `${PUBLIC_BASE}/portal.html`;
+    const back = returnTo && allowedReturn(returnTo) ? returnTo : `${PUBLIC_BASE}/portal.html`;
     const s = await stripe.billingPortal.sessions.create({ customer, return_url: back });
     return { url: s.url };
 }
@@ -760,7 +765,8 @@ function mountBilling(app, { verifyToken }) {
         if (req.body?.acceptTerms !== true) throw new Error('Veuillez accepter les conditions d\'utilisation. / Please accept the terms of service.');
         return createCheckout(project.id, {
             options: Array.isArray(req.body?.options) ? req.body.options.map(String) : [],
-            withSetup: true, returnTo: `${PUBLIC_BASE}/offer.html?p=${req.params.proposalId}`,
+            // Local test page (http://localhost:…) gets the customer back; production always uses the public site
+            withSetup: true, returnTo: `${STRIPE_TEST_MODE && LOCAL_ORIGIN.test(req.get('origin') || '') ? req.get('origin') : PUBLIC_BASE}/offer.html?p=${req.params.proposalId}`,
             termsAcceptedAt: new Date().toISOString()
         });
     }));
