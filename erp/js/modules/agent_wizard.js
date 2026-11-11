@@ -492,20 +492,21 @@ export function openAgentWizard(opts) {
 export async function renderSetupChecklist(container, opts) {
     const call = api(opts.apiBase, opts.getToken);
     container.innerHTML = '';
-    let project = {}, agents = [], channels = [], voice = null, billing = null;
+    // One small read (the project document); agents and channels come from the agent list when given.
+    // Phone and offer status are read from the project document (no server or Stripe call).
+    let project = {}, agents = opts.agents || [], channels = opts.channels || [];
     try {
-        const [pSnap, aSnap] = await Promise.all([
+        const [pSnap, aSnap, chs] = await Promise.all([
             getDoc(doc(db, 'ai_projects', opts.projectId)),
-            getDocs(query(collection(db, 'ai_agents'), where('projectId', '==', opts.projectId)))
+            opts.agents ? null : getDocs(query(collection(db, 'ai_agents'), where('projectId', '==', opts.projectId))),
+            opts.channels ? null : call(`/api/mp/projects/${opts.projectId}/channels`).then(r => r.channels || []).catch(() => [])
         ]);
         project = pSnap.exists() ? pSnap.data() : {};
-        agents = aSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        [channels, voice, billing] = await Promise.all([
-            call(`/api/mp/projects/${opts.projectId}/channels`).then(r => r.channels || []).catch(() => []),
-            call(`/api/voice/projects/${opts.projectId}`).catch(() => null),
-            call(`/api/billing/projects/${opts.projectId}`).catch(() => null)
-        ]);
+        if (aSnap) agents = aSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        if (chs) channels = chs;
     } catch (e) { console.warn('[Setup] checklist not loaded:', e.message); return; }
+    const voice = { phoneNumber: project.voice?.phoneNumber || null, settings: { alertPhone: project.voice?.alertPhone || '', alertEmail: project.voice?.alertEmail || '' } };
+    const billing = { subscription: project.billing?.subscriptionId ? { status: project.billing.status } : null, offer: { isDefault: !project.billingOffer }, proposalUrl: project.billingOffer?.proposalId ? true : null };
     if (project.setupChecklistHidden) {
         container.innerHTML = `<div style="text-align:right; margin-bottom:8px;"><a href="#" id="sc-show" style="color:var(--text-muted); font-size:.8rem; text-decoration:underline;">${L('Afficher la mise en route', 'Show client setup')}</a></div>`;
         container.querySelector('#sc-show').onclick = async (e) => { e.preventDefault(); await updateDoc(doc(db, 'ai_projects', opts.projectId), { setupChecklistHidden: false }); renderSetupChecklist(container, opts); };
@@ -589,10 +590,10 @@ export async function renderSetupChecklist(container, opts) {
     container.querySelectorAll('[data-act]').forEach(b => b.onclick = () => opts.onAction(b.dataset.act));
     container.querySelectorAll('[data-skip]').forEach(b => b.onclick = async () => {
         await updateDoc(doc(db, 'ai_projects', opts.projectId), { [`setupSkips.${b.dataset.skip}`]: b.dataset.val === '1' });
-        renderSetupChecklist(container, opts);
+        renderSetupChecklist(container, { ...opts, agents, channels });
     });
     container.querySelector('#sc-hide').onclick = async () => {
         await updateDoc(doc(db, 'ai_projects', opts.projectId), { setupChecklistHidden: true });
-        renderSetupChecklist(container, opts);
+        renderSetupChecklist(container, { ...opts, agents, channels });
     };
 }
